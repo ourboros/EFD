@@ -1,0 +1,31 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "calib",
+    "cmcldeps",
+    "CoreML",
+    "cpack",
+    "cppvsdbg",
+    "ctest",
+    "DirectML",
+    "EFD",
+    "EMD",
+    "Extrema",
+    "imf",
+    "imfs",
+    "Landmarker",
+    "libcurl",
+    "MSE",
+    "MSVC",
+    "NNAPI",
+    "NOMINMAX",
+    "PERCLOS",
+    "SampEn",
+    "vcvars",
+    "vswhere",
+    "Wextra",
+    "Wpedantic"
+  ],
+  "ignorePaths": ["build/**", ".git/**"]
+}

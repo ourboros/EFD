@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"E:/Project/EFD/build/cmake_install.cmake",
+		"E:/Project/EFD/build/tests/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
