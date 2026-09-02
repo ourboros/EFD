@@ -93,7 +93,6 @@ EmdResult EmdCalculator::decompose(const std::vector<float>& signal) const {
 
     for (size_t imfIdx = 0; imfIdx < m_maxImfs; ++imfIdx) {
         std::vector<float> h = currentResidue;
-        bool isImf = false;
 
         for (size_t iter = 0; iter < m_maxSiftingIters; ++iter) {
             std::vector<size_t> maxIdx, minIdx;
@@ -121,7 +120,6 @@ EmdResult EmdCalculator::decompose(const std::vector<float>& signal) const {
 
             // 檢查停機條件 (Standard Deviation criteria)
             if (hEnergy > 1e-8f && (siftingDiff / hEnergy) < m_siftingStopThreshold) {
-                isImf = true;
                 break;
             }
         }
