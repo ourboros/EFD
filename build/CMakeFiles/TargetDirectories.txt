@@ -1,5 +1,6 @@
 E:/Project/EFD/build/CMakeFiles/efd_core.dir
 E:/Project/EFD/build/CMakeFiles/efd_cli.dir
+E:/Project/EFD/build/CMakeFiles/efd_gui.dir
 E:/Project/EFD/build/CMakeFiles/RUN_TESTS.dir
 E:/Project/EFD/build/CMakeFiles/ALL_BUILD.dir
 E:/Project/EFD/build/CMakeFiles/ZERO_CHECK.dir

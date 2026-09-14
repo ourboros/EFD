@@ -4,11 +4,25 @@
     <ClCompile Include="E:\Project\EFD\src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="E:\Project\EFD\src\ui\NativeWelcomeWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="E:\Project\EFD\src\ui\NativeWelcomeWindow.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Project\EFD\src\ui\Theme.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="E:\Project\EFD\CMakeLists.txt" />
   </ItemGroup>
   <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{41AD130A-9089-3459-AB9E-2F79B6EC57AC}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files">
       <UniqueIdentifier>{542D2A88-7467-3170-991D-30FBE329824A}</UniqueIdentifier>
     </Filter>

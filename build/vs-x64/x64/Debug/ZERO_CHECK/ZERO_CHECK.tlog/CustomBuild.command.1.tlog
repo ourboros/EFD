@@ -1,0 +1,10 @@
+^E:\PROJECT\EFD\BUILD\VS-X64\CMAKEFILES\C08471C2F85519D799D5DD0A0289F8AB\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SE:/Project/EFD -BE:/Project/EFD/build/vs-x64 --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file E:/Project/EFD/build/vs-x64/EFD.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

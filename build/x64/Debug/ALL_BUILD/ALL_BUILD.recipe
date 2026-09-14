@@ -8,6 +8,9 @@
       <FullPath>E:\Project\EFD\build\Debug\efd_cli.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
+      <FullPath>E:\Project\EFD\build\Debug\efd_gui.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>E:\Project\EFD\build\tests\Debug\efd_tests.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>

@@ -3,3 +3,8 @@ E:\Project\EFD\src\analysis\EmdCalculator.cpp;E:\Project\EFD\build\efd_core.dir\
 E:\Project\EFD\src\analysis\MseCalculator.cpp;E:\Project\EFD\build\efd_core.dir\Debug\MseCalculator.obj
 E:\Project\EFD\src\analysis\AdaptiveBaseline.cpp;E:\Project\EFD\build\efd_core.dir\Debug\AdaptiveBaseline.obj
 E:\Project\EFD\src\state\FatigueStateMachine.cpp;E:\Project\EFD\build\efd_core.dir\Debug\FatigueStateMachine.obj
+E:\Project\EFD\src\vision\FaceLandmarker.cpp;E:\Project\EFD\build\efd_core.dir\Debug\FaceLandmarker.obj
+E:\Project\EFD\src\vision\CameraService.cpp;E:\Project\EFD\build\efd_core.dir\Debug\CameraService.obj
+E:\Project\EFD\src\vision\VisionPipeline.cpp;E:\Project\EFD\build\efd_core.dir\Debug\VisionPipeline.obj
+E:\Project\EFD\src\platform\PlatformLifecycleAdapter.cpp;E:\Project\EFD\build\efd_core.dir\Debug\PlatformLifecycleAdapter.obj
+E:\Project\EFD\src\engine\AsyncPipelineEngine.cpp;E:\Project\EFD\build\efd_core.dir\Debug\AsyncPipelineEngine.obj

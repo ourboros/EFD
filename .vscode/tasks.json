@@ -3,14 +3,9 @@
   "tasks": [
     {
       "label": "CMake: Build (Debug)",
-      "type": "shell",
-      "command": "\"C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe\"",
-      "args": [
-        "--build",
-        "${workspaceFolder}/build",
-        "--config",
-        "Debug"
-      ],
+      "type": "process",
+      "command": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
+      "args": ["--build", "${workspaceFolder}/build", "--config", "Debug"],
       "group": {
         "kind": "build",
         "isDefault": true
@@ -19,8 +14,17 @@
       "detail": "透過 CMake 建置 EFD 專案 (Debug)"
     },
     {
+      "label": "CMake: Run GUI",
+      "type": "process",
+      "command": "${workspaceFolder}/build/Debug/efd_gui.exe",
+      "group": "test",
+      "dependsOn": "CMake: Build (Debug)",
+      "problemMatcher": [],
+      "detail": "執行 EFD 歡迎與視覺校準圖形介面"
+    },
+    {
       "label": "CMake: Run CLI Simulation",
-      "type": "shell",
+      "type": "process",
       "command": "${workspaceFolder}/build/Debug/efd_cli.exe",
       "group": "test",
       "dependsOn": "CMake: Build (Debug)",
@@ -29,7 +33,7 @@
     },
     {
       "label": "CMake: Run Tests",
-      "type": "shell",
+      "type": "process",
       "command": "${workspaceFolder}/build/tests/Debug/efd_tests.exe",
       "group": {
         "kind": "test",
@@ -41,14 +45,9 @@
     },
     {
       "label": "C/C++: cl.exe 建置使用中檔案",
-      "type": "shell",
-      "command": "\"C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe\"",
-      "args": [
-        "--build",
-        "${workspaceFolder}/build",
-        "--config",
-        "Debug"
-      ],
+      "type": "process",
+      "command": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
+      "args": ["--build", "${workspaceFolder}/build", "--config", "Debug"],
       "group": "build",
       "problemMatcher": "$msCompile",
       "detail": "自動轉發 VS Code 單檔建置快捷鍵至 CMake 全專案建置"

@@ -36,6 +36,7 @@ endif()
 # -----------------------------------------------------------------------------
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 # -----------------------------------------------------------------------------
@@ -49,6 +50,12 @@ set(EFD_CORE_HEADERS
     src/analysis/MseCalculator.hpp
     src/analysis/AdaptiveBaseline.hpp
     src/state/FatigueStateMachine.hpp
+    src/vision/RawFrame.hpp
+    src/vision/FaceLandmarker.hpp
+    src/vision/CameraService.hpp
+    src/vision/VisionPipeline.hpp
+    src/platform/PlatformLifecycleAdapter.hpp
+    src/engine/AsyncPipelineEngine.hpp
 )
 
 set(EFD_CORE_SOURCES
@@ -57,6 +64,11 @@ set(EFD_CORE_SOURCES
     src/analysis/MseCalculator.cpp
     src/analysis/AdaptiveBaseline.cpp
     src/state/FatigueStateMachine.cpp
+    src/vision/FaceLandmarker.cpp
+    src/vision/CameraService.cpp
+    src/vision/VisionPipeline.cpp
+    src/platform/PlatformLifecycleAdapter.cpp
+    src/engine/AsyncPipelineEngine.cpp
 )
 
 add_library(efd_core STATIC
@@ -78,8 +90,34 @@ target_compile_features(efd_core PUBLIC cxx_std_20)
 if(EFD_BUILD_CLI)
     add_executable(efd_cli
         src/main.cpp
+        src/ui/NativeWelcomeWindow.cpp
+        src/ui/NativeWelcomeWindow.hpp
+        src/ui/Theme.hpp
     )
     target_link_libraries(efd_cli PRIVATE efd_core)
+    if(WIN32)
+        target_link_libraries(efd_cli PRIVATE gdi32 user32 shell32 gdiplus)
+    endif()
+endif()
+
+# -----------------------------------------------------------------------------
+# GUI Application Target: efd_gui (Full Welcome / Calibration / Monitoring UI)
+# -----------------------------------------------------------------------------
+set(EFD_GUI_SOURCES
+    src/ui/main_gui.cpp
+    src/ui/NativeWelcomeWindow.cpp
+    src/ui/NativeWelcomeWindow.hpp
+    src/ui/Theme.hpp
+)
+
+add_executable(efd_gui
+    ${EFD_GUI_SOURCES}
+)
+
+target_link_libraries(efd_gui PRIVATE efd_core)
+
+if(WIN32)
+    target_link_libraries(efd_gui PRIVATE gdi32 user32 shell32 gdiplus)
 endif()
 
 # -----------------------------------------------------------------------------

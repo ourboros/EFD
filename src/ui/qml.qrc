@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/Theme.qml</file>
+        <file>qml/WelcomeScreen.qml</file>
+        <file>qml/CalibrationGuide.qml</file>
+        <file>qml/ActiveCalibrationView.qml</file>
+        <file>qml/Main.qml</file>
+        <file>assets/logo.png</file>
+    </qresource>
+</RCC>
+

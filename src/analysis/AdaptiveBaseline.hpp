@@ -2,6 +2,7 @@
 
 #include "efd/types.hpp"
 #include <deque>
+#include <vector>
 
 namespace efd {
 
@@ -12,19 +13,22 @@ public:
                              float k = 1.5f, 
                              size_t windowSize = 600);
 
-    // 進行初始校準 (例如取使用者最初 3~5 秒靜態清醒睜眼平均)
+    // 進行初始基準線校準 (例如取使用者最初 3~5 秒靜態清醒睜眼平均)
     void calibrate(const std::vector<float>& awakeEarSamples);
 
-    // 新增每秒特徵值並更新動態自適應閾值
-    float update(float currentEar);
+    // 系統休眠喚醒 (Hot-Resume) 快速再校準 (1 秒內快速重同步光線與角度基準)
+    void fastRecalibrate(const std::vector<float>& resumeSamples);
+
+    // 選擇性更新動態自適應閾值 (排除閉眼與微睡眠樣本污染基準線)
+    float update(float currentEar, bool isEyeClosed = false);
 
     // 取得當前動態閾值
     float getCurrentThreshold() const;
 
-    // 取得校準資料
+    // 取得校準基準資料
     CalibrationData getCalibrationData() const;
 
-    // 重置
+    // 重置滑動窗口與基準
     void reset();
 
 private:
@@ -39,4 +43,3 @@ private:
 };
 
 } // namespace efd
-

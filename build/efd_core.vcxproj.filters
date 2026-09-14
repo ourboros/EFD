@@ -16,6 +16,21 @@
     <ClCompile Include="E:\Project\EFD\src\state\FatigueStateMachine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="E:\Project\EFD\src\vision\FaceLandmarker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Project\EFD\src\vision\CameraService.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Project\EFD\src\vision\VisionPipeline.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Project\EFD\src\platform\PlatformLifecycleAdapter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Project\EFD\src\engine\AsyncPipelineEngine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="E:\Project\EFD\include\efd\types.hpp">
@@ -37,6 +52,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="E:\Project\EFD\src\state\FatigueStateMachine.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Project\EFD\src\vision\RawFrame.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Project\EFD\src\vision\FaceLandmarker.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Project\EFD\src\vision\CameraService.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Project\EFD\src\vision\VisionPipeline.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Project\EFD\src\platform\PlatformLifecycleAdapter.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Project\EFD\src\engine\AsyncPipelineEngine.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

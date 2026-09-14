@@ -11,6 +11,7 @@
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
 		<BuildDependency Project="efd_cli.vcxproj"/>
 		<BuildDependency Project="efd_core.vcxproj"/>
+		<BuildDependency Project="efd_gui.vcxproj"/>
 		<BuildDependency Project="tests/efd_tests.vcxproj"/>
 		<Build Solution="Debug|*" Project="false"/>
 		<Build Solution="Release|*" Project="false"/>
@@ -31,6 +32,10 @@
 	</Project>
 	<Project Path="efd_core.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="e9b91b76-ad22-397f-ae42-6090a2d188b0">
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="efd_gui.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="3c1fc8b4-7ebf-33d4-b2ce-f0654ae45edc">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="efd_core.vcxproj"/>
 	</Project>
 	<Project Path="tests/efd_tests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="65ed9950-b42b-3142-8ea7-1af0cd2951c8">
 		<BuildDependency Project="ZERO_CHECK.vcxproj"/>

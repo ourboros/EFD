@@ -323,11 +323,22 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClInclude Include="E:\Project\EFD\src\analysis\MseCalculator.hpp" />
     <ClInclude Include="E:\Project\EFD\src\analysis\AdaptiveBaseline.hpp" />
     <ClInclude Include="E:\Project\EFD\src\state\FatigueStateMachine.hpp" />
+    <ClInclude Include="E:\Project\EFD\src\vision\RawFrame.hpp" />
+    <ClInclude Include="E:\Project\EFD\src\vision\FaceLandmarker.hpp" />
+    <ClInclude Include="E:\Project\EFD\src\vision\CameraService.hpp" />
+    <ClInclude Include="E:\Project\EFD\src\vision\VisionPipeline.hpp" />
+    <ClInclude Include="E:\Project\EFD\src\platform\PlatformLifecycleAdapter.hpp" />
+    <ClInclude Include="E:\Project\EFD\src\engine\AsyncPipelineEngine.hpp" />
     <ClCompile Include="E:\Project\EFD\src\analysis\FeatureExtractor.cpp" />
     <ClCompile Include="E:\Project\EFD\src\analysis\EmdCalculator.cpp" />
     <ClCompile Include="E:\Project\EFD\src\analysis\MseCalculator.cpp" />
     <ClCompile Include="E:\Project\EFD\src\analysis\AdaptiveBaseline.cpp" />
     <ClCompile Include="E:\Project\EFD\src\state\FatigueStateMachine.cpp" />
+    <ClCompile Include="E:\Project\EFD\src\vision\FaceLandmarker.cpp" />
+    <ClCompile Include="E:\Project\EFD\src\vision\CameraService.cpp" />
+    <ClCompile Include="E:\Project\EFD\src\vision\VisionPipeline.cpp" />
+    <ClCompile Include="E:\Project\EFD\src\platform\PlatformLifecycleAdapter.cpp" />
+    <ClCompile Include="E:\Project\EFD\src\engine\AsyncPipelineEngine.cpp" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>
