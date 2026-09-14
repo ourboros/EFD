@@ -1,0 +1,38 @@
+# Build artifacts
+build/
+bin/
+out/
+dist/
+
+# Visual Studio & VS Code temporary files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# C++ Compilation outputs
+*.obj
+*.o
+*.pdb
+*.ilk
+*.lib
+*.dll
+*.exe
+*.exp
+*.idb
+
+# CMake cache and generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.ninja
+.ninja_*
+.cmake/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
