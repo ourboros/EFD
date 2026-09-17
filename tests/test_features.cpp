@@ -16,6 +16,7 @@
 #include "vision/FaceLandmarker.hpp"
 #include "vision/CameraService.hpp"
 #include "vision/VisionPipeline.hpp"
+#include "vision/drivers/SyntheticCameraDriver.hpp"
 #include "platform/PlatformLifecycleAdapter.hpp"
 #include "engine/AsyncPipelineEngine.hpp"
 
@@ -182,7 +183,8 @@ void testAsyncPipelineEngine() {
         }
     });
 
-    // 啟動五執行緒管線
+    // 啟動五執行緒管線 (在單元測試環境中使用 Synthetic 測試相機)
+    engine.getCameraService().startSynthetic();
     assert(engine.start());
     assert(engine.isRunning());
     assert(!engine.isPaused());
@@ -210,6 +212,45 @@ void testAsyncPipelineEngine() {
     std::cout << " [PASS] (共非同步處理 " << telemetryCount.load() << " 幀，Pause/Resume 正常)\n";
 }
 
+void testCameraDriversAndHal() {
+    std::cout << "[TEST] 8. 測試跨平台相機硬體抽象層 (Camera HAL & Drivers)...";
+    efd::CameraService cameraService(640, 480, 30.0f);
+
+    // 1. 測試設備列舉 (包含實體與虛擬鏡頭)
+    auto devices = cameraService.enumerateDevices();
+    assert(!devices.empty());
+
+    // 2. 測試 Synthetic 驅動取幀
+    efd::SyntheticCameraDriver synthetic;
+    std::atomic<int> frameCount{0};
+    synthetic.setFrameCallback([&frameCount](const efd::RawFrame& frame) {
+        if (frame.isValid()) {
+            frameCount++;
+        }
+    });
+
+    efd::CameraConfig config;
+    config.width = 640;
+    config.height = 480;
+    config.fps = 30.0f;
+    assert(synthetic.open(config));
+    assert(synthetic.isOpened());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    assert(frameCount.load() > 0);
+    synthetic.close();
+    assert(!synthetic.isOpened());
+
+    // 3. 測試 CameraService 整合啟動 (自動偵測 Front / 智慧回退)
+    assert(cameraService.start(0, efd::CameraFacing::Front));
+    assert(cameraService.isRunning());
+    std::string driverName = cameraService.getActiveDriverName();
+    cameraService.stop();
+    assert(!cameraService.isRunning());
+
+    std::cout << " [PASS] (驅動: " << driverName << ", 列舉到 " << devices.size() << " 個設備)\n";
+}
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -217,10 +258,11 @@ int main() {
 #endif
 
     std::cout << "========================================================\n";
-    std::cout << "  EFD 階段二 (Phase 2) 整合單元測試\n";
+    std::cout << "  EFD 跨平台核心與相機驅動 (Camera HAL) 整合單元測試\n";
     std::cout << "  - 5-Thread Pipeline Engine\n";
     std::cout << "  - Full 20/5/5 State Machine & Escalation\n";
     std::cout << "  - Platform Lifecycle (Sleep/Wake/Hot-Resume)\n";
+    std::cout << "  - Camera HAL & Drivers (WMF / Camera2 / Synthetic)\n";
     std::cout << "========================================================\n";
 
     testEarCalculation();
@@ -230,7 +272,8 @@ int main() {
     testFatigueStateMachineFullCycle();
     testPlatformLifecycleAdapter();
     testAsyncPipelineEngine();
+    testCameraDriversAndHal();
 
-    std::cout << "\n[ALL TESTS PASSED] 階段二全部 7 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 8 項測試順利通過！\n";
     return 0;
 }

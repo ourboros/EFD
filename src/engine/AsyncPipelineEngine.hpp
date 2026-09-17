@@ -73,6 +73,7 @@ public:
     FatigueStateMachine& getStateMachine() { return m_stateMachine; }
     AdaptiveBaseline& getAdaptiveBaseline() { return m_baseline; }
     FeatureExtractor& getFeatureExtractor() { return m_extractor; }
+    CameraService& getCameraService() { return *m_camera; }
 
 private:
     PlatformLifecycleAdapter m_lifecycle;

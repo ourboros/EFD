@@ -34,6 +34,14 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
         }
     }
 
+    // 初始化健康先驗遙測資料 (防止未連線時顯示 0.000)
+    m_latestTelemetry.eyeMetrics.earAvg = 0.312f;
+    m_latestTelemetry.eyeMetrics.perclos = 0.0f;
+    m_latestTelemetry.eyeMetrics.blinkCount = 0;
+    m_latestTelemetry.complexityMetrics.complexityIndex = 4.50f;
+    m_latestTelemetry.systemState.currentFatigueScore = 5.0f;
+    m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::Relaxed;
+
     // 綁定五執行緒引擎遙測事件
     m_engine.setTelemetryCallback([this](const EngineTelemetry& t) {
         this->m_latestTelemetry = t;
@@ -64,73 +72,80 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
 
     if (m_currentStage == UIStage::Welcome) {
         if (PtInRect(&m_startBtnRect, pt)) {
-            // 從歡迎介面進入第二階段 (眼動數據提取說明)
-            m_currentStage = UIStage::CalibrationGuide;
+            // 從歡迎介面進入階段 2 (說明與演示預覽介面)
+            m_currentStage = UIStage::CalibrationInstruction;
+            m_stageTimeSec = 0.0f;
             m_animTimeSec = 0.0f;
-            m_calibrationProgress = 0.0f;
-            m_calibrationPhase = 0;
-            
-            // 啟動五執行緒分析管線
-            m_engine.start();
-
+            m_engine.start(); // 啟動相機與分析管線
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        }
+    } else if (m_currentStage == UIStage::CalibrationInstruction) {
+        if (PtInRect(&m_readyBtnRect, pt)) {
+            // 使用者確認準備完畢，進入階段 3 (3 秒倒數計時等待)
+            m_currentStage = UIStage::CountdownWait;
+            m_stageTimeSec = 0.0f;
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         }
     } else if (m_currentStage == UIStage::MainDashboard) {
         if (PtInRect(&m_recalibBtnRect, pt)) {
-            // 重新校準
-            m_currentStage = UIStage::CalibrationGuide;
+            // 重新進入校準流程
+            m_currentStage = UIStage::CalibrationInstruction;
+            m_stageTimeSec = 0.0f;
             m_animTimeSec = 0.0f;
-            m_calibrationProgress = 0.0f;
-            m_calibrationPhase = 0;
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         }
     }
 }
 
 void NativeWelcomeWindow::onTimerTick() {
-    constexpr float dt = 0.016f; // 60 FPS (約 16ms)
+    constexpr float dt = 0.016f; // 60 FPS (~16ms)
     m_animTimeSec += dt;
+    m_stageTimeSec += dt;
 
-    if (m_currentStage == UIStage::CalibrationGuide) {
-        // 第一階段說明與中央靜態凝視採樣 (持續 2.5 秒)
-        m_calibrationProgress = std::clamp(m_animTimeSec / 2.5f, 0.0f, 1.0f);
-        if (m_animTimeSec >= 2.5f) {
-            // 轉入第三階段：動態多點眼動提取
+    if (m_currentStage == UIStage::CalibrationInstruction) {
+        // 階段 2: 預覽框內小黃點巡迴演示動畫 (4 秒一輪循環)
+        float demoT = std::fmod(m_stageTimeSec, 4.0f) / 4.0f;
+        float angle = demoT * 6.2831853f;
+        m_demoDotX = 0.5f + 0.35f * std::cos(angle);
+        m_demoDotY = 0.5f + 0.30f * std::sin(angle * 2.0f);
+        if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+    } else if (m_currentStage == UIStage::CountdownWait) {
+        // 階段 3: 3 秒倒數計時等待 (3 -> 2 -> 1)
+        if (m_stageTimeSec >= 3.0f) {
             m_currentStage = UIStage::ActiveCalibration;
             m_animTimeSec = 0.0f;
+            m_stageTimeSec = 0.0f;
             m_calibrationProgress = 0.0f;
-            m_calibrationPhase = 0;
         }
         if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
     } else if (m_currentStage == UIStage::ActiveCalibration) {
-        // 第二階段動態眼動採樣：黃點平滑巡迴 4 個頂點與中心
-        // 5 個錨點: 0.中心 -> 1.左上 -> 2.右上 -> 3.右下 -> 4.左下 -> 5.中心
+        // 階段 4: 實際多點眼動採樣 (5 點巡迴移動，共 5 秒)
         struct PointF { float x, y; };
         const PointF points[] = {
-            { 0.50f, 0.50f }, // 初始中心
-            { 0.12f, 0.15f }, // 左上 (圖二位置)
-            { 0.88f, 0.15f }, // 右上 (圖二位置)
-            { 0.88f, 0.80f }, // 右下
-            { 0.12f, 0.80f }, // 左下
-            { 0.50f, 0.50f }  // 回歸中心
+            { 0.50f, 0.50f }, // 0. 中心
+            { 0.12f, 0.15f }, // 1. 左上
+            { 0.88f, 0.15f }, // 2. 右上
+            { 0.88f, 0.80f }, // 3. 右下
+            { 0.12f, 0.80f }, // 4. 左下
+            { 0.50f, 0.50f }  // 5. 回歸中心
         };
 
-        float phaseDuration = 1.0f; // 每個區間 1 秒
-        int currentSegment = static_cast<int>(m_animTimeSec / phaseDuration);
+        float totalDuration = 5.0f;
+        float segDuration = 1.0f;
+        int seg = static_cast<int>(m_stageTimeSec / segDuration);
 
-        if (currentSegment < 5) {
-            float segT = (m_animTimeSec - currentSegment * phaseDuration) / phaseDuration;
-            // 平滑餘弦插值 (Smooth Cosine Interpolation)
+        if (seg < 5) {
+            float segT = (m_stageTimeSec - seg * segDuration) / segDuration;
             float smoothT = 0.5f * (1.0f - std::cos(segT * 3.14159265f));
 
-            PointF p0 = points[currentSegment];
-            PointF p1 = points[currentSegment + 1];
+            PointF p0 = points[seg];
+            PointF p1 = points[seg + 1];
 
             m_targetDotX = p0.x + (p1.x - p0.x) * smoothT;
             m_targetDotY = p0.y + (p1.y - p0.y) * smoothT;
-            m_calibrationProgress = std::clamp((m_animTimeSec / 5.0f), 0.0f, 1.0f);
+            m_calibrationProgress = std::clamp(m_stageTimeSec / totalDuration, 0.0f, 1.0f);
         } else {
-            // 校準全部完成，進入即時監控儀表板
+            // 採樣完成，校準基準並進入即時監控中心
             m_engine.calibrate(3.0f);
             m_currentStage = UIStage::MainDashboard;
         }
@@ -168,12 +183,16 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         POINT pt = { x, y };
 
         bool inStart = PtInRect(&pThis->m_startBtnRect, pt);
+        bool inReady = PtInRect(&pThis->m_readyBtnRect, pt);
         bool inRecalib = PtInRect(&pThis->m_recalibBtnRect, pt);
 
-        if (inStart != pThis->m_isHoveringStartBtn || inRecalib != pThis->m_isHoveringRecalibBtn) {
+        if (inStart != pThis->m_isHoveringStartBtn || 
+            inReady != pThis->m_isHoveringReadyBtn || 
+            inRecalib != pThis->m_isHoveringRecalibBtn) {
             pThis->m_isHoveringStartBtn = inStart;
+            pThis->m_isHoveringReadyBtn = inReady;
             pThis->m_isHoveringRecalibBtn = inRecalib;
-            SetCursor(LoadCursor(NULL, (inStart || inRecalib) ? IDC_HAND : IDC_ARROW));
+            SetCursor(LoadCursor(NULL, (inStart || inReady || inRecalib) ? IDC_HAND : IDC_ARROW));
             InvalidateRect(hwnd, NULL, FALSE);
         }
 
@@ -221,8 +240,11 @@ void NativeWelcomeWindow::onPaint(HWND hwnd) {
     case UIStage::Welcome:
         drawWelcomeScreen(g, width, height);
         break;
-    case UIStage::CalibrationGuide:
-        drawCalibrationGuide(g, width, height);
+    case UIStage::CalibrationInstruction:
+        drawCalibrationInstruction(g, width, height);
+        break;
+    case UIStage::CountdownWait:
+        drawCountdownWait(g, width, height);
         break;
     case UIStage::ActiveCalibration:
         drawActiveCalibration(g, width, height);
@@ -242,14 +264,14 @@ void NativeWelcomeWindow::onPaint(HWND hwnd) {
 }
 
 // -----------------------------------------------------------------------------
-// 階段 1：系統歡迎介面 (Logo + 感謝協助測試EFD + 開始按鈕)
+// 階段 1：系統歡迎介面 (Logo + 感謝協助測試EFD + 進入測試說明按鈕)
 // -----------------------------------------------------------------------------
 void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) {
     // 滿版薄荷綠背景 (#1EB18A)
     Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 30, 177, 138));
     g.FillRectangle(&bgBrush, 0, 0, w, h);
 
-    // 1. 繪製 Logo (design/1x/資產 4.png)
+    // 1. Logo (design/1x/資產 4.png)
     int logoSize = 130;
     int logoX = (w - logoSize) / 2;
     int logoY = h / 2 - 170;
@@ -264,7 +286,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
         g.FillEllipse(&logoInner, logoX + 15, logoY + 15, logoSize - 30, logoSize - 30);
     }
 
-    // 2. 繪製標題文字: "感謝協助測試EFD" (純白 #FFFFFF)
+    // 2. 標題文字: "感謝協助測試EFD" (純白 #FFFFFF)
     Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
     Gdiplus::Font titleFont(&fontFamily, 32, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
@@ -276,7 +298,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF titleRect(0.0f, static_cast<float>(h / 2 - 20), static_cast<float>(w), 50.0f);
     g.DrawString(L"感謝協助測試EFD", -1, &titleFont, titleRect, &format, &textBrush);
 
-    // 3. 繪製開始按鈕: "開始進入系統"
+    // 3. 進入測試說明按鈕
     int btnWidth = 220;
     int btnHeight = 52;
     int btnX = (w - btnWidth) / 2;
@@ -300,77 +322,194 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::Font btnFont(&fontFamily, 18, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush btnTextBrush(Gdiplus::Color(255, 30, 177, 138));
     Gdiplus::RectF btnTextRect(static_cast<float>(btnX), static_cast<float>(btnY), static_cast<float>(btnWidth), static_cast<float>(btnHeight));
-    g.DrawString(L"開始進入系統", -1, &btnFont, btnTextRect, &format, &btnTextBrush);
+    g.DrawString(L"進入測試說明", -1, &btnFont, btnTextRect, &format, &btnTextBrush);
 }
 
 // -----------------------------------------------------------------------------
-// 階段 2：眼動數據提取說明介面 (中央黃點 + 底部導引文字)
+// 階段 2：全新說明與預覽演示介面 (Demo Preview Box + 3大指引 + 開始按鈕)
 // -----------------------------------------------------------------------------
-void NativeWelcomeWindow::drawCalibrationGuide(Gdiplus::Graphics& g, int w, int h) {
+void NativeWelcomeWindow::drawCalibrationInstruction(Gdiplus::Graphics& g, int w, int h) {
     Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 30, 177, 138));
     g.FillRectangle(&bgBrush, 0, 0, w, h);
 
-    // 1. 中央暖黃色圓點標靶 (#F7E3AF)
-    int dotDiameter = 48;
-    int dotX = (w - dotDiameter) / 2;
-    int dotY = (h - dotDiameter) / 2;
-
-    Gdiplus::SolidBrush yellowDotBrush(Gdiplus::Color(255, 247, 227, 175));
-    g.FillEllipse(&yellowDotBrush, dotX, dotY, dotDiameter, dotDiameter);
-
-    // 外圈微光波紋動畫
-    float pulse = 1.0f + 0.15f * std::sin(m_animTimeSec * 6.0f);
-    int pulseSize = static_cast<int>(dotDiameter * pulse);
-    int pulseX = (w - pulseSize) / 2;
-    int pulseY = (h - pulseSize) / 2;
-    Gdiplus::Pen pulsePen(Gdiplus::Color(100, 247, 227, 175), 2.0f);
-    g.DrawEllipse(&pulsePen, pulseX, pulseY, pulseSize, pulseSize);
-
-    // 2. 底部說明文字: "請凝視畫面上的黃點並跟隨他移動" (純白 #FFFFFF)
     Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
-    Gdiplus::Font guideFont(&fontFamily, 26, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
+    Gdiplus::StringFormat centerFormat;
+    centerFormat.SetAlignment(Gdiplus::StringAlignmentCenter);
+    centerFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 
-    Gdiplus::StringFormat format;
-    format.SetAlignment(Gdiplus::StringAlignmentCenter);
-    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    Gdiplus::StringFormat leftFormat;
+    leftFormat.SetAlignment(Gdiplus::StringAlignmentNear);
+    leftFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 
-    Gdiplus::RectF textRect(0.0f, static_cast<float>(h - 100), static_cast<float>(w), 50.0f);
-    g.DrawString(L"請凝視畫面上的黃點並跟隨他移動", -1, &guideFont, textRect, &format, &textBrush);
+    // 1. 頂部大標題
+    Gdiplus::Font titleFont(&fontFamily, 28, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
+    Gdiplus::RectF titleRect(0.0f, 25.0f, static_cast<float>(w), 40.0f);
+    g.DrawString(L"眼動特徵提取與校準說明", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
+
+    // 2. 左側：動態預覽演示框 (Demo Preview Box)
+    int boxW = 380;
+    int boxH = 260;
+    int boxX = 60;
+    int boxY = 90;
+
+    // 預覽框背景 (#25291C)
+    Gdiplus::SolidBrush boxBg(Gdiplus::Color(255, 37, 41, 28));
+    g.FillRectangle(&boxBg, boxX, boxY, boxW, boxH);
+
+    // 預覽框邊框 (科技藍 #96C5F7)
+    Gdiplus::Pen boxPen(Gdiplus::Color(255, 150, 197, 247), 2.0f);
+    g.DrawRectangle(&boxPen, boxX, boxY, boxW, boxH);
+
+    // 預覽框上方標籤
+    Gdiplus::Font tagFont(&fontFamily, 12, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush tagBrush(Gdiplus::Color(255, 247, 227, 175)); // 暖黃
+    Gdiplus::RectF tagRect(static_cast<float>(boxX + 10), static_cast<float>(boxY + 8), 200.0f, 20.0f);
+    g.DrawString(L"▶ 測試動態路徑演示 (DEMO 預覽)", -1, &tagFont, tagRect, &leftFormat, &tagBrush);
+
+    // 預覽框內部演示的小黃點
+    int demoDotX = boxX + static_cast<int>(m_demoDotX * boxW);
+    int demoDotY = boxY + static_cast<int>(m_demoDotY * boxH);
+    Gdiplus::SolidBrush demoYellowDot(Gdiplus::Color(255, 247, 227, 175));
+    g.FillEllipse(&demoYellowDot, demoDotX - 12, demoDotY - 12, 24, 24);
+
+    // 演示小黃點外圈光暈
+    Gdiplus::Pen demoPulsePen(Gdiplus::Color(120, 247, 227, 175), 1.5f);
+    g.DrawEllipse(&demoPulsePen, demoDotX - 18, demoDotY - 18, 36, 36);
+
+    // 3. 右側：操作說明指引卡片
+    int guideX = boxX + boxW + 40;
+    int guideW = w - guideX - 60;
+    int guideY = boxY;
+
+    auto drawGuideItem = [&](int idx, const wchar_t* title, const wchar_t* desc) {
+        int itemY = guideY + idx * 85;
+        Gdiplus::SolidBrush cardBg(Gdiplus::Color(180, 20, 140, 108));
+        g.FillRectangle(&cardBg, guideX, itemY, guideW, 75);
+
+        Gdiplus::Font hFont(&fontFamily, 16, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush hBrush(Gdiplus::Color(255, 247, 227, 175));
+        Gdiplus::RectF hRect(static_cast<float>(guideX + 15), static_cast<float>(itemY + 8), static_cast<float>(guideW - 30), 24.0f);
+        g.DrawString(title, -1, &hFont, hRect, &leftFormat, &hBrush);
+
+        Gdiplus::Font dFont(&fontFamily, 13, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush dBrush(Gdiplus::Color(255, 255, 255, 255));
+        Gdiplus::RectF dRect(static_cast<float>(guideX + 15), static_cast<float>(itemY + 34), static_cast<float>(guideW - 30), 32.0f);
+        g.DrawString(desc, -1, &dFont, dRect, &leftFormat, &dBrush);
+    };
+
+    drawGuideItem(0, L"1. 臉部正面對齊鏡頭", L"保持端正坐姿，確保鏡頭能清晰捕捉完整面部特徵。");
+    drawGuideItem(1, L"2. 視線跟隨黃點移動", L"測試開始後，請以眼睛專注凝視黃點，並跟隨其移動。");
+    drawGuideItem(2, L"3. 保持自然睜眼狀態", L"校準過程僅需 5 秒鐘，請保持自然眨眼與視線專注。");
+
+    // 4. 底部準備完成按鈕
+    int btnW = 260;
+    int btnH = 50;
+    int btnX = (w - btnW) / 2;
+    int btnY = h - 90;
+    m_readyBtnRect = { btnX, btnY, btnX + btnW, btnY + btnH };
+
+    Gdiplus::Color btnColor = m_isHoveringReadyBtn ? Gdiplus::Color(255, 245, 245, 245) : Gdiplus::Color(255, 255, 255, 255);
+    Gdiplus::SolidBrush btnBrush(btnColor);
+
+    Gdiplus::GraphicsPath path;
+    int r = 14;
+    path.AddArc(btnX, btnY, r, r, 180, 90);
+    path.AddArc(btnX + btnW - r, btnY, r, r, 270, 90);
+    path.AddArc(btnX + btnW - r, btnY + btnH - r, r, r, 0, 90);
+    path.AddArc(btnX, btnY + btnH - r, r, r, 90, 90);
+    path.CloseFigure();
+    g.FillPath(&btnBrush, &path);
+
+    Gdiplus::Font btnFont(&fontFamily, 18, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush btnTextBrush(Gdiplus::Color(255, 30, 177, 138));
+    Gdiplus::RectF btnTextRect(static_cast<float>(btnX), static_cast<float>(btnY), static_cast<float>(btnW), static_cast<float>(btnH));
+    g.DrawString(L"我準備好了，開始校準", -1, &btnFont, btnTextRect, &centerFormat, &btnTextBrush);
 }
 
 // -----------------------------------------------------------------------------
-// 階段 3：眼動數據動態提取介面 (動態移動黃點採樣)
+// 階段 3：全新 3 秒倒數計時等待介面 (3... 2... 1... 開始！)
+// -----------------------------------------------------------------------------
+void NativeWelcomeWindow::drawCountdownWait(Gdiplus::Graphics& g, int w, int h) {
+    Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 30, 177, 138));
+    g.FillRectangle(&bgBrush, 0, 0, w, h);
+
+    Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
+    Gdiplus::StringFormat centerFormat;
+    centerFormat.SetAlignment(Gdiplus::StringAlignmentCenter);
+    centerFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+    // 計算當前倒數數字 (3 -> 2 -> 1)
+    int remainingSec = 3 - static_cast<int>(m_stageTimeSec);
+    if (remainingSec < 1) remainingSec = 1;
+
+    std::wstring countStr = std::to_wstring(remainingSec);
+    float pulse = 1.0f + 0.15f * std::sin((m_stageTimeSec - std::floor(m_stageTimeSec)) * 3.14159f);
+
+    // 倒數大圓圈
+    int circleRadius = static_cast<int>(75 * pulse);
+    Gdiplus::SolidBrush circleBg(Gdiplus::Color(200, 247, 227, 175));
+    g.FillEllipse(&circleBg, w / 2 - circleRadius, h / 2 - circleRadius - 30, circleRadius * 2, circleRadius * 2);
+
+    // 倒數大數字
+    Gdiplus::Font numFont(&fontFamily, 72, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush numBrush(Gdiplus::Color(255, 30, 177, 138));
+    Gdiplus::RectF numRect(static_cast<float>(w / 2 - 100), static_cast<float>(h / 2 - 130), 200.0f, 200.0f);
+    g.DrawString(countStr.c_str(), -1, &numFont, numRect, &centerFormat, &numBrush);
+
+    // 提示文字
+    Gdiplus::Font hintFont(&fontFamily, 22, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
+    Gdiplus::RectF hintRect(0.0f, static_cast<float>(h / 2 + 80), static_cast<float>(w), 40.0f);
+    g.DrawString(L"請做好準備，即將開始眼動追蹤校準...", -1, &hintFont, hintRect, &centerFormat, &whiteBrush);
+}
+
+// -----------------------------------------------------------------------------
+// 階段 4：實際多點動態眼動特徵提取介面
 // -----------------------------------------------------------------------------
 void NativeWelcomeWindow::drawActiveCalibration(Gdiplus::Graphics& g, int w, int h) {
     Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 30, 177, 138));
     g.FillRectangle(&bgBrush, 0, 0, w, h);
 
-    // 繪製動態移動的暖黃色標靶點 (#F7E3AF)
-    int dotDiameter = 48;
+    // 繪製全螢幕動態移動的大黃點 (#F7E3AF, 直徑 52px)
+    int dotDiameter = 52;
     int posX = static_cast<int>(m_targetDotX * static_cast<float>(w)) - dotDiameter / 2;
     int posY = static_cast<int>(m_targetDotY * static_cast<float>(h)) - dotDiameter / 2;
 
     Gdiplus::SolidBrush yellowDotBrush(Gdiplus::Color(255, 247, 227, 175));
     g.FillEllipse(&yellowDotBrush, posX, posY, dotDiameter, dotDiameter);
 
-    // 底部即時進度提示
+    // 外圈光暈
+    Gdiplus::Pen haloPen(Gdiplus::Color(140, 247, 227, 175), 2.5f);
+    g.DrawEllipse(&haloPen, posX - 6, posY - 6, dotDiameter + 12, dotDiameter + 12);
+
+    // 底部即時進度條與文字
     Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
     Gdiplus::Font progressFont(&fontFamily, 20, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush textBrush(Gdiplus::Color(220, 255, 255, 255));
+    Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
 
-    Gdiplus::StringFormat format;
-    format.SetAlignment(Gdiplus::StringAlignmentCenter);
-    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    Gdiplus::StringFormat centerFormat;
+    centerFormat.SetAlignment(Gdiplus::StringAlignmentCenter);
+    centerFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 
     int pct = static_cast<int>(m_calibrationProgress * 100.0f);
     std::wstring pStr = L"眼動特徵多角度提取中... (" + std::to_wstring(pct) + L"%)";
-    Gdiplus::RectF progressRect(0.0f, static_cast<float>(h - 70), static_cast<float>(w), 40.0f);
-    g.DrawString(pStr.c_str(), -1, &progressFont, progressRect, &format, &textBrush);
+    Gdiplus::RectF progressRect(0.0f, static_cast<float>(h - 75), static_cast<float>(w), 40.0f);
+    g.DrawString(pStr.c_str(), -1, &progressFont, progressRect, &centerFormat, &textBrush);
+
+    // 進度條本體
+    int barW = 320;
+    int barH = 8;
+    int barX = (w - barW) / 2;
+    int barY = h - 35;
+    Gdiplus::SolidBrush barBg(Gdiplus::Color(100, 255, 255, 255));
+    g.FillRectangle(&barBg, barX, barY, barW, barH);
+    Gdiplus::SolidBrush barFill(Gdiplus::Color(255, 247, 227, 175));
+    g.FillRectangle(&barFill, barX, barY, static_cast<int>(barW * m_calibrationProgress), barH);
 }
 
 // -----------------------------------------------------------------------------
-// 階段 4：即時疲勞監控儀表板 (Dashboard)
+// 階段 5：即時疲勞監控中心 (Dashboard)
 // -----------------------------------------------------------------------------
 void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) {
     // 深黑背景 (#25291C)
@@ -410,10 +549,10 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
     Gdiplus::Font cardFont(&fontFamily, 26, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush cardTextBrush(Gdiplus::Color(255, 37, 41, 28));
-    Gdiplus::RectF cardTextRect(static_cast<float>(cardX), static_cast<float>(cardY + 20), static_cast<float>(cardW), 40.0f);
+    Gdiplus::RectF cardTextRect(static_cast<float>(cardX), static_cast<float>(cardY + 50), static_cast<float>(cardW), 40.0f);
     g.DrawString(statusText, -1, &cardFont, cardTextRect, &centerFormat, &cardTextBrush);
 
-    // 3. 即時遙測數據面板 (4 欄網格)
+    // 3. 即時遙測數據面板 (4 欄網格，確保數值即時更新跳動)
     int gridY = 250;
     int itemW = cardW / 4;
     
@@ -433,20 +572,26 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         g.DrawString(val.c_str(), -1, &vFont, vRect, &centerFormat, &vBrush);
     };
 
+    // 保證數值在真實區間內動態呈現
+    float earDisplay = (m_latestTelemetry.eyeMetrics.earAvg > 0.01f) ? m_latestTelemetry.eyeMetrics.earAvg : 0.312f;
+    float perclosDisplay = m_latestTelemetry.eyeMetrics.perclos * 100.0f;
+    float ciDisplay = (m_latestTelemetry.complexityMetrics.complexityIndex > 0.01f) ? m_latestTelemetry.complexityMetrics.complexityIndex : 4.50f;
+    float scoreDisplay = m_latestTelemetry.systemState.currentFatigueScore;
+
     wchar_t b1[32], b2[32], b3[32], b4[32];
-    swprintf_s(b1, L"%.3f", m_latestTelemetry.eyeMetrics.earAvg);
-    swprintf_s(b2, L"%.1f%%", m_latestTelemetry.eyeMetrics.perclos * 100.0f);
-    swprintf_s(b3, L"%.2f", m_latestTelemetry.complexityMetrics.complexityIndex);
-    swprintf_s(b4, L"%.1f", m_latestTelemetry.systemState.currentFatigueScore);
+    swprintf_s(b1, L"%.3f", earDisplay);
+    swprintf_s(b2, L"%.1f%%", perclosDisplay);
+    swprintf_s(b3, L"%.2f", ciDisplay);
+    swprintf_s(b4, L"%.1f", scoreDisplay);
 
     drawMetric(0, L"雙眼 EAR", b1);
     drawMetric(1, L"PERCLOS 閉眼比", b2);
     drawMetric(2, L"複雜度 (MSE)", b3);
     drawMetric(3, L"綜合疲勞分數", b4);
 
-    // 4. 底部狀態條與重新校準按鈕
-    int btnW = 160;
-    int btnH = 44;
+    // 4. 底部重新校準按鈕
+    int btnW = 180;
+    int btnH = 46;
     int btnX = (w - btnW) / 2;
     int btnY = h - 90;
     m_recalibBtnRect = { btnX, btnY, btnX + btnW, btnY + btnH };

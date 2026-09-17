@@ -54,6 +54,11 @@ set(EFD_CORE_HEADERS
     src/vision/FaceLandmarker.hpp
     src/vision/CameraService.hpp
     src/vision/VisionPipeline.hpp
+    src/vision/drivers/ICameraDriver.hpp
+    src/vision/drivers/SyntheticCameraDriver.hpp
+    src/vision/drivers/WindowsMfCameraDriver.hpp
+    src/vision/drivers/AndroidCamera2Driver.hpp
+    src/vision/drivers/AppleAvFoundationCameraDriver.hpp
     src/platform/PlatformLifecycleAdapter.hpp
     src/engine/AsyncPipelineEngine.hpp
 )
@@ -67,14 +72,23 @@ set(EFD_CORE_SOURCES
     src/vision/FaceLandmarker.cpp
     src/vision/CameraService.cpp
     src/vision/VisionPipeline.cpp
+    src/vision/drivers/SyntheticCameraDriver.cpp
     src/platform/PlatformLifecycleAdapter.cpp
     src/engine/AsyncPipelineEngine.cpp
 )
+
+if(WIN32)
+    list(APPEND EFD_CORE_SOURCES src/vision/drivers/WindowsMfCameraDriver.cpp)
+endif()
 
 add_library(efd_core STATIC
     ${EFD_CORE_HEADERS}
     ${EFD_CORE_SOURCES}
 )
+
+if(WIN32)
+    target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib)
+endif()
 
 target_include_directories(efd_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

@@ -18,10 +18,11 @@
 namespace efd {
 
 enum class UIStage : uint8_t {
-    Welcome,            // 1. 歡迎介面 (Logo + 感謝協助測試EFD + 開始按鈕)
-    CalibrationGuide,   // 2. 眼動數據提取說明 (中央黃點 + 請凝視畫面上的黃點並跟隨他移動)
-    ActiveCalibration,  // 3. 眼動數據動態提取 (黃點沿多點平滑移動採樣)
-    MainDashboard       // 4. 即時疲勞監控儀表板 (狀態卡片 + 實時 EAR / PERCLOS / 遙測)
+    Welcome,                // 階段 1: 歡迎介面 (Logo + 感謝協助測試EFD + 開始按鈕)
+    CalibrationInstruction, // 階段 2: 說明與演示預覽介面 (預覽動畫視窗 + 3大操作指南 + 「我準備好了」按鈕)
+    CountdownWait,          // 階段 3: 3 秒倒數計時等待 (3 -> 2 -> 1 -> 開始！)
+    ActiveCalibration,      // 階段 4: 實際多點眼動提取 (黃點全螢幕多點移動採樣)
+    MainDashboard           // 階段 5: 即時疲勞監控中心 (動態跳動實時數據)
 };
 
 class NativeWelcomeWindow {
@@ -47,17 +48,25 @@ private:
     ULONG_PTR m_gdiplusToken = 0;
     std::unique_ptr<Gdiplus::Image> m_logoImage;
 
-    // 動畫與校準座標計算
+    // 動畫與時間計算
     float m_animTimeSec = 0.0f;
-    float m_targetDotX = 0.5f; // 0.0 ~ 1.0
-    float m_targetDotY = 0.5f; // 0.0 ~ 1.0
-    int   m_calibrationPhase = 0;
+    float m_stageTimeSec = 0.0f;
+
+    // 階段 2 預覽演示動畫座標
+    float m_demoDotX = 0.5f;
+    float m_demoDotY = 0.5f;
+
+    // 階段 4 實際校準動畫座標與進度
+    float m_targetDotX = 0.5f;
+    float m_targetDotY = 0.5f;
     float m_calibrationProgress = 0.0f;
 
     // 按鈕區域
     RECT m_startBtnRect{};
+    RECT m_readyBtnRect{};
     RECT m_recalibBtnRect{};
     bool m_isHoveringStartBtn = false;
+    bool m_isHoveringReadyBtn = false;
     bool m_isHoveringRecalibBtn = false;
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -65,9 +74,10 @@ private:
     void onTimerTick();
     void handleMouseClick(int x, int y);
 
-    // 各階段專屬繪製函式 (GDI+)
+    // 各階段專屬 GDI+ 繪製函式
     void drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h);
-    void drawCalibrationGuide(Gdiplus::Graphics& g, int w, int h);
+    void drawCalibrationInstruction(Gdiplus::Graphics& g, int w, int h);
+    void drawCountdownWait(Gdiplus::Graphics& g, int w, int h);
     void drawActiveCalibration(Gdiplus::Graphics& g, int w, int h);
     void drawMainDashboard(Gdiplus::Graphics& g, int w, int h);
 #endif
