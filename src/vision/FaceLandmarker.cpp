@@ -74,7 +74,6 @@ LandmarkDetectionResult FaceLandmarker::detect(const RawFrame& frame) {
 }
 
 LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int width, int height, PixelFormat format) {
-    (void)pixelData;
     (void)format;
 
     auto startTime = std::chrono::steady_clock::now();
@@ -90,6 +89,33 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
     result.hasFace = true;
     result.faceConfidence = 0.96f;
+
+    // 若收到實體影格，檢驗中央區域亮度以確認是否有實體面部目標
+    if (pixelData && width >= 64 && height >= 64) {
+        int cx = width / 2;
+        int cy = height / 2;
+        int sampleBox = std::min(width, height) / 4;
+        
+        uint64_t sumLuma = 0;
+        int samples = 0;
+        for (int y = cy - sampleBox; y < cy + sampleBox; y += 8) {
+            for (int x = cx - sampleBox; x < cx + sampleBox; x += 8) {
+                int idx = (y * width + x) * 3;
+                uint8_t r = pixelData[idx];
+                uint8_t g = pixelData[idx + 1];
+                uint8_t b = pixelData[idx + 2];
+                sumLuma += (r * 299 + g * 587 + b * 114) / 1000;
+                samples++;
+            }
+        }
+        float avgLuma = samples > 0 ? (static_cast<float>(sumLuma) / samples / 255.0f) : 0.5f;
+
+        // 若鏡頭被遮擋或全黑
+        if (avgLuma < 0.02f) {
+            result.hasFace = false;
+            result.faceConfidence = 0.1f;
+        }
+    }
 
     float effectiveOpenness = m_simulatedOpenness;
     if (m_useSyntheticEngine && m_simulatedOpenness >= 0.85f) {
@@ -120,4 +146,3 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 }
 
 } // namespace efd
-

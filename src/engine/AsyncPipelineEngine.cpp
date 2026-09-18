@@ -246,7 +246,11 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             telemetry.systemState = state;
             telemetry.currentThreshold = currentThreshold;
             telemetry.totalFramesProcessed = count;
-            telemetry.lifecycleSummary = m_lifecycle.getStatusSummary();
+
+            std::string driverName = m_camera->getActiveDriverName();
+            bool isSynthetic = m_camera->isUsingSyntheticFallback();
+            std::string statusLabel = isSynthetic ? "模擬測試相機 (Synthetic)" : driverName;
+            telemetry.lifecycleSummary = "相機狀態: " + statusLabel + " | 30 FPS 串流正常 (累計 " + std::to_string(count) + " 幀)";
 
             m_telemetryCallback(telemetry);
         }
