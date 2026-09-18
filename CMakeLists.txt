@@ -132,6 +132,14 @@ target_link_libraries(efd_gui PRIVATE efd_core)
 
 if(WIN32)
     target_link_libraries(efd_gui PRIVATE gdi32 user32 shell32 gdiplus)
+    add_custom_command(TARGET efd_gui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+            "$<TARGET_FILE_DIR:efd_gui>/assets"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/design"
+            "$<TARGET_FILE_DIR:efd_gui>/design"
+    )
 endif()
 
 # -----------------------------------------------------------------------------

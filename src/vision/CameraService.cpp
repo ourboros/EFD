@@ -104,11 +104,14 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
 }
 
 bool CameraService::startSynthetic() {
-    stop();
-    m_forceSynthetic = true;
     stopWatchdog();
+    m_forceSynthetic = true;
     
     std::lock_guard<std::mutex> lock(m_driverMutex);
+    if (m_driver) {
+        m_driver->close();
+        m_driver.reset();
+    }
     m_driver = std::make_unique<SyntheticCameraDriver>();
     m_driver->setFrameCallback([this](const RawFrame& f) {
         this->onDriverFrame(f);
@@ -124,9 +127,11 @@ void CameraService::startWatchdog() {
     stopWatchdog();
     m_watchdogRunning.store(true);
     m_watchdogThread = std::thread([this]() {
-        // 等待 1000 毫秒
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        if (!m_watchdogRunning.load()) return;
+        // 漸進式等待 1000 毫秒，避免緊密阻塞
+        for (int i = 0; i < 20; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (!m_watchdogRunning.load()) return;
+        }
 
         // 若 1 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
         if (m_totalFramesDelivered.load() == 0 && !m_isSyntheticFallback) {
@@ -140,7 +145,12 @@ void CameraService::stopWatchdog() {
     if (m_watchdogRunning.load()) {
         m_watchdogRunning.store(false);
         if (m_watchdogThread.joinable()) {
-            m_watchdogThread.join();
+            // 防止執行緒自我 join 死鎖
+            if (m_watchdogThread.get_id() != std::this_thread::get_id()) {
+                m_watchdogThread.join();
+            } else {
+                m_watchdogThread.detach();
+            }
         }
     }
 }

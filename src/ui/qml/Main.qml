@@ -20,13 +20,18 @@ Window {
         id: welcomeView
         WelcomeScreen {
             onStartClicked: {
+                mainStack.replace(guideView);
                 mainStack.replace(instructionView);
             }
         }
     }
 
+    // 階段 2：眼動數據提取說明介面 (中央黃點)
     // 階段 2：說明與演示預覽介面 (Demo Preview + 指引卡片)
     Component {
+        id: guideView
+        CalibrationGuide {
+            onGuideFinished: {
         id: instructionView
         CalibrationInstruction {
             onInstructionFinished: {
@@ -45,6 +50,7 @@ Window {
         }
     }
 
+    // 階段 3：眼動數據動態提取介面 (移動黃點)
     // 階段 4：實際多點眼動特徵提取 (動態移動黃點採樣)
     Component {
         id: activeCalibView
@@ -55,6 +61,7 @@ Window {
         }
     }
 
+    // 階段 4：即時疲勞監控儀表板
     // 階段 5：即時疲勞監控中心 (Dashboard)
     Component {
         id: dashboardView
@@ -93,6 +100,7 @@ Window {
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
                         Text {
+                            text: "五執行緒管線正常分析中 (30 FPS)"
                             text: "五執行緒非同步管線正常分析中 (30 FPS)"
                             color: "#FFFFFF"
                             font.pixelSize: 15
@@ -104,9 +112,11 @@ Window {
                 Button {
                     text: "重新校準基準"
                     anchors.horizontalCenter: parent.horizontalCenter
+                    onClicked: mainStack.replace(guideView)
                     onClicked: mainStack.replace(instructionView)
                 }
             }
         }
     }
 }
+

@@ -13,6 +13,8 @@ AsyncPipelineEngine::AsyncPipelineEngine(PlatformType platform)
       m_mseCalculator(5, 2, 0.15f),
       m_stateMachine(1200, 300, 300) {
     m_landmarker->initialize();
+    m_cachedComplexity.complexityIndex = 4.5f;
+    m_cachedComplexity.imfCount = 2;
 
     // 綁定生命週期事件監聽
     m_lifecycle.setLifecycleCallback([this](const LifecycleEvent& event) {
@@ -214,14 +216,14 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         m_extractor.setEyeClosedThreshold(currentThreshold);
 
         // 3. 非線性複雜度分析 (EMD / MSE / CI)
-        ComplexityMetrics complexityMetrics;
         int64_t count = ++m_processedFrameCount;
         if (count >= 30 && count % 15 == 0) {
             std::vector<float> earHistory = m_extractor.getEarHistory();
-            complexityMetrics = m_mseCalculator.calculateComplexity(earHistory);
+            m_cachedComplexity = m_mseCalculator.calculateComplexity(earHistory);
         } else if (count < 30) {
-            // 改良點 2: 冷啟動前 30 幀給予平滑清醒先驗值，避免 CI=0 造成疲勞分數突波跳變
-            complexityMetrics.complexityIndex = 4.5f;
+            // 冷啟動前 30 幀給予平滑清醒先驗值，避免 CI=0 造成疲勞分數突波跳變
+            m_cachedComplexity.complexityIndex = 4.5f;
+            m_cachedComplexity.imfCount = 2;
         }
 
         // 4. 20/5/5 防打擾狀態機推進
@@ -230,7 +232,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             package.detection.hasFace,
             eyeMetrics.perclos,
             eyeMetrics.blinkRatePerMin,
-            complexityMetrics.complexityIndex,
+            m_cachedComplexity.complexityIndex,
             deltaSec
         );
 
@@ -240,7 +242,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             telemetry.latestFrame = std::move(package.frame);
             telemetry.detection = std::move(package.detection);
             telemetry.eyeMetrics = eyeMetrics;
-            telemetry.complexityMetrics = complexityMetrics;
+            telemetry.complexityMetrics = m_cachedComplexity;
             telemetry.systemState = state;
             telemetry.currentThreshold = currentThreshold;
             telemetry.totalFramesProcessed = count;

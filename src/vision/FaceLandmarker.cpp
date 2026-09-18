@@ -90,7 +90,28 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
     result.hasFace = true;
     result.faceConfidence = 0.96f;
-    result.landmarks = generateCanonicalFaceMesh(width, height, m_simulatedOpenness);
+
+    float effectiveOpenness = m_simulatedOpenness;
+    if (m_useSyntheticEngine && m_simulatedOpenness >= 0.85f) {
+        static auto initTime = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        float t = std::chrono::duration_cast<std::chrono::milliseconds>(now - initTime).count() / 1000.0f;
+
+        // 1. 微小生理波動 (Micro-saccades & physiological tremors)
+        float tremor = 0.035f * std::sin(t * 6.7f) + 0.018f * std::cos(t * 17.3f);
+
+        // 2. 自發性自然眨眼 (Spontaneous blink cycle every ~3.6s, duration ~180ms)
+        float blinkCycle = std::fmod(t, 3.6f);
+        float blinkFactor = 1.0f;
+        if (blinkCycle > 3.40f && blinkCycle < 3.58f) {
+            float blinkProgress = (blinkCycle - 3.40f) / 0.18f;
+            blinkFactor = 0.05f + 0.95f * (4.0f * (blinkProgress - 0.5f) * (blinkProgress - 0.5f));
+        }
+
+        effectiveOpenness = std::clamp(m_simulatedOpenness * blinkFactor + tremor, 0.02f, 1.05f);
+    }
+
+    result.landmarks = generateCanonicalFaceMesh(width, height, effectiveOpenness);
 
     auto endTime = std::chrono::steady_clock::now();
     result.inferenceTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();

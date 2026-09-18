@@ -112,6 +112,7 @@ private:
 
     TelemetryCallback m_telemetryCallback;
     std::atomic<int64_t> m_processedFrameCount{0};
+    ComplexityMetrics m_cachedComplexity;
 
     void inferenceWorkerLoop();
     void signalProcessingWorkerLoop();
