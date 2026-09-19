@@ -204,3 +204,4 @@ void SystemTrayManager::removeIcon() {
 } // namespace efd
 
 #endif
+

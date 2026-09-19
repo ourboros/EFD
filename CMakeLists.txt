@@ -86,6 +86,7 @@ set(EFD_CORE_SOURCES
 )
 
 if(WIN32)
+    list(APPEND EFD_CORE_SOURCES src/vision/drivers/WindowsMfCameraDriver.cpp)
     list(APPEND EFD_CORE_SOURCES 
         src/vision/drivers/WindowsMfCameraDriver.cpp
         src/platform/windows/SystemTrayManager.cpp
@@ -99,6 +100,7 @@ add_library(efd_core STATIC
 )
 
 if(WIN32)
+    target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib)
     target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib gdi32 user32 shell32 gdiplus)
 endif()
 

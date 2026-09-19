@@ -5,13 +5,22 @@
       "label": "CMake: Build (Debug)",
       "type": "process",
       "command": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
-      "args": ["--build", "${workspaceFolder}/build", "--config", "Debug"],
+      "args": ["--build", "${workspaceFolder}/build/vs-x64", "--config", "Debug"],
       "group": {
         "kind": "build",
         "isDefault": true
       },
       "problemMatcher": "$msCompile",
-      "detail": "透過 CMake 建置 EFD 專案 (Debug)"
+      "detail": "透過 CMake 建置 EFD 專案 (vs-x64 Debug)"
+    },
+    {
+      "label": "CMake: Build (build/ Debug)",
+      "type": "process",
+      "command": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
+      "args": ["--build", "${workspaceFolder}/build", "--config", "Debug"],
+      "group": "build",
+      "problemMatcher": "$msCompile",
+      "detail": "透過 CMake 建置 EFD 專案 (build/ Debug)"
     },
     {
       "label": "CMake: Run GUI",

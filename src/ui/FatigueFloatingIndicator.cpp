@@ -241,3 +241,4 @@ LRESULT CALLBACK FatigueFloatingIndicator::WndProc(HWND hwnd, UINT msg, WPARAM w
 } // namespace efd
 
 #endif
+
