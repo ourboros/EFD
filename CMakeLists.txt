@@ -60,6 +60,8 @@ set(EFD_CORE_HEADERS
     src/vision/drivers/AndroidCamera2Driver.hpp
     src/vision/drivers/AppleAvFoundationCameraDriver.hpp
     src/platform/PlatformLifecycleAdapter.hpp
+    src/storage/DatabaseService.hpp
+    src/study/StudyWorkflowTracker.hpp
     src/engine/AsyncPipelineEngine.hpp
 )
 
@@ -74,6 +76,8 @@ set(EFD_CORE_SOURCES
     src/vision/VisionPipeline.cpp
     src/vision/drivers/SyntheticCameraDriver.cpp
     src/platform/PlatformLifecycleAdapter.cpp
+    src/storage/DatabaseService.cpp
+    src/study/StudyWorkflowTracker.cpp
     src/engine/AsyncPipelineEngine.cpp
 )
 

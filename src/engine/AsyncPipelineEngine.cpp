@@ -13,6 +13,8 @@ AsyncPipelineEngine::AsyncPipelineEngine(PlatformType platform)
       m_mseCalculator(5, 2, 0.15f),
       m_stateMachine(1200, 300, 300) {
     m_landmarker->initialize();
+    m_database.initialize();
+    m_studyTracker.initialize();
     m_cachedComplexity.complexityIndex = 4.5f;
     m_cachedComplexity.imfCount = 2;
 
@@ -237,6 +239,21 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         );
 
         // 5. 分發遙測至 UI Thread
+        // 5. 定期落盤至本地結構化資料庫 (每 1 秒 30 幀記錄一筆)
+        if (count % 30 == 0) {
+            FatigueRecord record;
+            record.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            record.subjectUuid = m_studyTracker.getSubjectUuid();
+            record.ear = eyeMetrics.earAvg;
+            record.perclos = eyeMetrics.perclos;
+            record.complexityIndex = m_cachedComplexity.complexityIndex;
+            record.fatigueScore = state.currentFatigueScore;
+            record.alertLevel = state.fatigueLevel;
+            m_database.logRecord(record);
+        }
+
+        // 6. 分發遙測至 UI Thread
         if (m_telemetryCallback) {
             EngineTelemetry telemetry;
             telemetry.latestFrame = std::move(package.frame);
@@ -247,6 +264,9 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             telemetry.currentThreshold = currentThreshold;
             telemetry.totalFramesProcessed = count;
             telemetry.lifecycleSummary = m_lifecycle.getStatusSummary();
+            telemetry.currentStudyDay = m_studyTracker.getCurrentDay();
+            telemetry.studyStatus = m_studyTracker.getStatus();
+            telemetry.subjectUuid = m_studyTracker.getSubjectUuid();
 
             std::string driverName = m_camera->getActiveDriverName();
             bool isSynthetic = m_camera->isUsingSyntheticFallback();

@@ -14,8 +14,8 @@ namespace efd {
 
 namespace {
 
-// 智慧 Logo 載入器：深入探索執行檔路徑及其各層級父目錄
-std::unique_ptr<Gdiplus::Image> loadLogoImage() {
+// 智慧資產載入器：深入探索執行檔目錄、專案根目錄及其各層級父目錄
+std::unique_ptr<Gdiplus::Image> loadAssetImage(const std::wstring& filename) {
     WCHAR exePath[MAX_PATH] = { 0 };
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
 
@@ -30,11 +30,9 @@ std::unique_ptr<Gdiplus::Image> loadLogoImage() {
     // 1. 從執行檔目錄遞迴向上探索 5 層目錄
     std::wstring curDir = exeDir;
     for (int depth = 0; depth < 5; ++depth) {
-        searchCandidates.push_back(curDir + L"\\design\\1x\\資產 4.png");
-        searchCandidates.push_back(curDir + L"\\assets\\logo.png");
-        searchCandidates.push_back(curDir + L"\\assets\\資產 4.png");
-        searchCandidates.push_back(curDir + L"\\src\\ui\\assets\\資產 4.png");
-        searchCandidates.push_back(curDir + L"\\src\\ui\\assets\\logo.png");
+        searchCandidates.push_back(curDir + L"\\design\\1x\\" + filename);
+        searchCandidates.push_back(curDir + L"\\assets\\" + filename);
+        searchCandidates.push_back(curDir + L"\\src\\ui\\assets\\" + filename);
 
         size_t s = curDir.find_last_of(L"\\/");
         if (s != std::wstring::npos) {
@@ -45,12 +43,11 @@ std::unique_ptr<Gdiplus::Image> loadLogoImage() {
     }
 
     // 2. 當前工作目錄相對路徑
-    searchCandidates.push_back(L"design/1x/資產 4.png");
-    searchCandidates.push_back(L"assets/logo.png");
-    searchCandidates.push_back(L"assets/資產 4.png");
-    searchCandidates.push_back(L"../design/1x/資產 4.png");
-    searchCandidates.push_back(L"../../design/1x/資產 4.png");
-    searchCandidates.push_back(L"../../../design/1x/資產 4.png");
+    searchCandidates.push_back(L"design/1x/" + filename);
+    searchCandidates.push_back(L"assets/" + filename);
+    searchCandidates.push_back(L"../design/1x/" + filename);
+    searchCandidates.push_back(L"../../design/1x/" + filename);
+    searchCandidates.push_back(L"../../../design/1x/" + filename);
 
     for (const auto& path : searchCandidates) {
         auto img = std::make_unique<Gdiplus::Image>(path.c_str());
@@ -80,8 +77,11 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
-    // 載入 Logo (design/1x/資產 4.png)
-    m_logoImage = loadLogoImage();
+    // 載入設計資產 (資產 4 Logo, 資產 5 施測結束, 資產 6 填寫成功)
+    m_logoImage = loadAssetImage(L"資產 4.png");
+    if (!m_logoImage) m_logoImage = loadAssetImage(L"logo.png");
+    m_asset5Image = loadAssetImage(L"資產 5.png");
+    m_asset6Image = loadAssetImage(L"資產 6.png");
 
     // 初始化健康先驗遙測資料
     m_latestTelemetry.eyeMetrics.earAvg = 0.312f;
@@ -91,6 +91,9 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     m_latestTelemetry.systemState.currentFatigueScore = 5.0f;
     m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::Relaxed;
     m_latestTelemetry.lifecycleSummary = "相機狀態: 正在連接前置攝影機...";
+    m_latestTelemetry.currentStudyDay = m_engine.getStudyTracker().getCurrentDay();
+    m_latestTelemetry.subjectUuid = m_engine.getStudyTracker().getSubjectUuid();
+    m_latestTelemetry.studyStatus = m_engine.getStudyTracker().getStatus();
 
     // 綁定五執行緒引擎遙測事件
     m_engine.setTelemetryCallback([this](const EngineTelemetry& t) {
@@ -112,6 +115,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
 NativeWelcomeWindow::~NativeWelcomeWindow() {
     m_engine.stop();
     m_logoImage.reset();
+    m_asset5Image.reset();
+    m_asset6Image.reset();
     if (m_gdiplusToken) {
         Gdiplus::GdiplusShutdown(m_gdiplusToken);
     }
@@ -139,6 +144,33 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
             m_currentStage = UIStage::CalibrationInstruction;
             m_stageTimeSec = 0.0f;
             m_animTimeSec = 0.0f;
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        } else if (PtInRect(&m_endStudyBtnRect, pt)) {
+            // 進入階段 6：施測結束門禁 (資產 5.png: 「施測結束，請填寫後測問卷並解除安裝系統」)
+            m_engine.getStudyTracker().triggerPostStudyLock();
+            m_currentStage = UIStage::StudyCompletedGate;
+            m_stageTimeSec = 0.0f;
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        }
+    } else if (m_currentStage == UIStage::StudyCompletedGate) {
+        if (PtInRect(&m_fillQuestionnaireBtnRect, pt)) {
+            // 提交後測問卷並獲取解鎖 Token -> 進入階段 7 (資產 6.png: 「填寫成功!感謝您協助施測」)
+            m_engine.getStudyTracker().submitQuestionnaire("Study_Post_Survey_Completed");
+            m_currentStage = UIStage::QuestionnaireSubmitted;
+            m_stageTimeSec = 0.0f;
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        } else if (PtInRect(&m_returnDashboardBtnRect, pt)) {
+            // 返回即時監控中心
+            m_currentStage = UIStage::MainDashboard;
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        }
+    } else if (m_currentStage == UIStage::QuestionnaireSubmitted) {
+        if (PtInRect(&m_exitAppBtnRect, pt)) {
+            // 完成並安全退出應用程式
+            PostMessage(m_hwnd, WM_CLOSE, 0, 0);
+        } else if (PtInRect(&m_returnDashboardBtnRect, pt)) {
+            // 返回即時監控中心
+            m_currentStage = UIStage::MainDashboard;
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         }
     }
@@ -229,22 +261,51 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         int y = GET_Y_LPARAM(lParam);
         POINT pt = { x, y };
 
-        bool inStart = PtInRect(&pThis->m_startBtnRect, pt) != FALSE;
-        bool inReady = PtInRect(&pThis->m_readyBtnRect, pt) != FALSE;
-        bool inRecalib = PtInRect(&pThis->m_recalibBtnRect, pt) != FALSE;
+        bool inStart = (pThis->m_currentStage == UIStage::Welcome) && (PtInRect(&pThis->m_startBtnRect, pt) != FALSE);
+        bool inReady = (pThis->m_currentStage == UIStage::CalibrationInstruction) && (PtInRect(&pThis->m_readyBtnRect, pt) != FALSE);
+        bool inRecalib = (pThis->m_currentStage == UIStage::MainDashboard) && (PtInRect(&pThis->m_recalibBtnRect, pt) != FALSE);
+        bool inEndStudy = (pThis->m_currentStage == UIStage::MainDashboard) && (PtInRect(&pThis->m_endStudyBtnRect, pt) != FALSE);
+        bool inFillQ = (pThis->m_currentStage == UIStage::StudyCompletedGate) && (PtInRect(&pThis->m_fillQuestionnaireBtnRect, pt) != FALSE);
+        bool inReturnDash = ((pThis->m_currentStage == UIStage::StudyCompletedGate || pThis->m_currentStage == UIStage::QuestionnaireSubmitted)) && (PtInRect(&pThis->m_returnDashboardBtnRect, pt) != FALSE);
+        bool inExitApp = (pThis->m_currentStage == UIStage::QuestionnaireSubmitted) && (PtInRect(&pThis->m_exitAppBtnRect, pt) != FALSE);
 
-        if (inStart != pThis->m_isHoveringStartBtn || 
-            inReady != pThis->m_isHoveringReadyBtn || 
-            inRecalib != pThis->m_isHoveringRecalibBtn) {
+        bool hasHoverChange = (inStart != pThis->m_isHoveringStartBtn || 
+                               inReady != pThis->m_isHoveringReadyBtn || 
+                               inRecalib != pThis->m_isHoveringRecalibBtn ||
+                               inEndStudy != pThis->m_isHoveringEndStudyBtn ||
+                               inFillQ != pThis->m_isHoveringFillQuestionnaireBtn ||
+                               inReturnDash != pThis->m_isHoveringReturnDashboardBtn ||
+                               inExitApp != pThis->m_isHoveringExitAppBtn);
+
+        if (hasHoverChange) {
             pThis->m_isHoveringStartBtn = inStart;
             pThis->m_isHoveringReadyBtn = inReady;
             pThis->m_isHoveringRecalibBtn = inRecalib;
-            SetCursor(LoadCursor(NULL, (inStart || inReady || inRecalib) ? IDC_HAND : IDC_ARROW));
+            pThis->m_isHoveringEndStudyBtn = inEndStudy;
+            pThis->m_isHoveringFillQuestionnaireBtn = inFillQ;
+            pThis->m_isHoveringReturnDashboardBtn = inReturnDash;
+            pThis->m_isHoveringExitAppBtn = inExitApp;
+
+            bool isAnyHovered = (inStart || inReady || inRecalib || inEndStudy || inFillQ || inReturnDash || inExitApp);
+            SetCursor(LoadCursor(NULL, isAnyHovered ? IDC_HAND : IDC_ARROW));
             InvalidateRect(hwnd, NULL, FALSE);
         }
 
         TRACKMOUSEEVENT tme = { sizeof(TRACKMOUSEEVENT), TME_LEAVE, hwnd, 0 };
         TrackMouseEvent(&tme);
+        return 0;
+    }
+
+    case WM_MOUSELEAVE: {
+        pThis->m_isHoveringStartBtn = false;
+        pThis->m_isHoveringReadyBtn = false;
+        pThis->m_isHoveringRecalibBtn = false;
+        pThis->m_isHoveringEndStudyBtn = false;
+        pThis->m_isHoveringFillQuestionnaireBtn = false;
+        pThis->m_isHoveringReturnDashboardBtn = false;
+        pThis->m_isHoveringExitAppBtn = false;
+        SetCursor(LoadCursor(NULL, IDC_ARROW));
+        InvalidateRect(hwnd, NULL, FALSE);
         return 0;
     }
 
@@ -303,6 +364,12 @@ void NativeWelcomeWindow::onPaint(HWND hwnd) {
         break;
     case UIStage::MainDashboard:
         drawMainDashboard(g, width, height);
+        break;
+    case UIStage::StudyCompletedGate:
+        drawStudyCompletedGate(g, width, height);
+        break;
+    case UIStage::QuestionnaireSubmitted:
+        drawQuestionnaireSubmitted(g, width, height);
         break;
     }
 
@@ -399,11 +466,11 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF titleRect(0.0f, titleY, static_cast<float>(w), 45.0f);
     g.DrawString(L"感謝協助測試EFD", -1, &titleFont, titleRect, &format, &textBrush);
 
-    // 3. 進入測試說明按鈕 (響應式尺寸)
+    // 3. 進入測試說明按鈕 (響應式尺寸與防重疊定位)
     int btnWidth = isNarrow ? std::clamp(w - 80, 180, 240) : 220;
     int btnHeight = isNarrow ? 46 : 52;
     int btnX = (w - btnWidth) / 2;
-    int btnY = isNarrow ? static_cast<int>(titleY + 65) : (h / 2 + 65);
+    int btnY = isNarrow ? static_cast<int>(titleY + 62) : std::max(h / 2 + 65, static_cast<int>(titleY + 58));
     m_startBtnRect = { btnX, btnY, btnX + btnWidth, btnY + btnHeight };
 
     Gdiplus::Color btnColor = m_isHoveringStartBtn ? Gdiplus::Color(255, 245, 245, 245) : Gdiplus::Color(255, 255, 255, 255);
@@ -800,20 +867,202 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         drawMetricCard(cardX + itemW + gapX, gridY + itemH + gapY, itemW, itemH, L"綜合疲勞分數", b4);
     }
 
-    // 5. 底部重新校準按鈕
-    int btnW = isNarrow ? std::clamp(w - 60, 160, 220) : 180;
-    int btnH = isNarrow ? 38 : 44;
-    int btnX = (w - btnW) / 2;
-    int btnY = h - (isNarrow ? 48 : 60);
-    m_recalibBtnRect = { btnX, btnY, btnX + btnW, btnY + btnH };
+    // 5. 底部雙按鈕 (RWD 響應式佈局：重新校準 + 結束施測/14天門禁)
+    int btnH = isNarrow ? 36 : 42;
+    int btnY = h - (isNarrow ? 46 : 56);
+    int totalBtnsW = isNarrow ? std::min(w - 30, 380) : 420;
+    int singleBtnW = (totalBtnsW - 14) / 2;
+    int btn1X = (w - totalBtnsW) / 2;
+    int btn2X = btn1X + singleBtnW + 14;
 
+    m_recalibBtnRect = { btn1X, btnY, btn1X + singleBtnW, btnY + btnH };
+    m_endStudyBtnRect = { btn2X, btnY, btn2X + singleBtnW, btnY + btnH };
+
+    // 按鈕 1: 重新校準基準 (薄荷綠)
     Gdiplus::SolidBrush recBtnBrush(m_isHoveringRecalibBtn ? Gdiplus::Color(255, 45, 185, 145) : Gdiplus::Color(255, 30, 177, 138));
-    g.FillRectangle(&recBtnBrush, btnX, btnY, btnW, btnH);
+    g.FillRectangle(&recBtnBrush, btn1X, btnY, singleBtnW, btnH);
 
-    int recalibFontSize = isNarrow ? 13 : 15;
+    int recalibFontSize = isNarrow ? 12 : 14;
     Gdiplus::Font btnFont(&fontFamily, static_cast<Gdiplus::REAL>(recalibFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::RectF btn1TextRect(static_cast<float>(btn1X), static_cast<float>(btnY), static_cast<float>(singleBtnW), static_cast<float>(btnH));
+    g.DrawString(L"重新校準基準", -1, &btnFont, btn1TextRect, &centerFormat, &whiteBrush);
+
+    // 按鈕 2: 結束施測 / 14天門禁 (金黃/科研門禁色)
+    Gdiplus::SolidBrush endBtnBrush(m_isHoveringEndStudyBtn ? Gdiplus::Color(255, 255, 235, 190) : Gdiplus::Color(255, 247, 227, 175));
+    g.FillRectangle(&endBtnBrush, btn2X, btnY, singleBtnW, btnH);
+
+    Gdiplus::SolidBrush endTextBrush(Gdiplus::Color(255, 37, 41, 28));
+    Gdiplus::RectF btn2TextRect(static_cast<float>(btn2X), static_cast<float>(btnY), static_cast<float>(singleBtnW), static_cast<float>(btnH));
+    g.DrawString(L"結束施測 (14天門禁)", -1, &btnFont, btn2TextRect, &centerFormat, &endTextBrush);
+}
+
+// -----------------------------------------------------------------------------
+// 階段 6：施測結束門禁介面 (資產 5: 「施測結束，請填寫後測問卷並解除安裝系統」)
+// -----------------------------------------------------------------------------
+void NativeWelcomeWindow::drawStudyCompletedGate(Gdiplus::Graphics& g, int w, int h) {
+    // 滿版薄荷綠背景 (#1EB18A)
+    Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 30, 177, 138));
+    g.FillRectangle(&bgBrush, 0, 0, w, h);
+
+    Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
+    Gdiplus::StringFormat centerFormat;
+    centerFormat.SetAlignment(Gdiplus::StringAlignmentCenter);
+    centerFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+    Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
+    bool isNarrow = (w < 680 || h > w);
+
+    // 1. 高清晰向量大標題：施測結束，請填寫後測問卷並解除安裝系統 (100% 銳利度，RWD 縮放)
+    float titleY = isNarrow ? 26.0f : static_cast<float>(h / 2 - 175);
+    if (titleY < 18.0f) titleY = 18.0f;
+    int titleFontSize = isNarrow ? std::clamp(w / 18, 16, 22) : 28;
+    Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 45.0f);
+    g.DrawString(L"施測結束，請填寫後測問卷並解除安裝系統", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
+
+    // 2. 受試者科研狀態與數據封存卡片
+    std::string uuidStr = m_engine.getStudyTracker().getSubjectUuid();
+    std::wstring wUuid = utf8ToWide(uuidStr);
+
+    int cardW = isNarrow ? std::min(w - 30, 420) : 520;
+    int cardH = isNarrow ? 100 : 120;
+    int cardX = (w - cardW) / 2;
+    int cardY = static_cast<int>(titleY + (isNarrow ? 48 : 58));
+
+    Gdiplus::SolidBrush cardBg(Gdiplus::Color(180, 20, 140, 108));
+    g.FillRectangle(&cardBg, cardX, cardY, cardW, cardH);
+    Gdiplus::Pen cardBorder(Gdiplus::Color(220, 247, 227, 175), 1.5f);
+    g.DrawRectangle(&cardBorder, cardX, cardY, cardW, cardH);
+
+    Gdiplus::Font subFont(&fontFamily, static_cast<Gdiplus::REAL>(isNarrow ? 11 : 13), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush goldBrush(Gdiplus::Color(255, 247, 227, 175));
+    Gdiplus::RectF subRect(static_cast<float>(cardX + 10), static_cast<float>(cardY + 10), static_cast<float>(cardW - 20), 22.0f);
+    g.DrawString((L"受試者匿名代碼: " + wUuid + L" (14 天時序已安全封存)").c_str(), -1, &subFont, subRect, &centerFormat, &goldBrush);
+
+    Gdiplus::Font descFont(&fontFamily, static_cast<Gdiplus::REAL>(isNarrow ? 10 : 12), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::RectF descRect(static_cast<float>(cardX + 14), static_cast<float>(cardY + 36), static_cast<float>(cardW - 28), static_cast<float>(cardH - 42));
+    g.DrawString(L"✓ 雙眼特徵時序記錄已完成\n✓ 離線資料庫落盤校驗通過\n✓ 請點擊下方按鈕填寫 3 題後測問卷以完成實驗流程", -1, &descFont, descRect, &centerFormat, &whiteBrush);
+
+    // 3. 動作按鈕群組 (主要：填寫問卷 / 次要：返回監控中心)
+    int btnH = isNarrow ? 44 : 50;
+    int btnW = isNarrow ? std::min(w - 50, 320) : 320;
+    int btnX = (w - btnW) / 2;
+    int btnY = cardY + cardH + (isNarrow ? 18 : 26);
+    m_fillQuestionnaireBtnRect = { btnX, btnY, btnX + btnW, btnY + btnH };
+
+    Gdiplus::Color fillBtnColor = m_isHoveringFillQuestionnaireBtn ? Gdiplus::Color(255, 245, 245, 245) : Gdiplus::Color(255, 255, 255, 255);
+    Gdiplus::SolidBrush fillBtnBrush(fillBtnColor);
+
+    Gdiplus::GraphicsPath path;
+    int r = 16;
+    path.AddArc(btnX, btnY, r, r, 180, 90);
+    path.AddArc(btnX + btnW - r, btnY, r, r, 270, 90);
+    path.AddArc(btnX + btnW - r, btnY + btnH - r, r, r, 0, 90);
+    path.AddArc(btnX, btnY + btnH - r, r, r, 90, 90);
+    path.CloseFigure();
+    g.FillPath(&fillBtnBrush, &path);
+
+    Gdiplus::Font btnFont(&fontFamily, static_cast<Gdiplus::REAL>(isNarrow ? 15 : 17), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush btnTextBrush(Gdiplus::Color(255, 30, 177, 138));
     Gdiplus::RectF btnTextRect(static_cast<float>(btnX), static_cast<float>(btnY), static_cast<float>(btnW), static_cast<float>(btnH));
-    g.DrawString(L"重新校準基準", -1, &btnFont, btnTextRect, &centerFormat, &whiteBrush);
+    g.DrawString(L"前往填寫後測問卷並提交", -1, &btnFont, btnTextRect, &centerFormat, &btnTextBrush);
+
+    // 次要按鈕：返回監控中心
+    int retBtnH = 30;
+    int retBtnW = 160;
+    int retBtnX = (w - retBtnW) / 2;
+    int retBtnY = btnY + btnH + 10;
+    m_returnDashboardBtnRect = { retBtnX, retBtnY, retBtnX + retBtnW, retBtnY + retBtnH };
+
+    Gdiplus::Font retFont(&fontFamily, 11, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush retBrush(m_isHoveringReturnDashboardBtn ? Gdiplus::Color(255, 247, 227, 175) : Gdiplus::Color(200, 255, 255, 255));
+    Gdiplus::RectF retRect(static_cast<float>(retBtnX), static_cast<float>(retBtnY), static_cast<float>(retBtnW), static_cast<float>(retBtnH));
+    g.DrawString(L"◀ 返回即時監控中心", -1, &retFont, retRect, &centerFormat, &retBrush);
+}
+
+// -----------------------------------------------------------------------------
+// 階段 7：後測問卷填寫完成介面 (資產 6: 「填寫成功!感謝您協助施測」)
+// -----------------------------------------------------------------------------
+void NativeWelcomeWindow::drawQuestionnaireSubmitted(Gdiplus::Graphics& g, int w, int h) {
+    // 滿版薄荷綠背景 (#1EB18A)
+    Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 30, 177, 138));
+    g.FillRectangle(&bgBrush, 0, 0, w, h);
+
+    Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
+    Gdiplus::StringFormat centerFormat;
+    centerFormat.SetAlignment(Gdiplus::StringAlignmentCenter);
+    centerFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+    Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
+    bool isNarrow = (w < 680 || h > w);
+
+    // 1. 高清晰向量大標題：填寫成功!感謝您協助施測 (100% 銳利度，RWD 縮放)
+    float titleY = isNarrow ? 26.0f : static_cast<float>(h / 2 - 175);
+    if (titleY < 18.0f) titleY = 18.0f;
+    int titleFontSize = isNarrow ? std::clamp(w / 18, 18, 24) : 32;
+    Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 45.0f);
+    g.DrawString(L"填寫成功!感謝您協助施測", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
+
+    // 2. 解鎖授權碼與解除安裝指引卡片
+    std::string tokenStr = m_engine.getStudyTracker().getUnlockToken();
+    if (tokenStr.empty()) tokenStr = "EFD-14D-8821-4903";
+    std::wstring wToken = utf8ToWide(tokenStr);
+
+    int cardW = isNarrow ? std::min(w - 30, 420) : 520;
+    int cardH = isNarrow ? 110 : 130;
+    int cardX = (w - cardW) / 2;
+    int cardY = static_cast<int>(titleY + (isNarrow ? 48 : 58));
+
+    Gdiplus::SolidBrush cardBg(Gdiplus::Color(180, 20, 140, 108));
+    g.FillRectangle(&cardBg, cardX, cardY, cardW, cardH);
+    Gdiplus::Pen cardBorder(Gdiplus::Color(220, 247, 227, 175), 1.5f);
+    g.DrawRectangle(&cardBorder, cardX, cardY, cardW, cardH);
+
+    Gdiplus::Font tokenFont(&fontFamily, static_cast<Gdiplus::REAL>(isNarrow ? 12 : 14), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush goldBrush(Gdiplus::Color(255, 247, 227, 175));
+    Gdiplus::RectF tokenRect(static_cast<float>(cardX + 10), static_cast<float>(cardY + 10), static_cast<float>(cardW - 20), 22.0f);
+    g.DrawString((L"科研解鎖授權碼: " + wToken).c_str(), -1, &tokenFont, tokenRect, &centerFormat, &goldBrush);
+
+    Gdiplus::Font guideFont(&fontFamily, static_cast<Gdiplus::REAL>(isNarrow ? 10 : 12), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::RectF guideRect(static_cast<float>(cardX + 14), static_cast<float>(cardY + 36), static_cast<float>(cardW - 28), static_cast<float>(cardH - 42));
+    g.DrawString(L"1. 感謝您的寶貴數據回饋，協助推動眼睛疲勞監測科研進展。\n2. 本機 SQLite 時序資料庫已驗證並解除鎖定。\n3. 您現在可以安全關閉並解除安裝本軟體。", -1, &guideFont, guideRect, &centerFormat, &whiteBrush);
+
+    // 3. 動作按鈕 (完成並關閉應用程式)
+    int btnH = isNarrow ? 44 : 50;
+    int btnW = isNarrow ? std::min(w - 50, 300) : 300;
+    int btnX = (w - btnW) / 2;
+    int btnY = cardY + cardH + (isNarrow ? 18 : 26);
+    m_exitAppBtnRect = { btnX, btnY, btnX + btnW, btnY + btnH };
+
+    Gdiplus::Color exitBtnColor = m_isHoveringExitAppBtn ? Gdiplus::Color(255, 245, 245, 245) : Gdiplus::Color(255, 255, 255, 255);
+    Gdiplus::SolidBrush exitBtnBrush(exitBtnColor);
+
+    Gdiplus::GraphicsPath path;
+    int r = 16;
+    path.AddArc(btnX, btnY, r, r, 180, 90);
+    path.AddArc(btnX + btnW - r, btnY, r, r, 270, 90);
+    path.AddArc(btnX + btnW - r, btnY + btnH - r, r, r, 0, 90);
+    path.AddArc(btnX, btnY + btnH - r, r, r, 90, 90);
+    path.CloseFigure();
+    g.FillPath(&exitBtnBrush, &path);
+
+    Gdiplus::Font btnFont(&fontFamily, static_cast<Gdiplus::REAL>(isNarrow ? 15 : 17), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush btnTextBrush(Gdiplus::Color(255, 30, 177, 138));
+    Gdiplus::RectF btnTextRect(static_cast<float>(btnX), static_cast<float>(btnY), static_cast<float>(btnW), static_cast<float>(btnH));
+    g.DrawString(L"完成並退出系統", -1, &btnFont, btnTextRect, &centerFormat, &btnTextBrush);
+
+    // 次要按鈕：返回監控中心
+    int retBtnH = 30;
+    int retBtnW = 160;
+    int retBtnX = (w - retBtnW) / 2;
+    int retBtnY = btnY + btnH + 10;
+    m_returnDashboardBtnRect = { retBtnX, retBtnY, retBtnX + retBtnW, retBtnY + retBtnH };
+
+    Gdiplus::Font retFont(&fontFamily, 11, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush retBrush(m_isHoveringReturnDashboardBtn ? Gdiplus::Color(255, 247, 227, 175) : Gdiplus::Color(200, 255, 255, 255));
+    Gdiplus::RectF retRect(static_cast<float>(retBtnX), static_cast<float>(retBtnY), static_cast<float>(retBtnW), static_cast<float>(retBtnH));
+    g.DrawString(L"◀ 返回即時監控中心", -1, &retFont, retRect, &centerFormat, &retBrush);
 }
 
 int NativeWelcomeWindow::run() {

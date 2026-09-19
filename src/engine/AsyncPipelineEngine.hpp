@@ -10,6 +10,8 @@
 #include "analysis/MseCalculator.hpp"
 #include "state/FatigueStateMachine.hpp"
 #include "platform/PlatformLifecycleAdapter.hpp"
+#include "storage/DatabaseService.hpp"
+#include "study/StudyWorkflowTracker.hpp"
 
 #include <memory>
 #include <mutex>
@@ -30,6 +32,9 @@ struct EngineTelemetry {
     float currentThreshold = 0.21f;
     int64_t totalFramesProcessed = 0;
     std::string lifecycleSummary;
+    int currentStudyDay = 1;
+    StudyStatus studyStatus = StudyStatus::ActiveMonitoring;
+    std::string subjectUuid;
 };
 
 class AsyncPipelineEngine {
@@ -74,9 +79,13 @@ public:
     AdaptiveBaseline& getAdaptiveBaseline() { return m_baseline; }
     FeatureExtractor& getFeatureExtractor() { return m_extractor; }
     CameraService& getCameraService() { return *m_camera; }
+    DatabaseService& getDatabaseService() { return m_database; }
+    StudyWorkflowTracker& getStudyTracker() { return m_studyTracker; }
 
 private:
     PlatformLifecycleAdapter m_lifecycle;
+    DatabaseService m_database;
+    StudyWorkflowTracker m_studyTracker;
 
     std::unique_ptr<CameraService>  m_camera;
     std::unique_ptr<FaceLandmarker> m_landmarker;

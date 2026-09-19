@@ -11,6 +11,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <windowsx.h>
 #include <objidl.h>
@@ -24,7 +27,9 @@ enum class UIStage : uint8_t {
     CalibrationInstruction, // 階段 2: 說明與演示預覽介面 (預覽動畫視窗 + 3大操作指南 + 「我準備好了」按鈕)
     CountdownWait,          // 階段 3: 3 秒倒數計時等待 (3 -> 2 -> 1 -> 開始！)
     ActiveCalibration,      // 階段 4: 實際多點眼動提取 (黃點全螢幕多點移動採樣)
-    MainDashboard           // 階段 5: 即時疲勞監控中心 (動態跳動實時數據)
+    MainDashboard,          // 階段 5: 即時疲勞監控中心 (動態跳動實時數據)
+    StudyCompletedGate,     // 階段 6: 施測結束門禁 (資產 5.png: 「施測結束，請填寫後測問卷並解除安裝系統」)
+    QuestionnaireSubmitted  // 階段 7: 後測問卷填寫完成 (資產 6.png: 「填寫成功!感謝您協助施測」)
 };
 
 class NativeWelcomeWindow {
@@ -48,7 +53,9 @@ private:
 #ifdef _WIN32
     HWND m_hwnd = nullptr;
     ULONG_PTR m_gdiplusToken = 0;
-    std::unique_ptr<Gdiplus::Image> m_logoImage;
+    std::unique_ptr<Gdiplus::Image> m_logoImage;   // 資產 4.png
+    std::unique_ptr<Gdiplus::Image> m_asset5Image; // 資產 5.png (施測結束)
+    std::unique_ptr<Gdiplus::Image> m_asset6Image; // 資產 6.png (填寫成功)
 
     // 動畫與時間計算
     float m_animTimeSec = 0.0f;
@@ -67,9 +74,18 @@ private:
     RECT m_startBtnRect{};
     RECT m_readyBtnRect{};
     RECT m_recalibBtnRect{};
+    RECT m_endStudyBtnRect{};
+    RECT m_fillQuestionnaireBtnRect{};
+    RECT m_returnDashboardBtnRect{};
+    RECT m_exitAppBtnRect{};
+
     bool m_isHoveringStartBtn = false;
     bool m_isHoveringReadyBtn = false;
     bool m_isHoveringRecalibBtn = false;
+    bool m_isHoveringEndStudyBtn = false;
+    bool m_isHoveringFillQuestionnaireBtn = false;
+    bool m_isHoveringReturnDashboardBtn = false;
+    bool m_isHoveringExitAppBtn = false;
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void onPaint(HWND hwnd);
@@ -82,6 +98,8 @@ private:
     void drawCountdownWait(Gdiplus::Graphics& g, int w, int h);
     void drawActiveCalibration(Gdiplus::Graphics& g, int w, int h);
     void drawMainDashboard(Gdiplus::Graphics& g, int w, int h);
+    void drawStudyCompletedGate(Gdiplus::Graphics& g, int w, int h);
+    void drawQuestionnaireSubmitted(Gdiplus::Graphics& g, int w, int h);
 #endif
 };
 

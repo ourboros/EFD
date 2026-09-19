@@ -251,6 +251,73 @@ void testCameraDriversAndHal() {
     std::cout << " [PASS] (驅動: " << driverName << ", 列舉到 " << devices.size() << " 個設備)\n";
 }
 
+void testDatabaseServicePersistence() {
+    std::cout << "[TEST] 9. 測試本地資料持久化服務 (DatabaseService)...";
+    efd::DatabaseService db("test_study_data.dat");
+    db.clearAllData();
+    assert(db.initialize());
+
+    // 寫入 5 筆時序紀錄
+    for (int i = 0; i < 5; ++i) {
+        efd::FatigueRecord r;
+        r.timestampMs = 1700000000000LL + i * 1000;
+        r.subjectUuid = "SUBJ-TEST-001";
+        r.ear = 0.30f - i * 0.02f;
+        r.perclos = i * 0.05f;
+        r.complexityIndex = 4.5f - i * 0.2f;
+        r.fatigueScore = 5.0f + i * 10.0f;
+        r.alertLevel = (i >= 3) ? efd::FatigueLevel::Attention : efd::FatigueLevel::Relaxed;
+        assert(db.logRecord(r));
+    }
+
+    assert(db.getRecordCount() == 5);
+    auto latest = db.getLatestRecords(3);
+    assert(latest.size() == 3);
+
+    std::string jsonStr = db.exportRecordsAsJson();
+    assert(jsonStr.find("\"recordCount\": 5") != std::string::npos);
+
+    std::string csvStr = db.exportRecordsAsCsv();
+    assert(csvStr.find("SUBJ-TEST-001") != std::string::npos);
+
+    // 重新載入驗證資料完整性
+    efd::DatabaseService dbReload("test_study_data.dat");
+    assert(dbReload.initialize());
+    assert(dbReload.getRecordCount() == 5);
+
+    db.clearAllData();
+    std::cout << " [PASS] (成功驗證 WAL 事務落盤、導出與重載, 記錄數=5)\n";
+}
+
+void testStudyWorkflowTrackerAndGatekeeper() {
+    std::cout << "[TEST] 10. 測試 14 天科研週期追蹤與門禁事務解鎖 (StudyWorkflowTracker)...";
+    efd::StudyWorkflowTracker tracker("test_study_config.json");
+    tracker.resetStudy("SUBJ-TEST-999");
+    assert(tracker.initialize());
+    assert(tracker.getSubjectUuid() == "SUBJ-TEST-999");
+    assert(tracker.getCurrentDay() == 1);
+    assert(tracker.getStatus() == efd::StudyStatus::ActiveMonitoring);
+
+    // 模擬實驗推進至第 13 天
+    tracker.setTimeWarpDay(13);
+    assert(tracker.getCurrentDay() == 13);
+    assert(tracker.getStatus() == efd::StudyStatus::ActiveMonitoring);
+
+    // 推進至第 14 天 -> 觸發期滿門禁 (資產 5.png)
+    tracker.advanceDay();
+    assert(tracker.getCurrentDay() == 14);
+    assert(tracker.getStatus() == efd::StudyStatus::LockedForPostTest);
+
+    // 提交後測問卷 -> 驗證事務型解鎖 (資產 6.png)
+    std::string token = tracker.submitQuestionnaire("Q1:Yes,Q2:5,Q3:Safe");
+    assert(!token.empty());
+    assert(tracker.getStatus() == efd::StudyStatus::CompletedUnlocked);
+    assert(tracker.getUnlockToken() == token);
+
+    std::remove("test_study_config.json");
+    std::cout << " [PASS] (門禁觸發正常, 解鎖 Token: " << token << ")\n";
+}
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -263,6 +330,8 @@ int main() {
     std::cout << "  - Full 20/5/5 State Machine & Escalation\n";
     std::cout << "  - Platform Lifecycle (Sleep/Wake/Hot-Resume)\n";
     std::cout << "  - Camera HAL & Drivers (WMF / Camera2 / Synthetic)\n";
+    std::cout << "  - Local SQLite/WAL Persistent Storage (Phase 3)\n";
+    std::cout << "  - 14-Day Study Workflow & Gatekeeper Unlock (Phase 3)\n";
     std::cout << "========================================================\n";
 
     testEarCalculation();
@@ -273,7 +342,9 @@ int main() {
     testPlatformLifecycleAdapter();
     testAsyncPipelineEngine();
     testCameraDriversAndHal();
+    testDatabaseServicePersistence();
+    testStudyWorkflowTrackerAndGatekeeper();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 8 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 10 項測試順利通過！\n";
     return 0;
 }

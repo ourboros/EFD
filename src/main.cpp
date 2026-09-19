@@ -29,7 +29,7 @@
 int runCliSimulation() {
     std::cout << "====================================================\n";
     std::cout << "  Eye Fatigue Detection (EFD) Engine v" << EFD_VERSION_STRING << "\n";
-    std::cout << "  Phase 2: 5-Thread Concurrency & Platform Lifecycle\n";
+    std::cout << "  Phase 3: 5-Thread Concurrency & 14-Day Study Workflow\n";
     std::cout << "  Platform: Cross-Platform (Windows/macOS/Android/iOS)\n";
     std::cout << "====================================================\n\n";
 
@@ -135,8 +135,8 @@ int main(int argc, char* argv[]) {
         return runCliSimulation();
     }
 
-    // 預設模式：直接啟動完整的四階段歡迎、黃點視覺校準與疲勞監控圖形視窗！
-    std::cout << "[EFD System] 啟動 EFD 四階段視覺校準與疲勞監控圖形介面系統...\n";
+    // 預設模式：直接啟動完整的七階段歡迎、視覺校準、疲勞監控與科研後測圖形視窗！
+    std::cout << "[EFD System] 啟動 EFD 七階段視覺校準、疲勞監控與科研後測圖形介面系統...\n";
     efd::NativeWelcomeWindow window(960, 640);
     return window.run();
 }
