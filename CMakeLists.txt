@@ -60,8 +60,11 @@ set(EFD_CORE_HEADERS
     src/vision/drivers/AndroidCamera2Driver.hpp
     src/vision/drivers/AppleAvFoundationCameraDriver.hpp
     src/platform/PlatformLifecycleAdapter.hpp
+    src/platform/windows/SystemTrayManager.hpp
     src/storage/DatabaseService.hpp
     src/study/StudyWorkflowTracker.hpp
+    src/network/NetworkSyncWorker.hpp
+    src/ui/FatigueFloatingIndicator.hpp
     src/engine/AsyncPipelineEngine.hpp
 )
 
@@ -78,11 +81,16 @@ set(EFD_CORE_SOURCES
     src/platform/PlatformLifecycleAdapter.cpp
     src/storage/DatabaseService.cpp
     src/study/StudyWorkflowTracker.cpp
+    src/network/NetworkSyncWorker.cpp
     src/engine/AsyncPipelineEngine.cpp
 )
 
 if(WIN32)
-    list(APPEND EFD_CORE_SOURCES src/vision/drivers/WindowsMfCameraDriver.cpp)
+    list(APPEND EFD_CORE_SOURCES 
+        src/vision/drivers/WindowsMfCameraDriver.cpp
+        src/platform/windows/SystemTrayManager.cpp
+        src/ui/FatigueFloatingIndicator.cpp
+    )
 endif()
 
 add_library(efd_core STATIC
@@ -91,7 +99,7 @@ add_library(efd_core STATIC
 )
 
 if(WIN32)
-    target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib)
+    target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib gdi32 user32 shell32 gdiplus)
 endif()
 
 target_include_directories(efd_core PUBLIC
@@ -110,6 +118,10 @@ if(EFD_BUILD_CLI)
         src/main.cpp
         src/ui/NativeWelcomeWindow.cpp
         src/ui/NativeWelcomeWindow.hpp
+        src/ui/FatigueFloatingIndicator.cpp
+        src/ui/FatigueFloatingIndicator.hpp
+        src/platform/windows/SystemTrayManager.cpp
+        src/platform/windows/SystemTrayManager.hpp
         src/ui/Theme.hpp
     )
     target_link_libraries(efd_cli PRIVATE efd_core)
@@ -125,6 +137,10 @@ set(EFD_GUI_SOURCES
     src/ui/main_gui.cpp
     src/ui/NativeWelcomeWindow.cpp
     src/ui/NativeWelcomeWindow.hpp
+    src/ui/FatigueFloatingIndicator.cpp
+    src/ui/FatigueFloatingIndicator.hpp
+    src/platform/windows/SystemTrayManager.cpp
+    src/platform/windows/SystemTrayManager.hpp
     src/ui/Theme.hpp
 )
 

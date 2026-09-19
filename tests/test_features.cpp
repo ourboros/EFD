@@ -18,11 +18,19 @@
 #include "vision/VisionPipeline.hpp"
 #include "vision/drivers/SyntheticCameraDriver.hpp"
 #include "platform/PlatformLifecycleAdapter.hpp"
+#include "storage/DatabaseService.hpp"
+#include "study/StudyWorkflowTracker.hpp"
+#include "network/NetworkSyncWorker.hpp"
+#include "platform/windows/SystemTrayManager.hpp"
+#include "ui/FatigueFloatingIndicator.hpp"
 #include "engine/AsyncPipelineEngine.hpp"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
 #endif
 #include <windows.h>
 #endif
@@ -318,6 +326,123 @@ void testStudyWorkflowTrackerAndGatekeeper() {
     std::cout << " [PASS] (門禁觸發正常, 解鎖 Token: " << token << ")\n";
 }
 
+void testNetworkSyncWorker() {
+    std::cout << "[TEST] 11. 測試科研雲端非同步同步與門禁憑證生成 (NetworkSyncWorker)...";
+    efd::DatabaseService db("test_sync_db.dat");
+    db.clearAllData();
+    assert(db.initialize());
+
+    // 寫入 3 筆測試資料
+    for (int i = 0; i < 3; ++i) {
+        efd::FatigueRecord r;
+        r.timestampMs = 1700000000000LL + i * 1000;
+        r.subjectUuid = "SUBJ-SYNC-101";
+        r.ear = 0.310f - i * 0.01f;
+        r.fatigueScore = 12.0f;
+        db.logRecord(r);
+    }
+    db.flush();
+
+    // 測試 Checksum 計算
+    std::string testData = "EFD-RESEARCH-DATA-PAYLOAD";
+    std::string checksum1 = efd::NetworkSyncWorker::calculateChecksum(testData);
+    std::string checksum2 = efd::NetworkSyncWorker::calculateChecksum(testData);
+    assert(!checksum1.empty());
+    assert(checksum1 == checksum2);
+
+    efd::NetworkSyncWorker worker(db, "https://api.efd-research.org/v1/sync");
+    assert(worker.getStatus() == efd::SyncStatus::Idle);
+    assert(worker.getEndpointUrl() == "https://api.efd-research.org/v1/sync");
+
+    std::atomic<bool> callbackFired{false};
+    efd::SyncResult receivedResult;
+
+    bool triggered = worker.triggerSync("SUBJ-SYNC-101", 14, "Q1:5,Q2:VerySatisfied", [&](const efd::SyncResult& res) {
+        receivedResult = res;
+        callbackFired = true;
+    });
+
+    assert(triggered);
+    
+    // 等待非同步背景任務完成 (上限 2 秒)
+    for (int i = 0; i < 200 && !callbackFired.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    assert(callbackFired.load());
+    assert(receivedResult.success);
+    assert(receivedResult.httpStatusCode == 200);
+    assert(!receivedResult.unlockToken.empty());
+    assert(receivedResult.unlockToken.rfind("EFD-14D-", 0) == 0);
+    assert(worker.getStatus() == efd::SyncStatus::Success);
+    assert(worker.getLatestUnlockToken() == receivedResult.unlockToken);
+
+    db.clearAllData();
+    std::remove("test_sync_db.dat");
+    std::cout << " [PASS] (同步成功, Checksum=" << checksum1 << ", Token=" << receivedResult.unlockToken << ")\n";
+}
+
+void testFloatingIndicatorAndSystemTray() {
+    std::cout << "[TEST] 12. 測試桌面置頂懸浮指標 HUD 與 Windows 系統托盤 (UI & Tray)...";
+#ifdef _WIN32
+    // 1. 測試懸浮指標物件
+    efd::FatigueFloatingIndicator indicator(168, 56);
+    assert(!indicator.isVisible());
+
+    bool restoreCalled = false;
+    indicator.setRestoreCallback([&]() {
+        restoreCalled = true;
+    });
+
+    // 模擬遙測數據更新 (綠色 Relaxed -> 黃色 Attention -> 紅色 SevereWarning)
+    indicator.updateMetrics(0.312f, 8.5f, efd::FatigueLevel::Relaxed, "Optimal");
+    indicator.updateMetrics(0.240f, 45.0f, efd::FatigueLevel::Attention, "Attention");
+    indicator.updateMetrics(0.180f, 85.0f, efd::FatigueLevel::SevereWarning, "Severe Alert");
+
+    // 2. 測試系統托盤管理器
+    efd::SystemTrayManager tray;
+    assert(!tray.isInitialized());
+
+    bool actionDispatched = false;
+    efd::TrayMenuAction receivedAction = efd::TrayMenuAction::ShowMainWindow;
+    tray.setActionCallback([&](efd::TrayMenuAction action) {
+        actionDispatched = true;
+        receivedAction = action;
+    });
+
+    // 建立 message-only 測試視窗以驗證 Tray 初始化與訊息響應
+    WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(NULL);
+    wc.lpszClassName = L"EFD_TestTrayHostClass";
+    RegisterClassExW(&wc);
+
+    HWND testHwnd = CreateWindowExW(0, wc.lpszClassName, L"TestTrayHost", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, wc.hInstance, NULL);
+    if (testHwnd) {
+        bool inited = tray.initialize(testHwnd, L"EFD 測試托盤");
+        if (inited) {
+            assert(tray.isInitialized());
+            tray.updateStatus(efd::FatigueLevel::Attention, 45.0f, L"注意疲勞");
+            tray.showBalloonNotification(L"EFD 警報", L"請適當休息", efd::FatigueLevel::Attention);
+            
+            // 模擬托盤雙擊訊息
+            tray.handleTrayMessage(WM_LBUTTONDBLCLK);
+            assert(actionDispatched);
+            assert(receivedAction == efd::TrayMenuAction::ShowMainWindow);
+
+            tray.removeIcon();
+            assert(!tray.isInitialized());
+        }
+        DestroyWindow(testHwnd);
+    }
+    UnregisterClassW(wc.lpszClassName, wc.hInstance);
+
+    std::cout << " [PASS] (HUD 數據流與 SystemTray 訊息分發正常)\n";
+#else
+    std::cout << " [PASS] (非 Windows 平台跳過 Win32 托盤驗證)\n";
+#endif
+}
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -332,6 +457,8 @@ int main() {
     std::cout << "  - Camera HAL & Drivers (WMF / Camera2 / Synthetic)\n";
     std::cout << "  - Local SQLite/WAL Persistent Storage (Phase 3)\n";
     std::cout << "  - 14-Day Study Workflow & Gatekeeper Unlock (Phase 3)\n";
+    std::cout << "  - Asynchronous Cloud Sync & Checksum (Phase 4)\n";
+    std::cout << "  - Stay-On-Top Floating Indicator & Tray (Phase 4)\n";
     std::cout << "========================================================\n";
 
     testEarCalculation();
@@ -344,7 +471,9 @@ int main() {
     testCameraDriversAndHal();
     testDatabaseServicePersistence();
     testStudyWorkflowTrackerAndGatekeeper();
+    testNetworkSyncWorker();
+    testFloatingIndicatorAndSystemTray();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 10 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 12 項測試順利通過！\n";
     return 0;
 }

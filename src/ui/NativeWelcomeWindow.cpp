@@ -95,9 +95,57 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     m_latestTelemetry.subjectUuid = m_engine.getStudyTracker().getSubjectUuid();
     m_latestTelemetry.studyStatus = m_engine.getStudyTracker().getStatus();
 
-    // 綁定五執行緒引擎遙測事件
+    // 綁定置頂懸浮指標 HUD 雙擊還原事件
+    m_floatingIndicator.setRestoreCallback([this]() {
+        this->showMainWindow();
+    });
+
+    // 綁定系統托盤功能表事件
+    m_trayManager.setActionCallback([this](TrayMenuAction action) {
+        switch (action) {
+        case TrayMenuAction::ShowMainWindow:
+            this->showMainWindow();
+            break;
+        case TrayMenuAction::ToggleFloatingIndicator:
+            this->toggleFloatingHUD();
+            break;
+        case TrayMenuAction::Recalibrate:
+            this->showMainWindow();
+            this->m_currentStage = UIStage::CalibrationInstruction;
+            this->m_stageTimeSec = 0.0f;
+            this->m_animTimeSec = 0.0f;
+            if (this->m_hwnd) InvalidateRect(this->m_hwnd, NULL, FALSE);
+            break;
+        case TrayMenuAction::EndStudyGate:
+            this->showMainWindow();
+            this->m_engine.getStudyTracker().triggerPostStudyLock();
+            this->m_currentStage = UIStage::StudyCompletedGate;
+            this->m_stageTimeSec = 0.0f;
+            if (this->m_hwnd) InvalidateRect(this->m_hwnd, NULL, FALSE);
+            break;
+        case TrayMenuAction::ExitApp:
+            if (this->m_hwnd) PostMessage(this->m_hwnd, WM_CLOSE, 0, 0);
+            break;
+        }
+    });
+
+    // 綁定五執行緒引擎遙測事件 (即時更新 HUD 與托盤)
     m_engine.setTelemetryCallback([this](const EngineTelemetry& t) {
         this->m_latestTelemetry = t;
+        // 即時同步至懸浮指標 HUD
+        this->m_floatingIndicator.updateMetrics(
+            t.eyeMetrics.earAvg,
+            t.systemState.currentFatigueScore,
+            t.systemState.fatigueLevel,
+            t.lifecycleSummary
+        );
+        // 即時更新系統托盤提示
+        this->m_trayManager.updateStatus(
+            t.systemState.fatigueLevel,
+            t.systemState.currentFatigueScore,
+            utf8ToWide(t.lifecycleSummary)
+        );
+
         if (this->m_hwnd && (this->m_currentStage == UIStage::MainDashboard || this->m_currentStage == UIStage::CalibrationInstruction)) {
             InvalidateRect(this->m_hwnd, NULL, FALSE);
         }
@@ -108,17 +156,47 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
             std::ostringstream oss;
             oss << "[警告] 疲勞指數 " << std::fixed << std::setprecision(1) << score << " - " << msg;
             this->m_dashboardMessage = oss.str();
+            // 發送 Windows 原生氣泡/Toast 警報通知
+            this->m_trayManager.showBalloonNotification(
+                (level == FatigueLevel::SevereWarning ? L"🚨 EFD 重度疲勞警告！" : L"⚠️ EFD 輕度用眼疲勞提醒"),
+                utf8ToWide(msg),
+                level
+            );
         }
     });
 }
 
 NativeWelcomeWindow::~NativeWelcomeWindow() {
     m_engine.stop();
+    m_trayManager.removeIcon();
+    m_floatingIndicator.hide();
     m_logoImage.reset();
     m_asset5Image.reset();
     m_asset6Image.reset();
     if (m_gdiplusToken) {
         Gdiplus::GdiplusShutdown(m_gdiplusToken);
+    }
+}
+
+void NativeWelcomeWindow::showMainWindow() {
+    if (m_hwnd) {
+        ShowWindow(m_hwnd, SW_RESTORE);
+        SetForegroundWindow(m_hwnd);
+    }
+}
+
+void NativeWelcomeWindow::toggleFloatingHUD() {
+    m_floatingIndicator.toggle();
+}
+
+void NativeWelcomeWindow::minimizeToTray() {
+    if (m_hwnd) {
+        ShowWindow(m_hwnd, SW_HIDE);
+        m_trayManager.showBalloonNotification(
+            L"EFD 系統背景運行中",
+            L"系統持續在背景監控眼睛疲勞，點擊托盤圖示可隨時還原視窗。",
+            m_latestTelemetry.systemState.fatigueLevel
+        );
     }
 }
 
@@ -145,6 +223,10 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
             m_stageTimeSec = 0.0f;
             m_animTimeSec = 0.0f;
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        } else if (PtInRect(&m_toggleFloatingBtnRect, pt)) {
+            toggleFloatingHUD();
+        } else if (PtInRect(&m_minimizeTrayBtnRect, pt)) {
+            minimizeToTray();
         } else if (PtInRect(&m_endStudyBtnRect, pt)) {
             // 進入階段 6：施測結束門禁 (資產 5.png: 「施測結束，請填寫後測問卷並解除安裝系統」)
             m_engine.getStudyTracker().triggerPostStudyLock();
@@ -156,6 +238,16 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
         if (PtInRect(&m_fillQuestionnaireBtnRect, pt)) {
             // 提交後測問卷並獲取解鎖 Token -> 進入階段 7 (資產 6.png: 「填寫成功!感謝您協助施測」)
             m_engine.getStudyTracker().submitQuestionnaire("Study_Post_Survey_Completed");
+            m_engine.getSyncWorker().triggerSync(
+                m_engine.getStudyTracker().getSubjectUuid(),
+                m_engine.getStudyTracker().getCurrentDay(),
+                "Study_Post_Survey_Completed",
+                [this](const SyncResult& res) {
+                    if (res.success) {
+                        this->m_engine.getStudyTracker().submitQuestionnaire("Study_Post_Survey_Completed");
+                    }
+                }
+            );
             m_currentStage = UIStage::QuestionnaireSubmitted;
             m_stageTimeSec = 0.0f;
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
@@ -256,6 +348,17 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         pThis->onTimerTick();
         return 0;
 
+    case SystemTrayManager::WM_TRAY_NOTIFY:
+        pThis->m_trayManager.handleTrayMessage(lParam);
+        return 0;
+
+    case WM_SYSCOMMAND:
+        if ((wParam & 0xFFF0) == SC_MINIMIZE) {
+            pThis->minimizeToTray();
+            return 0;
+        }
+        break;
+
     case WM_MOUSEMOVE: {
         int x = GET_X_LPARAM(lParam);
         int y = GET_Y_LPARAM(lParam);
@@ -264,6 +367,8 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         bool inStart = (pThis->m_currentStage == UIStage::Welcome) && (PtInRect(&pThis->m_startBtnRect, pt) != FALSE);
         bool inReady = (pThis->m_currentStage == UIStage::CalibrationInstruction) && (PtInRect(&pThis->m_readyBtnRect, pt) != FALSE);
         bool inRecalib = (pThis->m_currentStage == UIStage::MainDashboard) && (PtInRect(&pThis->m_recalibBtnRect, pt) != FALSE);
+        bool inToggleFloating = (pThis->m_currentStage == UIStage::MainDashboard) && (PtInRect(&pThis->m_toggleFloatingBtnRect, pt) != FALSE);
+        bool inMinimizeTray = (pThis->m_currentStage == UIStage::MainDashboard) && (PtInRect(&pThis->m_minimizeTrayBtnRect, pt) != FALSE);
         bool inEndStudy = (pThis->m_currentStage == UIStage::MainDashboard) && (PtInRect(&pThis->m_endStudyBtnRect, pt) != FALSE);
         bool inFillQ = (pThis->m_currentStage == UIStage::StudyCompletedGate) && (PtInRect(&pThis->m_fillQuestionnaireBtnRect, pt) != FALSE);
         bool inReturnDash = ((pThis->m_currentStage == UIStage::StudyCompletedGate || pThis->m_currentStage == UIStage::QuestionnaireSubmitted)) && (PtInRect(&pThis->m_returnDashboardBtnRect, pt) != FALSE);
@@ -272,6 +377,8 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         bool hasHoverChange = (inStart != pThis->m_isHoveringStartBtn || 
                                inReady != pThis->m_isHoveringReadyBtn || 
                                inRecalib != pThis->m_isHoveringRecalibBtn ||
+                               inToggleFloating != pThis->m_isHoveringToggleFloatingBtn ||
+                               inMinimizeTray != pThis->m_isHoveringMinimizeTrayBtn ||
                                inEndStudy != pThis->m_isHoveringEndStudyBtn ||
                                inFillQ != pThis->m_isHoveringFillQuestionnaireBtn ||
                                inReturnDash != pThis->m_isHoveringReturnDashboardBtn ||
@@ -281,12 +388,14 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
             pThis->m_isHoveringStartBtn = inStart;
             pThis->m_isHoveringReadyBtn = inReady;
             pThis->m_isHoveringRecalibBtn = inRecalib;
+            pThis->m_isHoveringToggleFloatingBtn = inToggleFloating;
+            pThis->m_isHoveringMinimizeTrayBtn = inMinimizeTray;
             pThis->m_isHoveringEndStudyBtn = inEndStudy;
             pThis->m_isHoveringFillQuestionnaireBtn = inFillQ;
             pThis->m_isHoveringReturnDashboardBtn = inReturnDash;
             pThis->m_isHoveringExitAppBtn = inExitApp;
 
-            bool isAnyHovered = (inStart || inReady || inRecalib || inEndStudy || inFillQ || inReturnDash || inExitApp);
+            bool isAnyHovered = (inStart || inReady || inRecalib || inToggleFloating || inMinimizeTray || inEndStudy || inFillQ || inReturnDash || inExitApp);
             SetCursor(LoadCursor(NULL, isAnyHovered ? IDC_HAND : IDC_ARROW));
             InvalidateRect(hwnd, NULL, FALSE);
         }
@@ -854,33 +963,104 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         drawMetricCard(cardX + itemW + gapX, gridY + itemH + gapY, itemW, itemH, L"綜合疲勞分數", b4);
     }
 
-    // 5. 底部雙按鈕 (RWD 響應式佈局：重新校準 + 結束施測/14天門禁)
-    int btnH = isNarrow ? 36 : 42;
-    int btnY = h - (isNarrow ? 46 : 56);
-    int totalBtnsW = isNarrow ? std::min(w - 30, 380) : 420;
-    int singleBtnW = (totalBtnsW - 14) / 2;
-    int btn1X = (w - totalBtnsW) / 2;
-    int btn2X = btn1X + singleBtnW + 14;
+    // 5. 底部四按鈕群組 (重新校準、懸浮指標 HUD、縮小至托盤、結束施測/14天門禁)
+    int btnH = isNarrow ? 34 : 40;
+    int btnY = h - (isNarrow ? 48 : 56);
 
-    m_recalibBtnRect = { btn1X, btnY, btn1X + singleBtnW, btnY + btnH };
-    m_endStudyBtnRect = { btn2X, btnY, btn2X + singleBtnW, btnY + btnH };
+    if (!isNarrow) {
+        // 桌面寬螢幕：4 欄並排
+        int totalBtnsW = std::min(w - 60, 720);
+        int gap = 10;
+        int singleBtnW = (totalBtnsW - gap * 3) / 4;
+        int startX = (w - totalBtnsW) / 2;
 
-    // 按鈕 1: 重新校準基準 (薄荷綠)
-    Gdiplus::SolidBrush recBtnBrush(m_isHoveringRecalibBtn ? Gdiplus::Color(255, 45, 185, 145) : Gdiplus::Color(255, 30, 177, 138));
-    g.FillRectangle(&recBtnBrush, btn1X, btnY, singleBtnW, btnH);
+        int b1X = startX + 0 * (singleBtnW + gap);
+        int b2X = startX + 1 * (singleBtnW + gap);
+        int b3X = startX + 2 * (singleBtnW + gap);
+        int b4X = startX + 3 * (singleBtnW + gap);
 
-    int recalibFontSize = isNarrow ? 12 : 14;
-    Gdiplus::Font btnFont(&fontFamily, static_cast<Gdiplus::REAL>(recalibFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-    Gdiplus::RectF btn1TextRect(static_cast<float>(btn1X), static_cast<float>(btnY), static_cast<float>(singleBtnW), static_cast<float>(btnH));
-    g.DrawString(L"重新校準基準", -1, &btnFont, btn1TextRect, &centerFormat, &whiteBrush);
+        m_recalibBtnRect = { b1X, btnY, b1X + singleBtnW, btnY + btnH };
+        m_toggleFloatingBtnRect = { b2X, btnY, b2X + singleBtnW, btnY + btnH };
+        m_minimizeTrayBtnRect = { b3X, btnY, b3X + singleBtnW, btnY + btnH };
+        m_endStudyBtnRect = { b4X, btnY, b4X + singleBtnW, btnY + btnH };
 
-    // 按鈕 2: 結束施測 / 14天門禁 (金黃/科研門禁色)
-    Gdiplus::SolidBrush endBtnBrush(m_isHoveringEndStudyBtn ? Gdiplus::Color(255, 255, 235, 190) : Gdiplus::Color(255, 247, 227, 175));
-    g.FillRectangle(&endBtnBrush, btn2X, btnY, singleBtnW, btnH);
+        int recalibFontSize = 13;
+        Gdiplus::Font btnFont(&fontFamily, static_cast<Gdiplus::REAL>(recalibFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush darkTextBrush(Gdiplus::Color(255, 37, 41, 28));
 
-    Gdiplus::SolidBrush endTextBrush(Gdiplus::Color(255, 37, 41, 28));
-    Gdiplus::RectF btn2TextRect(static_cast<float>(btn2X), static_cast<float>(btnY), static_cast<float>(singleBtnW), static_cast<float>(btnH));
-    g.DrawString(L"結束施測 (14天門禁)", -1, &btnFont, btn2TextRect, &centerFormat, &endTextBrush);
+        // 按鈕 1: 重新校準基準 (薄荷綠)
+        Gdiplus::SolidBrush b1Brush(m_isHoveringRecalibBtn ? Gdiplus::Color(255, 45, 185, 145) : Gdiplus::Color(255, 30, 177, 138));
+        g.FillRectangle(&b1Brush, b1X, btnY, singleBtnW, btnH);
+        Gdiplus::RectF b1Rect(static_cast<float>(b1X), static_cast<float>(btnY), static_cast<float>(singleBtnW), static_cast<float>(btnH));
+        g.DrawString(L"重新校準基準", -1, &btnFont, b1Rect, &centerFormat, &whiteBrush);
+
+        // 按鈕 2: 懸浮指標 HUD (科技藍)
+        Gdiplus::SolidBrush b2Brush(m_isHoveringToggleFloatingBtn ? Gdiplus::Color(255, 170, 215, 255) : Gdiplus::Color(255, 150, 197, 247));
+        g.FillRectangle(&b2Brush, b2X, btnY, singleBtnW, btnH);
+        Gdiplus::RectF b2Rect(static_cast<float>(b2X), static_cast<float>(btnY), static_cast<float>(singleBtnW), static_cast<float>(btnH));
+        g.DrawString(L"懸浮指標 HUD", -1, &btnFont, b2Rect, &centerFormat, &darkTextBrush);
+
+        // 按鈕 3: 最小化托盤 (深灰藍邊框)
+        Gdiplus::SolidBrush b3Brush(m_isHoveringMinimizeTrayBtn ? Gdiplus::Color(255, 70, 78, 56) : Gdiplus::Color(255, 50, 56, 38));
+        g.FillRectangle(&b3Brush, b3X, btnY, singleBtnW, btnH);
+        Gdiplus::Pen b3Pen(Gdiplus::Color(255, 150, 197, 247), 1.0f);
+        g.DrawRectangle(&b3Pen, b3X, btnY, singleBtnW, btnH);
+        Gdiplus::RectF b3Rect(static_cast<float>(b3X), static_cast<float>(btnY), static_cast<float>(singleBtnW), static_cast<float>(btnH));
+        g.DrawString(L"縮小至托盤", -1, &btnFont, b3Rect, &centerFormat, &whiteBrush);
+
+        // 按鈕 4: 結束施測 / 14天門禁 (金黃)
+        Gdiplus::SolidBrush b4Brush(m_isHoveringEndStudyBtn ? Gdiplus::Color(255, 255, 235, 190) : Gdiplus::Color(255, 247, 227, 175));
+        g.FillRectangle(&b4Brush, b4X, btnY, singleBtnW, btnH);
+        Gdiplus::RectF b4Rect(static_cast<float>(b4X), static_cast<float>(btnY), static_cast<float>(singleBtnW), static_cast<float>(btnH));
+        g.DrawString(L"結束施測 (門禁)", -1, &btnFont, b4Rect, &centerFormat, &darkTextBrush);
+    } else {
+        // 手機/窄螢幕：2x2 矩陣
+        int totalBtnsW = std::min(w - 24, 360);
+        int gap = 8;
+        int singleBtnW = (totalBtnsW - gap) / 2;
+        int startX = (w - totalBtnsW) / 2;
+        int row1Y = h - 74;
+        int row2Y = h - 38;
+
+        int b1X = startX;
+        int b2X = startX + singleBtnW + gap;
+        int b3X = startX;
+        int b4X = startX + singleBtnW + gap;
+
+        m_recalibBtnRect = { b1X, row1Y, b1X + singleBtnW, row1Y + 32 };
+        m_toggleFloatingBtnRect = { b2X, row1Y, b2X + singleBtnW, row1Y + 32 };
+        m_minimizeTrayBtnRect = { b3X, row2Y, b3X + singleBtnW, row2Y + 32 };
+        m_endStudyBtnRect = { b4X, row2Y, b4X + singleBtnW, row2Y + 32 };
+
+        Gdiplus::Font btnFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush darkTextBrush(Gdiplus::Color(255, 37, 41, 28));
+
+        // 按鈕 1
+        Gdiplus::SolidBrush b1Brush(m_isHoveringRecalibBtn ? Gdiplus::Color(255, 45, 185, 145) : Gdiplus::Color(255, 30, 177, 138));
+        g.FillRectangle(&b1Brush, b1X, row1Y, singleBtnW, 32);
+        Gdiplus::RectF b1Rect(static_cast<float>(b1X), static_cast<float>(row1Y), static_cast<float>(singleBtnW), 32.0f);
+        g.DrawString(L"重新校準", -1, &btnFont, b1Rect, &centerFormat, &whiteBrush);
+
+        // 按鈕 2
+        Gdiplus::SolidBrush b2Brush(m_isHoveringToggleFloatingBtn ? Gdiplus::Color(255, 170, 215, 255) : Gdiplus::Color(255, 150, 197, 247));
+        g.FillRectangle(&b2Brush, b2X, row1Y, singleBtnW, 32);
+        Gdiplus::RectF b2Rect(static_cast<float>(b2X), static_cast<float>(row1Y), static_cast<float>(singleBtnW), 32.0f);
+        g.DrawString(L"懸浮指標 HUD", -1, &btnFont, b2Rect, &centerFormat, &darkTextBrush);
+
+        // 按鈕 3
+        Gdiplus::SolidBrush b3Brush(m_isHoveringMinimizeTrayBtn ? Gdiplus::Color(255, 70, 78, 56) : Gdiplus::Color(255, 50, 56, 38));
+        g.FillRectangle(&b3Brush, b3X, row2Y, singleBtnW, 32);
+        Gdiplus::Pen b3Pen(Gdiplus::Color(255, 150, 197, 247), 1.0f);
+        g.DrawRectangle(&b3Pen, b3X, row2Y, singleBtnW, 32);
+        Gdiplus::RectF b3Rect(static_cast<float>(b3X), static_cast<float>(row2Y), static_cast<float>(singleBtnW), 32.0f);
+        g.DrawString(L"縮小至托盤", -1, &btnFont, b3Rect, &centerFormat, &whiteBrush);
+
+        // 按鈕 4
+        Gdiplus::SolidBrush b4Brush(m_isHoveringEndStudyBtn ? Gdiplus::Color(255, 255, 235, 190) : Gdiplus::Color(255, 247, 227, 175));
+        g.FillRectangle(&b4Brush, b4X, row2Y, singleBtnW, 32);
+        Gdiplus::RectF b4Rect(static_cast<float>(b4X), static_cast<float>(row2Y), static_cast<float>(singleBtnW), 32.0f);
+        g.DrawString(L"結束施測 (門禁)", -1, &btnFont, b4Rect, &centerFormat, &darkTextBrush);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -1083,6 +1263,10 @@ int NativeWelcomeWindow::run() {
     if (!m_hwnd) {
         return -1;
     }
+
+    // 初始化系統托盤常駐與置頂懸浮指標 HUD
+    m_trayManager.initialize(m_hwnd, L"EFD 眼睛疲勞即時監測系統");
+    m_floatingIndicator.create(m_hwnd);
 
     // 啟動 60 FPS 畫面更新計時器
     SetTimer(m_hwnd, 1, 16, NULL);

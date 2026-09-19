@@ -2,6 +2,8 @@
 
 #include "Theme.hpp"
 #include "engine/AsyncPipelineEngine.hpp"
+#include "platform/windows/SystemTrayManager.hpp"
+#include "ui/FatigueFloatingIndicator.hpp"
 #include <string>
 #include <memory>
 #include <vector>
@@ -40,6 +42,10 @@ public:
     int run();
     AsyncPipelineEngine& getEngine() { return m_engine; }
 
+    void showMainWindow();
+    void toggleFloatingHUD();
+    void minimizeToTray();
+
 private:
     int m_width;
     int m_height;
@@ -56,6 +62,10 @@ private:
     std::unique_ptr<Gdiplus::Image> m_logoImage;   // 資產 4.png
     std::unique_ptr<Gdiplus::Image> m_asset5Image; // 資產 5.png (施測結束)
     std::unique_ptr<Gdiplus::Image> m_asset6Image; // 資產 6.png (填寫成功)
+
+    // 原生系統托盤與置頂懸浮指標 HUD
+    SystemTrayManager m_trayManager;
+    FatigueFloatingIndicator m_floatingIndicator;
 
     // 動畫與時間計算
     float m_animTimeSec = 0.0f;
@@ -75,6 +85,8 @@ private:
     RECT m_readyBtnRect{};
     RECT m_recalibBtnRect{};
     RECT m_endStudyBtnRect{};
+    RECT m_toggleFloatingBtnRect{};
+    RECT m_minimizeTrayBtnRect{};
     RECT m_fillQuestionnaireBtnRect{};
     RECT m_returnDashboardBtnRect{};
     RECT m_exitAppBtnRect{};
@@ -83,6 +95,8 @@ private:
     bool m_isHoveringReadyBtn = false;
     bool m_isHoveringRecalibBtn = false;
     bool m_isHoveringEndStudyBtn = false;
+    bool m_isHoveringToggleFloatingBtn = false;
+    bool m_isHoveringMinimizeTrayBtn = false;
     bool m_isHoveringFillQuestionnaireBtn = false;
     bool m_isHoveringReturnDashboardBtn = false;
     bool m_isHoveringExitAppBtn = false;

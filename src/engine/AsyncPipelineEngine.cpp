@@ -5,6 +5,7 @@ namespace efd {
 
 AsyncPipelineEngine::AsyncPipelineEngine(PlatformType platform)
     : m_lifecycle(platform),
+      m_syncWorker(m_database),
       m_camera(std::make_unique<CameraService>(640, 480, 30.0f)),
       m_landmarker(std::make_unique<FaceLandmarker>()),
       m_extractor(300, 0.21f),

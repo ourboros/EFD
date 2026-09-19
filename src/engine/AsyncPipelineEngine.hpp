@@ -12,6 +12,7 @@
 #include "platform/PlatformLifecycleAdapter.hpp"
 #include "storage/DatabaseService.hpp"
 #include "study/StudyWorkflowTracker.hpp"
+#include "network/NetworkSyncWorker.hpp"
 
 #include <memory>
 #include <mutex>
@@ -81,11 +82,13 @@ public:
     CameraService& getCameraService() { return *m_camera; }
     DatabaseService& getDatabaseService() { return m_database; }
     StudyWorkflowTracker& getStudyTracker() { return m_studyTracker; }
+    NetworkSyncWorker& getSyncWorker() { return m_syncWorker; }
 
 private:
     PlatformLifecycleAdapter m_lifecycle;
     DatabaseService m_database;
     StudyWorkflowTracker m_studyTracker;
+    NetworkSyncWorker m_syncWorker;
 
     std::unique_ptr<CameraService>  m_camera;
     std::unique_ptr<FaceLandmarker> m_landmarker;
