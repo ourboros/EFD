@@ -61,6 +61,16 @@ std::unique_ptr<Gdiplus::Image> loadLogoImage() {
     return nullptr;
 }
 
+// 萬國碼 UTF-8 轉 UTF-16 wstring 工具函式 (避免字元截斷與亂碼)
+std::wstring utf8ToWide(const std::string& utf8Str) {
+    if (utf8Str.empty()) return std::wstring();
+    int sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, utf8Str.c_str(), static_cast<int>(utf8Str.size()), NULL, 0);
+    if (sizeNeeded <= 0) return std::wstring();
+    std::wstring result(static_cast<size_t>(sizeNeeded), 0);
+    MultiByteToWideChar(CP_UTF8, 0, utf8Str.c_str(), static_cast<int>(utf8Str.size()), &result[0], sizeNeeded);
+    return result;
+}
+
 } // anonymous namespace
 
 NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
@@ -157,8 +167,8 @@ void NativeWelcomeWindow::onTimerTick() {
         if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
     } else if (m_currentStage == UIStage::ActiveCalibration) {
         // 階段 4: 實際多點眼動採樣 (5 點巡迴移動，共 5 秒)
-        struct PointF { float x, y; };
-        const PointF points[] = {
+        struct TargetPoint { float x, y; };
+        const TargetPoint points[] = {
             { 0.50f, 0.50f }, // 0. 中心
             { 0.15f, 0.18f }, // 1. 左上
             { 0.85f, 0.18f }, // 2. 右上
@@ -172,11 +182,11 @@ void NativeWelcomeWindow::onTimerTick() {
         int seg = static_cast<int>(m_stageTimeSec / segDuration);
 
         if (seg < 5) {
-            float segT = (m_stageTimeSec - seg * segDuration) / segDuration;
+            float segT = (m_stageTimeSec - static_cast<float>(seg) * segDuration) / segDuration;
             float smoothT = 0.5f * (1.0f - std::cos(segT * 3.14159265f));
 
-            PointF p0 = points[seg];
-            PointF p1 = points[seg + 1];
+            TargetPoint p0 = points[seg];
+            TargetPoint p1 = points[seg + 1];
 
             m_targetDotX = p0.x + (p1.x - p0.x) * smoothT;
             m_targetDotY = p0.y + (p1.y - p0.y) * smoothT;
@@ -215,13 +225,13 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         return 0;
 
     case WM_MOUSEMOVE: {
-        int x = LOWORD(lParam);
-        int y = HIWORD(lParam);
+        int x = GET_X_LPARAM(lParam);
+        int y = GET_Y_LPARAM(lParam);
         POINT pt = { x, y };
 
-        bool inStart = PtInRect(&pThis->m_startBtnRect, pt);
-        bool inReady = PtInRect(&pThis->m_readyBtnRect, pt);
-        bool inRecalib = PtInRect(&pThis->m_recalibBtnRect, pt);
+        bool inStart = PtInRect(&pThis->m_startBtnRect, pt) != FALSE;
+        bool inReady = PtInRect(&pThis->m_readyBtnRect, pt) != FALSE;
+        bool inRecalib = PtInRect(&pThis->m_recalibBtnRect, pt) != FALSE;
 
         if (inStart != pThis->m_isHoveringStartBtn || 
             inReady != pThis->m_isHoveringReadyBtn || 
@@ -239,8 +249,8 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
     }
 
     case WM_LBUTTONUP: {
-        int x = LOWORD(lParam);
-        int y = HIWORD(lParam);
+        int x = GET_X_LPARAM(lParam);
+        int y = GET_Y_LPARAM(lParam);
         pThis->handleMouseClick(x, y);
         return 0;
     }
@@ -448,7 +458,7 @@ void NativeWelcomeWindow::drawCalibrationInstruction(Gdiplus::Graphics& g, int w
     if (camStatusStr.empty()) {
         camStatusStr = "相機狀態: 正在連接前置鏡頭...";
     }
-    std::wstring wCamStatus(camStatusStr.begin(), camStatusStr.end());
+    std::wstring wCamStatus = utf8ToWide(camStatusStr);
     Gdiplus::Font camStatusFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush camStatusBrush(Gdiplus::Color(255, 247, 227, 175)); // 金黃
     Gdiplus::RectF camStatusRect(0.0f, titleY + 32.0f, static_cast<float>(w), 18.0f);
@@ -706,7 +716,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     if (camStatusStr.empty()) {
         camStatusStr = "相機狀態: 運作中 (30 FPS)";
     }
-    std::wstring wCamStatus(camStatusStr.begin(), camStatusStr.end());
+    std::wstring wCamStatus = utf8ToWide(camStatusStr);
     Gdiplus::Font camStatusFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush camStatusBrush(Gdiplus::Color(255, 150, 197, 247)); // 科技藍
     Gdiplus::RectF camStatusRect(0.0f, headerY + 28.0f, static_cast<float>(w), 18.0f);
@@ -740,10 +750,10 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
     // 4. 即時遙測數據面板 (4 欄動態跳動數值)
     wchar_t b1[32], b2[32], b3[32], b4[32];
-    swprintf_s(b1, L"%.3f", m_latestTelemetry.eyeMetrics.earAvg);
-    swprintf_s(b2, L"%.1f%%", m_latestTelemetry.eyeMetrics.perclos * 100.0f);
-    swprintf_s(b3, L"%.2f", m_latestTelemetry.complexityMetrics.complexityIndex);
-    swprintf_s(b4, L"%.1f", m_latestTelemetry.systemState.currentFatigueScore);
+    swprintf_s(b1, 32, L"%.3f", static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg));
+    swprintf_s(b2, 32, L"%.1f%%", static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f));
+    swprintf_s(b3, 32, L"%.2f", static_cast<double>(m_latestTelemetry.complexityMetrics.complexityIndex));
+    swprintf_s(b4, 32, L"%.1f", static_cast<double>(m_latestTelemetry.systemState.currentFatigueScore));
 
     auto drawMetricCard = [&](int ix, int iy, int iw, int ih, const wchar_t* label, const wchar_t* val) {
         Gdiplus::SolidBrush boxBrush(Gdiplus::Color(255, 50, 56, 38));

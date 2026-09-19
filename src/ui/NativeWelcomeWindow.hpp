@@ -5,12 +5,14 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <algorithm>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <windowsx.h>
 #include <objidl.h>
 #include <gdiplus.h>
 #endif
