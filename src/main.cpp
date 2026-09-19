@@ -22,6 +22,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 
@@ -29,7 +32,7 @@
 int runCliSimulation() {
     std::cout << "====================================================\n";
     std::cout << "  Eye Fatigue Detection (EFD) Engine v" << EFD_VERSION_STRING << "\n";
-    std::cout << "  Phase 3: 5-Thread Concurrency & 14-Day Study Workflow\n";
+    std::cout << "  Phase 3: Database Persistence & 14-Day Study Gatekeeper\n";
     std::cout << "  Platform: Cross-Platform (Windows/macOS/Android/iOS)\n";
     std::cout << "====================================================\n\n";
 
@@ -119,7 +122,7 @@ int runCliSimulation() {
     std::cout << " -> 分解成功: 提取出 " << emdResult.imfs.size() << " 個 Intrinsic Mode Functions (IMFs)\n";
     std::cout << " -> 高頻/低頻能量比 (IMF Energy Ratio): " << std::fixed << std::setprecision(3) << emdResult.highToLowEnergyRatio << "\n\n";
 
-    std::cout << "[SUCCESS] 第二階段 (Phase 2) 狀態機整合、多執行緒管線與平台生命週期驗證完成！\n";
+    std::cout << "[SUCCESS] 第三階段 (Phase 3) 狀態機整合、持久化儲存與 14 天科研門禁驗證完成！\n";
     return 0;
 }
 
@@ -135,7 +138,7 @@ int main(int argc, char* argv[]) {
         return runCliSimulation();
     }
 
-    // 預設模式：直接啟動完整的七階段歡迎、視覺校準、疲勞監控與科研後測圖形視窗！
+    // 預設模式：直接啟動完整的七階段歡迎、黃點視覺校準、疲勞監控與科研後測圖形視窗！
     std::cout << "[EFD System] 啟動 EFD 七階段視覺校準、疲勞監控與科研後測圖形介面系統...\n";
     efd::NativeWelcomeWindow window(960, 640);
     return window.run();

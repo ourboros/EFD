@@ -141,19 +141,17 @@ void DatabaseService::flushToDiskUnlocked() {
 
 void DatabaseService::loadFromDiskUnlocked() {
     m_memoryCache.clear();
-
-    // 1. 載入主資料庫檔案
+    
+    // 1. 讀取主資料庫檔案
     std::ifstream db(m_dbPath);
     if (db.is_open()) {
         std::string line;
-        // 跳過標題列
-        if (std::getline(db, line)) {
+        if (std::getline(db, line)) { // 跳過標題列
             while (std::getline(db, line)) {
                 if (line.empty()) continue;
                 std::stringstream ss(line);
                 std::string token;
                 FatigueRecord r;
-
                 if (std::getline(ss, token, ',')) r.timestampMs = std::stoll(token);
                 if (std::getline(ss, token, ',')) r.subjectUuid = token;
                 if (std::getline(ss, token, ',')) r.ear = std::stof(token);
@@ -161,23 +159,22 @@ void DatabaseService::loadFromDiskUnlocked() {
                 if (std::getline(ss, token, ',')) r.complexityIndex = std::stof(token);
                 if (std::getline(ss, token, ',')) r.fatigueScore = std::stof(token);
                 if (std::getline(ss, token, ',')) r.alertLevel = static_cast<FatigueLevel>(std::stoi(token));
-
                 m_memoryCache.push_back(r);
             }
         }
         db.close();
     }
 
-    // 2. 重放 WAL (Write-Ahead Log) 未合併的事務記錄
+    // 2. WAL 故障恢復重放 (WAL Replay Recovery)
     std::ifstream wal(m_walPath);
     if (wal.is_open()) {
         std::string line;
+        bool hasWalRecords = false;
         while (std::getline(wal, line)) {
             if (line.empty()) continue;
             std::stringstream ss(line);
             std::string token;
             FatigueRecord r;
-
             if (std::getline(ss, token, ',')) r.timestampMs = std::stoll(token);
             if (std::getline(ss, token, ',')) r.subjectUuid = token;
             if (std::getline(ss, token, ',')) r.ear = std::stof(token);
@@ -185,10 +182,15 @@ void DatabaseService::loadFromDiskUnlocked() {
             if (std::getline(ss, token, ',')) r.complexityIndex = std::stof(token);
             if (std::getline(ss, token, ',')) r.fatigueScore = std::stof(token);
             if (std::getline(ss, token, ',')) r.alertLevel = static_cast<FatigueLevel>(std::stoi(token));
-
             m_memoryCache.push_back(r);
+            hasWalRecords = true;
         }
         wal.close();
+
+        // 若有 WAL 記錄，進行 Checkpoint 合併至主檔案
+        if (hasWalRecords) {
+            flushToDiskUnlocked();
+        }
     }
 }
 
