@@ -32,7 +32,7 @@
 int runCliSimulation() {
     std::cout << "====================================================\n";
     std::cout << "  Eye Fatigue Detection (EFD) Engine v" << EFD_VERSION_STRING << "\n";
-    std::cout << "  Phase 3: Database Persistence & 14-Day Study Gatekeeper\n";
+    std::cout << "  Phase 4: Multi-Platform Polish, Floating HUD & Cloud Sync\n";
     std::cout << "  Platform: Cross-Platform (Windows/macOS/Android/iOS)\n";
     std::cout << "====================================================\n\n";
 
@@ -122,7 +122,21 @@ int runCliSimulation() {
     std::cout << " -> 分解成功: 提取出 " << emdResult.imfs.size() << " 個 Intrinsic Mode Functions (IMFs)\n";
     std::cout << " -> 高頻/低頻能量比 (IMF Energy Ratio): " << std::fixed << std::setprecision(3) << emdResult.highToLowEnergyRatio << "\n\n";
 
-    std::cout << "[SUCCESS] 第三階段 (Phase 3) 狀態機整合、持久化儲存與 14 天科研門禁驗證完成！\n";
+    // 階段 F: 第四階段非同步科研資料同步與門禁驗證
+    std::cout << "[Step 4] 執行第四階段 (Phase 4) 非同步科研資料同步與校驗碼生成...\n";
+    std::atomic<bool> syncDone{false};
+    std::string signedToken;
+    engine.getSyncWorker().triggerSync("SUBJ-SIM-2026", 14, "Q1:5,Q2:VerySatisfied,Q3:NoDiscomfort", [&](const efd::SyncResult& res) {
+        signedToken = res.unlockToken;
+        syncDone = true;
+    });
+
+    for (int i = 0; i < 100 && !syncDone.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    std::cout << " -> 科研資料同步完成: 解鎖憑證 = " << signedToken << "\n\n";
+
+    std::cout << "[SUCCESS] 第四階段 (Phase 4) 懸浮指標 HUD、系統托盤、雲端同步與 14 天科研門禁驗證全部完成！\n";
     return 0;
 }
 

@@ -5,7 +5,12 @@
       "label": "CMake: Build (Debug)",
       "type": "process",
       "command": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
-      "args": ["--build", "${workspaceFolder}/build/vs-x64", "--config", "Debug"],
+      "args": [
+        "--build",
+        "${workspaceFolder}/build/vs-x64",
+        "--config",
+        "Debug"
+      ],
       "group": {
         "kind": "build",
         "isDefault": true
