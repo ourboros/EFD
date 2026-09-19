@@ -246,6 +246,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             telemetry.systemState = state;
             telemetry.currentThreshold = currentThreshold;
             telemetry.totalFramesProcessed = count;
+            telemetry.lifecycleSummary = m_lifecycle.getStatusSummary();
 
             std::string driverName = m_camera->getActiveDriverName();
             bool isSynthetic = m_camera->isUsingSyntheticFallback();

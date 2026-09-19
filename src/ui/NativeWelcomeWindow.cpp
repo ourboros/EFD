@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <vector>
+#include <string>
 
 #ifdef _WIN32
 #pragma comment(lib, "gdiplus.lib")
@@ -143,7 +144,7 @@ void NativeWelcomeWindow::onTimerTick() {
         float demoT = std::fmod(m_stageTimeSec, 4.0f) / 4.0f;
         float angle = demoT * 6.2831853f;
         m_demoDotX = 0.5f + 0.35f * std::cos(angle);
-        m_demoDotY = 0.5f + 0.28f * std::sin(angle * 2.0f);
+        m_demoDotY = 0.28f * std::sin(angle * 2.0f) + 0.5f;
         if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
     } else if (m_currentStage == UIStage::CountdownWait) {
         // 階段 3: 3 秒倒數計時等待 (3 -> 2 -> 1)
@@ -305,7 +306,7 @@ void NativeWelcomeWindow::onPaint(HWND hwnd) {
 }
 
 // -----------------------------------------------------------------------------
-// 階段 1：系統歡迎介面 (純白高對比徽章容器 + RWD 自適應排版)
+// 階段 1：系統歡迎介面 (保持 Logo 100% 原圖長寬比 + 純白高對比徽章容器 + RWD 自適應)
 // -----------------------------------------------------------------------------
 void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) {
     // 滿版薄荷綠背景 (#1EB18A)
@@ -314,30 +315,49 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
 
     bool isNarrow = (w < 680 || h > w);
 
-    // 1. Logo 與純白圓形徽章 (尺寸與位置響應式縮放)
-    int logoSize = isNarrow ? std::clamp(w / 4, 75, 110) : 130;
-    int badgeSize = logoSize + 28;
-    int badgeX = (w - badgeSize) / 2;
-    int badgeY = isNarrow ? std::max(20, h / 2 - badgeSize - 40) : (h / 2 - 180);
-    int logoX = badgeX + 14;
-    int logoY = badgeY + 14;
+    // 1. 計算 Logo 100% 原始長寬比 (資產 4.png 原始比例為 70:42 = 1.667)
+    float naturalAspect = 70.0f / 42.0f; // 1.6667
+    int origImgW = 70;
+    int origImgH = 42;
 
-    // 繪製純白圓形立體徽章容器 (#FFFFFF)，徹底解決薄荷綠圖案在綠底上看不見的問題
+    if (m_logoImage && m_logoImage->GetLastStatus() == Gdiplus::Ok && m_logoImage->GetWidth() > 0 && m_logoImage->GetHeight() > 0) {
+        origImgW = static_cast<int>(m_logoImage->GetWidth());
+        origImgH = static_cast<int>(m_logoImage->GetHeight());
+        naturalAspect = static_cast<float>(origImgW) / static_cast<float>(origImgH);
+    }
+
+    // 計算符合 100% 長寬比的最佳繪製尺寸 (不被壓扁或拉長)
+    int maxTargetW = isNarrow ? std::clamp(w / 3, 100, 140) : 150;
+    int drawLogoW = maxTargetW;
+    int drawLogoH = static_cast<int>(maxTargetW / naturalAspect);
+
+    // 純白立體圓形徽章容器 (包含足夠留白以襯托 Logo)
+    int badgeDiameter = isNarrow ? std::clamp(w / 3 + 30, 120, 150) : 170;
+    if (badgeDiameter < drawLogoW + 24) badgeDiameter = drawLogoW + 24;
+    
+    int badgeX = (w - badgeDiameter) / 2;
+    int badgeY = isNarrow ? std::max(20, h / 2 - badgeDiameter - 45) : (h / 2 - 185);
+
+    // 繪製純白圓形徽章 (#FFFFFF)
     Gdiplus::SolidBrush whiteBadge(Gdiplus::Color(255, 255, 255, 255));
-    g.FillEllipse(&whiteBadge, badgeX, badgeY, badgeSize, badgeSize);
+    g.FillEllipse(&whiteBadge, badgeX, badgeY, badgeDiameter, badgeDiameter);
 
-    // 外圈金黃微光裝飾邊框 (#F7E3AF)
+    // 外圈金黃裝飾邊框 (#F7E3AF)
     Gdiplus::Pen badgePen(Gdiplus::Color(200, 247, 227, 175), 2.5f);
-    g.DrawEllipse(&badgePen, badgeX, badgeY, badgeSize, badgeSize);
+    g.DrawEllipse(&badgePen, badgeX, badgeY, badgeDiameter, badgeDiameter);
+
+    // 將 100% 原始長寬比的 Logo 置中繪製在純白徽章內
+    int logoX = badgeX + (badgeDiameter - drawLogoW) / 2;
+    int logoY = badgeY + (badgeDiameter - drawLogoH) / 2;
 
     if (m_logoImage && m_logoImage->GetLastStatus() == Gdiplus::Ok && m_logoImage->GetWidth() > 0) {
-        g.DrawImage(m_logoImage.get(), logoX, logoY, logoSize, logoSize);
+        g.DrawImage(m_logoImage.get(), logoX, logoY, drawLogoW, drawLogoH);
     } else {
-        // 高精度向量備援標章 (完全重現 資產 4.png：薄荷綠眼睛輪廓 + 瞳孔準心)
-        int cx = badgeX + badgeSize / 2;
-        int cy = badgeY + badgeSize / 2;
-        int eyeW = static_cast<int>(logoSize * 0.76f);
-        int eyeH = static_cast<int>(logoSize * 0.46f);
+        // 高精度向量備援標章 (以 100% 70:42 原始比例繪製綠色眼睛輪廓 + 瞳孔準心)
+        int cx = badgeX + badgeDiameter / 2;
+        int cy = badgeY + badgeDiameter / 2;
+        int eyeW = drawLogoW;
+        int eyeH = drawLogoH;
         
         Gdiplus::Pen greenPen(Gdiplus::Color(255, 30, 177, 138), 3.5f);
         Gdiplus::SolidBrush greenBrush(Gdiplus::Color(255, 30, 177, 138));
@@ -345,17 +365,17 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
         // 眼睛外輪廓
         g.DrawEllipse(&greenPen, cx - eyeW / 2, cy - eyeH / 2, eyeW, eyeH);
         // 瞳孔外圈
-        int irisR = static_cast<int>(eyeH * 0.78f);
+        int irisR = static_cast<int>(eyeH * 0.82f);
         g.DrawEllipse(&greenPen, cx - irisR / 2, cy - irisR / 2, irisR, irisR);
         // 實心瞳孔
-        int pupilR = static_cast<int>(eyeH * 0.40f);
+        int pupilR = static_cast<int>(eyeH * 0.42f);
         g.FillEllipse(&greenBrush, cx - pupilR / 2, cy - pupilR / 2, pupilR, pupilR);
         // 橫豎十字準心線
         g.DrawLine(&greenPen, cx - eyeW / 2, cy, cx + eyeW / 2, cy);
         g.DrawLine(&greenPen, cx, cy - eyeH / 2, cx, cy + eyeH / 2);
     }
 
-    // 2. 標題文字: "感謝協助測試EFD" (純白 #FFFFFF)
+    // 2. 標題文字: "感謝協助測試EFD" (純白 #FFFFFF, 響應式字體大小)
     Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
     int titleFontSize = isNarrow ? std::clamp(w / 18, 18, 26) : 32;
     Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
@@ -365,7 +385,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     format.SetAlignment(Gdiplus::StringAlignmentCenter);
     format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 
-    float titleY = static_cast<float>(badgeY + badgeSize + (isNarrow ? 16 : 26));
+    float titleY = static_cast<float>(badgeY + badgeDiameter + (isNarrow ? 16 : 26));
     Gdiplus::RectF titleRect(0.0f, titleY, static_cast<float>(w), 45.0f);
     g.DrawString(L"感謝協助測試EFD", -1, &titleFont, titleRect, &format, &textBrush);
 
@@ -379,6 +399,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::Color btnColor = m_isHoveringStartBtn ? Gdiplus::Color(255, 245, 245, 245) : Gdiplus::Color(255, 255, 255, 255);
     Gdiplus::SolidBrush btnBrush(btnColor);
 
+    // 繪製圓角矩形按鈕
     Gdiplus::GraphicsPath path;
     int r = 16;
     path.AddArc(btnX, btnY, r, r, 180, 90);

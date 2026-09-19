@@ -74,6 +74,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const RawFrame& frame) {
 }
 
 LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int width, int height, PixelFormat format) {
+    (void)pixelData;
     (void)format;
 
     auto startTime = std::chrono::steady_clock::now();
@@ -146,3 +147,4 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 }
 
 } // namespace efd
+
