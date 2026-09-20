@@ -151,6 +151,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
         if (level == FatigueLevel::Attention || level == FatigueLevel::SevereWarning) {
             std::ostringstream oss;
+            oss << "[警告] 疲勞指數 " << std::fixed << std::setprecision(1) << score << " - " << msg;
             if (level == FatigueLevel::SevereWarning) {
                 oss << "[警報] 疲勞指數 " << std::fixed << std::setprecision(1) << score << " - 【你的眼睛處於疲勞狀態，請適當休息】";
             } else {
@@ -158,8 +159,14 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
             }
             this->m_dashboardMessage = oss.str();
             
+            // 發送 Windows 原生氣泡/Toast 警報通知
             // 發送 Windows 原生氣泡/Toast 警報通知至裝置通知處
             if (this->m_soundAlertEnabled) {
+                this->m_trayManager.showBalloonNotification(
+                    (level == FatigueLevel::SevereWarning ? L"🚨 EFD 重度疲勞警告！" : L"⚠️ EFD 輕度用眼疲勞提醒"),
+                    utf8ToWide(msg),
+                    level
+                );
                 if (level == FatigueLevel::SevereWarning) {
                     this->m_trayManager.showBalloonNotification(
                         L"【你的眼睛處於疲勞狀態，請適當休息】",
@@ -302,6 +309,13 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
                 m_engine.getCameraService().start(0, CameraFacing::Front);
             }
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        } else if (PtInRect(&m_testAlertBtnRect, pt)) {
+            // 立即觸發紅色危險疲勞通知至裝置通知處
+            m_trayManager.showBalloonNotification(
+                L"【你的眼睛處於疲勞狀態，請適當休息】",
+                L"你的眼睛處於疲勞狀態，請適當休息",
+                FatigueLevel::SevereWarning
+            );
         } else if (PtInRect(&m_recalibFromSettingsBtnRect, pt)) {
             setStage(UIStage::CalibrationInstruction);
         } else if (PtInRect(&m_saveSettingsBtnRect, pt)) {
@@ -449,6 +463,7 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         bool inSensitivity = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_sensitivityBtnRect, pt) != FALSE);
         bool inToggleSound = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_toggleSoundBtnRect, pt) != FALSE);
         bool inToggleCam = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_toggleCamModeBtnRect, pt) != FALSE);
+        bool inTestAlert = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_testAlertBtnRect, pt) != FALSE);
         bool inRecalibFromSet = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_recalibFromSettingsBtnRect, pt) != FALSE);
         bool inSaveSet = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_saveSettingsBtnRect, pt) != FALSE);
         bool inFillQ = (pThis->m_currentStage == UIStage::StudyCompletedGate) && (PtInRect(&pThis->m_fillQuestionnaireBtnRect, pt) != FALSE);
@@ -470,6 +485,7 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
                           inSensitivity != pThis->m_isHoveringSensitivityBtn ||
                           inToggleSound != pThis->m_isHoveringToggleSoundBtn ||
                           inToggleCam != pThis->m_isHoveringToggleCamModeBtn ||
+                          inTestAlert != pThis->m_isHoveringTestAlertBtn ||
                           inRecalibFromSet != pThis->m_isHoveringRecalibFromSettingsBtn ||
                           inSaveSet != pThis->m_isHoveringSaveSettingsBtn ||
                           inFillQ != pThis->m_isHoveringFillQuestionnaireBtn ||
@@ -492,13 +508,14 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
             pThis->m_isHoveringSensitivityBtn = inSensitivity;
             pThis->m_isHoveringToggleSoundBtn = inToggleSound;
             pThis->m_isHoveringToggleCamModeBtn = inToggleCam;
+            pThis->m_isHoveringTestAlertBtn = inTestAlert;
             pThis->m_isHoveringRecalibFromSettingsBtn = inRecalibFromSet;
             pThis->m_isHoveringSaveSettingsBtn = inSaveSet;
             pThis->m_isHoveringFillQuestionnaireBtn = inFillQ;
             pThis->m_isHoveringReturnDashboardBtn = inReturnDash;
             pThis->m_isHoveringExitAppBtn = inExitApp;
 
-            bool isAnyHovered = (hoveredTab != -1 || inStart || inReady || inBackWelcome || inSkipCalib || inProceedDash || inRestartCalib || inRecalib || inSettings || inToggleFloating || inMinimizeTray || inEndStudy || inSensitivity || inToggleSound || inToggleCam || inRecalibFromSet || inSaveSet || inFillQ || inReturnDash || inExitApp);
+            bool isAnyHovered = (hoveredTab != -1 || inStart || inReady || inBackWelcome || inSkipCalib || inProceedDash || inRestartCalib || inRecalib || inSettings || inToggleFloating || inMinimizeTray || inEndStudy || inSensitivity || inToggleSound || inToggleCam || inTestAlert || inRecalibFromSet || inSaveSet || inFillQ || inReturnDash || inExitApp);
             SetCursor(LoadCursor(NULL, isAnyHovered ? IDC_HAND : IDC_ARROW));
             InvalidateRect(hwnd, NULL, FALSE);
         }
@@ -1214,6 +1231,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         statusText = L"生理狀態：輕度用眼疲勞 (Attention)";
     } else if (m_latestTelemetry.systemState.fatigueLevel == FatigueLevel::SevereWarning) {
         statusColor = Gdiplus::Color(255, 235, 87, 87); // 警告紅
+        statusText = L"生理狀態：重度疲勞！建議休息 (Severe)";
         statusText = L"生理狀態：【你的眼睛處於疲勞狀態，請適當休息】";
     }
 
@@ -1455,10 +1473,24 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF item3VRect(static_cast<float>(cardX + cardW / 2), static_cast<float>(item3Y + 8), static_cast<float>(cardW / 2 - 16), 20.0f);
     g.DrawString((m_syntheticCameraMode ? L"模擬測試鏡頭 (Synthetic) ➔" : L"實體攝影機 (Media Foundation) ➔"), -1, &itemValFont, item3VRect, &rightFormat, &goldBrush);
 
+    // 設定項目 4: 測試疲勞通知 (1 鍵立即觸發 Windows Toast / 氣泡通知)
+    int item4Y = item3Y + itemH + gap;
+    m_testAlertBtnRect = { cardX, item4Y, cardX + cardW, item4Y + itemH };
+    Gdiplus::SolidBrush item4Bg(m_isHoveringTestAlertBtn ? Gdiplus::Color(255, 180, 50, 50) : Gdiplus::Color(255, 120, 35, 35));
+    g.FillRectangle(&item4Bg, cardX, item4Y, cardW, itemH);
+    Gdiplus::Pen alertBorder(Gdiplus::Color(255, 255, 120, 120), 1.0f);
+    g.DrawRectangle(&alertBorder, cardX, item4Y, cardW, itemH);
+
+    Gdiplus::RectF item4TRect(static_cast<float>(cardX + 16), static_cast<float>(item4Y + 8), static_cast<float>(cardW / 2 + 40), 20.0f);
+    g.DrawString(L"🚨 測試疲勞提醒通知 (紅色警報)", -1, &itemTitleFont, item4TRect, &leftFormat, &whiteBrush);
+    Gdiplus::RectF item4VRect(static_cast<float>(cardX + cardW / 2), static_cast<float>(item4Y + 8), static_cast<float>(cardW / 2 - 16), 20.0f);
+    Gdiplus::SolidBrush alertBtnTextBrush(Gdiplus::Color(255, 255, 230, 230));
+    g.DrawString(L"【發送測試通知】 ➔ (點擊觸發)", -1, &itemValFont, item4VRect, &rightFormat, &alertBtnTextBrush);
+
     // 3. 底部動作按鈕：[立即重測眼動數據] 與 [儲存並返回監控中心]
     int btnH = isNarrow ? 42 : 48;
     int btnW = isNarrow ? std::min(w - 40, 260) : 260;
-    int startBtnY = item3Y + itemH + (isNarrow ? 18 : 28);
+    int startBtnY = item4Y + itemH + (isNarrow ? 16 : 22);
 
     if (!isNarrow) {
         int totalW = btnW * 2 + 20;

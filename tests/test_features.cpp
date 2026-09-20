@@ -136,6 +136,7 @@ void testFatigueStateMachineFullCycle() {
     efd::SystemState s3 = fsm.update(true, 0.20f, 14.0f, 3.5f, 301.0f);
     assert(s3.cooldownState == efd::CooldownState::FastScreening);
 
+    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning
     // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning (紅色危險狀態)
     alertTriggered = false;
     efd::SystemState s4 = fsm.update(true, 0.35f, 4.0f, 1.5f, 1.0f);

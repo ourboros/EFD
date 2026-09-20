@@ -132,6 +132,7 @@ void SystemTrayManager::showBalloonNotification(const std::wstring& title, const
         m_nid.dwInfoFlags = NIIF_INFO;
     }
 
+    m_nid.uTimeout = 4000; // 4 秒
     m_nid.uTimeout = 5000; // 5 秒
     Shell_NotifyIconW(NIM_MODIFY, &m_nid);
 }
