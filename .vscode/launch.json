@@ -2,21 +2,21 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "執行 EFD 視覺介面 (efd_gui - vs-x64)",
+      "name": "📱 執行 EFD 手機模擬器 (efd_gui - Mobile 390x844)",
       "type": "cppvsdbg",
       "request": "launch",
       "program": "${workspaceFolder}/build/vs-x64/Debug/efd_gui.exe",
-      "args": [],
+      "args": ["--mobile"],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
       "environment": [],
       "console": "integratedTerminal"
     },
     {
-      "name": "執行 EFD 視覺介面 (efd_gui - build/)",
+      "name": "💻 執行 EFD 桌面介面 (efd_gui - Desktop 960x640)",
       "type": "cppvsdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/Debug/efd_gui.exe",
+      "program": "${workspaceFolder}/build/vs-x64/Debug/efd_gui.exe",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",

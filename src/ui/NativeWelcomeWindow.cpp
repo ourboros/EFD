@@ -611,7 +611,8 @@ void NativeWelcomeWindow::onPaint(HWND hwnd) {
 // 頂部全局快速導覽列 (Top Navigation Tab Bar - 方便隨時預覽各階段 UI)
 // -----------------------------------------------------------------------------
 void NativeWelcomeWindow::drawTopNavigationBar(Gdiplus::Graphics& g, int w, int /*h*/) {
-    int navH = 34;
+    bool isNarrow = (w < 680);
+    int navH = isNarrow ? 56 : 34;
     Gdiplus::SolidBrush navBg(Gdiplus::Color(210, 24, 28, 18));
     g.FillRectangle(&navBg, 0, 0, w, navH);
 
@@ -628,7 +629,7 @@ void NativeWelcomeWindow::drawTopNavigationBar(Gdiplus::Graphics& g, int w, int 
         { UIStage::ActiveCalibration,      L"🎯 測驗" },
         { UIStage::CalibrationResult,      L"✨ 結果" },
         { UIStage::MainDashboard,          L"📊 監控" },
-        { UIStage::SettingsPanel,          L"⚙️ 設定/重測" },
+        { UIStage::SettingsPanel,          L"⚙️ 設定" },
         { UIStage::StudyCompletedGate,     L"🔒 門禁" },
         { UIStage::QuestionnaireSubmitted, L"📋 問卷" }
     };
@@ -636,44 +637,92 @@ void NativeWelcomeWindow::drawTopNavigationBar(Gdiplus::Graphics& g, int w, int 
     size_t itemCount = sizeof(items) / sizeof(items[0]);
     m_navTabRects.resize(itemCount);
 
-    int gap = 4;
-    int totalPadding = 12;
-    int tabW = std::clamp((w - totalPadding * 2 - static_cast<int>(itemCount - 1) * gap) / static_cast<int>(itemCount), 50, 105);
-    int totalTabsW = static_cast<int>(itemCount) * tabW + static_cast<int>(itemCount - 1) * gap;
-    int startX = (w - totalTabsW) / 2;
-    if (startX < totalPadding) startX = totalPadding;
-
     Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
-    int tabFontSize = (tabW < 75) ? 10 : 11;
-    Gdiplus::Font tabFont(&fontFamily, static_cast<Gdiplus::REAL>(tabFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-
     Gdiplus::StringFormat centerFormat;
     centerFormat.SetAlignment(Gdiplus::StringAlignmentCenter);
     centerFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 
-    for (size_t i = 0; i < itemCount; ++i) {
-        int tabX = startX + static_cast<int>(i) * (tabW + gap);
-        int tabY = 4;
-        int tabH = navH - 8;
-        m_navTabRects[i] = { tabX, tabY, tabX + tabW, tabY + tabH };
+    if (!isNarrow) {
+        int gap = 4;
+        int totalPadding = 12;
+        int tabW = std::clamp((w - totalPadding * 2 - static_cast<int>(itemCount - 1) * gap) / static_cast<int>(itemCount), 50, 105);
+        int totalTabsW = static_cast<int>(itemCount) * tabW + static_cast<int>(itemCount - 1) * gap;
+        int startX = (w - totalTabsW) / 2;
+        if (startX < totalPadding) startX = totalPadding;
 
-        bool isActive = (m_currentStage == items[i].stage);
-        bool isHovered = (static_cast<int>(i) == m_hoveredNavTab);
+        int tabFontSize = (tabW < 75) ? 10 : 11;
+        Gdiplus::Font tabFont(&fontFamily, static_cast<Gdiplus::REAL>(tabFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
 
-        if (isActive) {
-            Gdiplus::SolidBrush activeBg(Gdiplus::Color(255, 30, 177, 138)); // 薄荷綠
-            g.FillRectangle(&activeBg, tabX, tabY, tabW, tabH);
-            Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
-            Gdiplus::RectF textRect(static_cast<float>(tabX), static_cast<float>(tabY), static_cast<float>(tabW), static_cast<float>(tabH));
-            g.DrawString(items[i].label, -1, &tabFont, textRect, &centerFormat, &textBrush);
-        } else {
-            if (isHovered) {
-                Gdiplus::SolidBrush hoverBg(Gdiplus::Color(180, 50, 60, 40));
-                g.FillRectangle(&hoverBg, tabX, tabY, tabW, tabH);
+        for (size_t i = 0; i < itemCount; ++i) {
+            int tabX = startX + static_cast<int>(i) * (tabW + gap);
+            int tabY = 4;
+            int tabH = navH - 8;
+            m_navTabRects[i] = { tabX, tabY, tabX + tabW, tabY + tabH };
+
+            bool isActive = (m_currentStage == items[i].stage);
+            bool isHovered = (static_cast<int>(i) == m_hoveredNavTab);
+
+            if (isActive) {
+                Gdiplus::SolidBrush activeBg(Gdiplus::Color(255, 30, 177, 138)); // 薄荷綠
+                g.FillRectangle(&activeBg, tabX, tabY, tabW, tabH);
+                Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
+                Gdiplus::RectF textRect(static_cast<float>(tabX), static_cast<float>(tabY), static_cast<float>(tabW), static_cast<float>(tabH));
+                g.DrawString(items[i].label, -1, &tabFont, textRect, &centerFormat, &textBrush);
+            } else {
+                if (isHovered) {
+                    Gdiplus::SolidBrush hoverBg(Gdiplus::Color(180, 50, 60, 40));
+                    g.FillRectangle(&hoverBg, tabX, tabY, tabW, tabH);
+                }
+                Gdiplus::SolidBrush textBrush(isHovered ? Gdiplus::Color(255, 247, 227, 175) : Gdiplus::Color(200, 200, 200, 200));
+                Gdiplus::RectF textRect(static_cast<float>(tabX), static_cast<float>(tabY), static_cast<float>(tabW), static_cast<float>(tabH));
+                g.DrawString(items[i].label, -1, &tabFont, textRect, &centerFormat, &textBrush);
             }
-            Gdiplus::SolidBrush textBrush(isHovered ? Gdiplus::Color(255, 247, 227, 175) : Gdiplus::Color(200, 200, 200, 200));
-            Gdiplus::RectF textRect(static_cast<float>(tabX), static_cast<float>(tabY), static_cast<float>(tabW), static_cast<float>(tabH));
-            g.DrawString(items[i].label, -1, &tabFont, textRect, &centerFormat, &textBrush);
+        }
+    } else {
+        // 手機/窄螢幕 2 列排版：第 1 列 5 個分頁，第 2 列 4 個分頁
+        int gap = 3;
+        int padding = 6;
+        int row1Count = 5;
+        int row2Count = 4;
+        int tabH = 22;
+
+        int tabW1 = (w - padding * 2 - (row1Count - 1) * gap) / row1Count;
+        int tabW2 = (w - padding * 2 - (row2Count - 1) * gap) / row2Count;
+
+        Gdiplus::Font tabFont(&fontFamily, 10, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+
+        for (size_t i = 0; i < itemCount; ++i) {
+            int tabX, tabY, tabW;
+            if (i < 5) {
+                tabX = padding + static_cast<int>(i) * (tabW1 + gap);
+                tabY = 4;
+                tabW = tabW1;
+            } else {
+                tabX = padding + static_cast<int>(i - 5) * (tabW2 + gap);
+                tabY = 30;
+                tabW = tabW2;
+            }
+
+            m_navTabRects[i] = { tabX, tabY, tabX + tabW, tabY + tabH };
+
+            bool isActive = (m_currentStage == items[i].stage);
+            bool isHovered = (static_cast<int>(i) == m_hoveredNavTab);
+
+            if (isActive) {
+                Gdiplus::SolidBrush activeBg(Gdiplus::Color(255, 30, 177, 138));
+                g.FillRectangle(&activeBg, tabX, tabY, tabW, tabH);
+                Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
+                Gdiplus::RectF textRect(static_cast<float>(tabX), static_cast<float>(tabY), static_cast<float>(tabW), static_cast<float>(tabH));
+                g.DrawString(items[i].label, -1, &tabFont, textRect, &centerFormat, &textBrush);
+            } else {
+                if (isHovered) {
+                    Gdiplus::SolidBrush hoverBg(Gdiplus::Color(180, 50, 60, 40));
+                    g.FillRectangle(&hoverBg, tabX, tabY, tabW, tabH);
+                }
+                Gdiplus::SolidBrush textBrush(isHovered ? Gdiplus::Color(255, 247, 227, 175) : Gdiplus::Color(200, 200, 200, 200));
+                Gdiplus::RectF textRect(static_cast<float>(tabX), static_cast<float>(tabY), static_cast<float>(tabW), static_cast<float>(tabH));
+                g.DrawString(items[i].label, -1, &tabFont, textRect, &centerFormat, &textBrush);
+            }
         }
     }
 }
