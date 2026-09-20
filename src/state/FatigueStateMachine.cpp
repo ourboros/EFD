@@ -67,8 +67,18 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
     // 20/5/5 狀態機推進
     switch (m_cooldownState) {
     case CooldownState::NormalTracking:
-        if (m_lastScore >= 65.0f) {
-            // 觸發初級提醒
+        if (m_lastScore >= 80.0f) {
+            // 直接進入紅色危險狀態
+            m_currentLevel = FatigueLevel::SevereWarning;
+            m_cooldownState = CooldownState::InCooldown;
+            m_cooldownTimer = static_cast<float>(m_cooldownDuration);
+            m_screeningTimer = static_cast<float>(m_screeningInterval);
+
+            if (m_alertCallback) {
+                m_alertCallback(m_currentLevel, m_lastScore, "你的眼睛處於疲勞狀態，請適當休息");
+            }
+        } else if (m_lastScore >= 65.0f) {
+            // 觸發初級提醒 (黃色注意)
             m_currentLevel = FatigueLevel::Attention;
             m_cooldownState = CooldownState::InCooldown;
             m_cooldownTimer = static_cast<float>(m_cooldownDuration);
@@ -104,10 +114,10 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
         m_screeningTimer -= deltaSeconds;
 
         if (m_lastScore >= 80.0f) {
-            // 疲勞持續加劇，警報升級
+            // 疲勞持續加劇，警報升級至紅色危險狀態
             m_currentLevel = FatigueLevel::SevereWarning;
             if (m_alertCallback) {
-                m_alertCallback(m_currentLevel, m_lastScore, "疲勞指數持續升高！請立即閉眼休息 5 分鐘。");
+                m_alertCallback(m_currentLevel, m_lastScore, "你的眼睛處於疲勞狀態，請適當休息");
             }
         }
 

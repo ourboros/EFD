@@ -113,9 +113,11 @@ void testFatigueStateMachineFullCycle() {
 
     bool alertTriggered = false;
     efd::FatigueLevel lastAlertLevel = efd::FatigueLevel::Relaxed;
-    fsm.setAlertCallback([&](efd::FatigueLevel level, float, const std::string&) {
+    std::string lastAlertMsg;
+    fsm.setAlertCallback([&](efd::FatigueLevel level, float, const std::string& msg) {
         alertTriggered = true;
         lastAlertLevel = level;
+        lastAlertMsg = msg;
     });
 
     // 1. 正常清醒狀態
@@ -134,11 +136,12 @@ void testFatigueStateMachineFullCycle() {
     efd::SystemState s3 = fsm.update(true, 0.20f, 14.0f, 3.5f, 301.0f);
     assert(s3.cooldownState == efd::CooldownState::FastScreening);
 
-    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning
+    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning (紅色危險狀態)
     alertTriggered = false;
     efd::SystemState s4 = fsm.update(true, 0.35f, 4.0f, 1.5f, 1.0f);
     assert(s4.fatigueLevel == efd::FatigueLevel::SevereWarning);
     assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::SevereWarning);
+    assert(lastAlertMsg == "你的眼睛處於疲勞狀態，請適當休息");
 
     // 5. 離座 5 分鐘自動清零重置
     efd::SystemState s5 = fsm.update(false, 0.0f, 0.0f, 0.0f, 305.0f);

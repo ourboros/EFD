@@ -151,16 +151,28 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
         if (level == FatigueLevel::Attention || level == FatigueLevel::SevereWarning) {
             std::ostringstream oss;
-            oss << "[警告] 疲勞指數 " << std::fixed << std::setprecision(1) << score << " - " << msg;
+            if (level == FatigueLevel::SevereWarning) {
+                oss << "[警報] 疲勞指數 " << std::fixed << std::setprecision(1) << score << " - 【你的眼睛處於疲勞狀態，請適當休息】";
+            } else {
+                oss << "[警告] 疲勞指數 " << std::fixed << std::setprecision(1) << score << " - " << msg;
+            }
             this->m_dashboardMessage = oss.str();
             
-            // 發送 Windows 原生氣泡/Toast 警報通知
+            // 發送 Windows 原生氣泡/Toast 警報通知至裝置通知處
             if (this->m_soundAlertEnabled) {
-                this->m_trayManager.showBalloonNotification(
-                    (level == FatigueLevel::SevereWarning ? L"🚨 EFD 重度疲勞警告！" : L"⚠️ EFD 輕度用眼疲勞提醒"),
-                    utf8ToWide(msg),
-                    level
-                );
+                if (level == FatigueLevel::SevereWarning) {
+                    this->m_trayManager.showBalloonNotification(
+                        L"【你的眼睛處於疲勞狀態，請適當休息】",
+                        L"你的眼睛處於疲勞狀態，請適當休息",
+                        level
+                    );
+                } else {
+                    this->m_trayManager.showBalloonNotification(
+                        L"⚠️ EFD 輕度用眼疲勞提醒",
+                        utf8ToWide(msg),
+                        level
+                    );
+                }
             }
         }
     });
@@ -1202,7 +1214,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         statusText = L"生理狀態：輕度用眼疲勞 (Attention)";
     } else if (m_latestTelemetry.systemState.fatigueLevel == FatigueLevel::SevereWarning) {
         statusColor = Gdiplus::Color(255, 235, 87, 87); // 警告紅
-        statusText = L"生理狀態：重度疲勞！建議休息 (Severe)";
+        statusText = L"生理狀態：【你的眼睛處於疲勞狀態，請適當休息】";
     }
 
     Gdiplus::SolidBrush cardBrush(statusColor);
