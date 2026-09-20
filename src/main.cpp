@@ -15,6 +15,7 @@
 #include "analysis/AdaptiveBaseline.hpp"
 #include "state/FatigueStateMachine.hpp"
 #include "platform/PlatformLifecycleAdapter.hpp"
+#include "platform/windows/SystemTrayManager.hpp"
 #include "engine/AsyncPipelineEngine.hpp"
 #include "ui/NativeWelcomeWindow.hpp"
 
@@ -37,11 +38,33 @@ int runCliSimulation() {
     std::cout << "====================================================\n\n";
 
     efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+    efd::SystemTrayManager tray;
+#ifdef _WIN32
+    tray.initialize(nullptr);
+#endif
 
-    engine.setAlertCallback([](efd::FatigueLevel level, float score, const std::string& msg) {
+    engine.setAlertCallback([&tray](efd::FatigueLevel level, float score, const std::string& msg) {
         std::cout << "\n>>> [ALERT TRIGGERED] Level: " << static_cast<int>(level)
                   << " | Fatigue Score: " << std::fixed << std::setprecision(1) << score
-                  << " | " << msg << " <<<\n\n";
+                  << " | " << msg << " <<<\n";
+
+#ifdef _WIN32
+        if (level == efd::FatigueLevel::SevereWarning) {
+            std::cout << " -> [Windows 系統通知處已發送] 標題：【你的眼睛處於疲勞狀態，請適當休息】\n\n";
+            tray.showBalloonNotification(
+                L"【你的眼睛處於疲勞狀態，請適當休息】",
+                L"你的眼睛處於疲勞狀態，請適當休息",
+                level
+            );
+        } else if (level == efd::FatigueLevel::Attention) {
+            std::cout << " -> [Windows 系統通知處已發送] 標題：【EFD 用眼疲勞提醒】\n\n";
+            tray.showBalloonNotification(
+                L"【EFD 用眼疲勞提醒】",
+                L"偵測到用眼疲勞，建議休息或遠眺放鬆。",
+                level
+            );
+        }
+#endif
     });
 
     std::atomic<int> printCounter{0};
@@ -105,6 +128,12 @@ int runCliSimulation() {
     engine.setSimulatedEyeOpenness(1.0f);
     std::cout << " -> 管線已恢復: " << engine.getLifecycleAdapter().getStatusSummary() << "\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    // 階段 D2: 模擬嚴重用眼疲勞升級至紅色危險狀態
+    std::cout << "\n[Event 4] 模擬嚴重用眼疲勞 (Severe Warning / 紅色危險狀態) -> 觸發 Windows Toast 氣泡通知...\n";
+    engine.getStateMachine().reset();
+    engine.getStateMachine().update(true, 0.45f, 3.0f, 1.0f, 1.0f);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 
     engine.stop();
     std::cout << std::string(75, '-') << "\n\n";

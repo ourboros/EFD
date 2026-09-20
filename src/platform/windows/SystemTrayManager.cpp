@@ -68,6 +68,12 @@ HICON SystemTrayManager::createColoredDotIcon(COLORREF color) {
 }
 
 bool SystemTrayManager::initialize(HWND hostHwnd, const std::wstring& tipText) {
+    if (!hostHwnd) {
+        hostHwnd = GetConsoleWindow();
+    }
+    if (!hostHwnd) {
+        hostHwnd = CreateWindowExW(0, L"STATIC", L"EFD_TrayHost", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
+    }
     if (!hostHwnd) return false;
     m_hwnd = hostHwnd;
 
