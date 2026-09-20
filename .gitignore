@@ -39,5 +39,6 @@ Desktop.ini
 
 # Runtime data & test databases
 *.dat
+*.apk
 test_study_config.json
 
