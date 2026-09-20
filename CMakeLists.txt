@@ -162,6 +162,34 @@ if(WIN32)
             "${CMAKE_CURRENT_SOURCE_DIR}/design"
             "$<TARGET_FILE_DIR:efd_gui>/design"
     )
+elseif(APPLE AND NOT IOS)
+    set_target_properties(efd_gui PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist
+        MACOSX_BUNDLE_BUNDLE_NAME "EFD"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
+    )
+    target_link_libraries(efd_gui PRIVATE "-framework Foundation" "-framework AVFoundation" "-framework AppKit")
+endif()
+
+# -----------------------------------------------------------------------------
+# iOS Application Target: EFD_iOS
+# -----------------------------------------------------------------------------
+if(IOS)
+    add_executable(EFD_iOS
+        ios/main.m
+        ios/AppDelegate.h
+        ios/AppDelegate.mm
+        ios/ViewController.h
+        ios/ViewController.mm
+    )
+    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox")
+    set_target_properties(EFD_iOS PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    )
 endif()
 
 # -----------------------------------------------------------------------------

@@ -14,6 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -26,7 +27,6 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -36,6 +36,8 @@ import androidx.core.content.ContextCompat;
 import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final String TAG = "EFD_MainActivity";
 
     public enum UIStage {
         Welcome,
@@ -59,15 +61,13 @@ public class MainActivity extends AppCompatActivity {
     private FrameLayout mStageContentContainer;
 
     // 校準動畫
-    private float mCalibProgress = 0f;
     private float mDotX = 0.5f;
     private float mDotY = 0.5f;
     private int mCountdownSec = 3;
 
     // 即時遙測數據
-    private float mCurrentScore = 0.0f;
+    private float mCurrentScore = 12.0f;
     private int mCurrentLevel = 0;
-    private String mLastAlertMsg = "";
     private boolean mHasShownAlert = false;
 
     private static final String CHANNEL_ID = "efd_fatigue_alerts";
@@ -78,21 +78,34 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         mHandler = new Handler(Looper.getMainLooper());
-        mVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
 
-        // 初始化通知通道
-        createNotificationChannel();
+        try {
+            mVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        } catch (Throwable t) {
+            Log.w(TAG, "Vibrator service not available: " + t.getMessage());
+        }
 
-        // 請求相機與通知權限
-        requestAppPermissions();
-
-        // 初始化原生 NDK C++ 引擎
-        EfdNativeBridge.nativeInitEngine();
-
-        // 建立純程式化響應式 UI
+        // 1. 建立純程式化響應式 UI
         setupViews();
 
-        // 啟動 30FPS 遙測輪詢
+        // 2. 初始化通知通道 (防禦性調用)
+        try {
+            createNotificationChannel();
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to create notification channel: " + t.getMessage());
+        }
+
+        // 3. 初始化原生 NDK C++ 引擎 (非阻塞防禦性調用)
+        try {
+            EfdNativeBridge.initEngine();
+        } catch (Throwable t) {
+            Log.e(TAG, "Error initializing native engine: " + t.getMessage());
+        }
+
+        // 4. 延遲 500ms 請求權限，避免阻礙主視窗渲染啟動
+        mHandler.postDelayed(this::requestAppPermissions, 500);
+
+        // 5. 啟動遙測更新輪詢
         startTelemetryLoop();
     }
 
@@ -112,19 +125,25 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void requestAppPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.CAMERA, Manifest.permission.POST_NOTIFICATIONS},
-                        PERMISSION_REQ_CODE);
+        if (isFinishing() || isDestroyed()) return;
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(this,
+                            new String[]{Manifest.permission.CAMERA, Manifest.permission.POST_NOTIFICATIONS},
+                            PERMISSION_REQ_CODE);
+                }
+            } else {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(this,
+                            new String[]{Manifest.permission.CAMERA},
+                            PERMISSION_REQ_CODE);
+                }
             }
-        } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.CAMERA},
-                        PERMISSION_REQ_CODE);
-            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Permission request failed: " + t.getMessage());
         }
     }
 
@@ -249,7 +268,7 @@ public class MainActivity extends AppCompatActivity {
         layout.setBackgroundColor(Color.parseColor("#1EB18A")); // 薄荷綠
         layout.setPadding(32, 32, 32, 32);
 
-        // 純白圓形徽章容器 (包含向量眼睛)
+        // 純白圓形徽章容器
         FrameLayout badge = new FrameLayout(this);
         int badgeSize = 280;
         FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(badgeSize, badgeSize);
@@ -267,7 +286,7 @@ public class MainActivity extends AppCompatActivity {
                 p.setStrokeWidth(6f);
                 canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, getWidth() / 2f - 4, p);
 
-                // 畫眼睛
+                // 向量眼睛標章
                 p.setStyle(Paint.Style.STROKE);
                 p.setColor(Color.parseColor("#1EB18A"));
                 p.setStrokeWidth(8f);
@@ -377,6 +396,7 @@ public class MainActivity extends AppCompatActivity {
         mHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
+                if (isFinishing() || isDestroyed()) return;
                 mCountdownSec--;
                 if (mCountdownSec > 0) {
                     cdText.setText(String.valueOf(mCountdownSec));
@@ -432,21 +452,20 @@ public class MainActivity extends AppCompatActivity {
         mHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (mCurrentStage != UIStage.ActiveCalibration) return;
+                if (isFinishing() || isDestroyed() || mCurrentStage != UIStage.ActiveCalibration) return;
 
                 long elapsed = System.currentTimeMillis() - startTime;
                 float t = elapsed / 5000f; // 5 秒
 
                 if (t < 1.0f) {
                     pbar.setProgress((int) (t * 100));
-                    // 5 點巡迴軌跡
                     float angle = t * 6.283f * 2;
                     mDotX = 0.5f + 0.35f * (float) Math.cos(angle);
                     mDotY = 0.5f + 0.30f * (float) Math.sin(angle);
                     dotCanvas.invalidate();
                     mHandler.postDelayed(this, 16);
                 } else {
-                    EfdNativeBridge.nativeCalibrate(3.0f);
+                    EfdNativeBridge.calibrate(3.0f);
                     setStage(UIStage.CalibrationResult);
                 }
             }
@@ -649,7 +668,7 @@ public class MainActivity extends AppCompatActivity {
         surveyBtn.setTextColor(Color.parseColor("#25291C"));
         surveyBtn.setBackgroundColor(Color.parseColor("#F7E3AF"));
         surveyBtn.setOnClickListener(v -> {
-            EfdNativeBridge.nativeSubmitQuestionnaire("Study_Post_Survey_Completed");
+            EfdNativeBridge.submitQuestionnaire("Study_Post_Survey_Completed");
             setStage(UIStage.QuestionnaireSubmitted);
         });
         layout.addView(surveyBtn);
@@ -698,54 +717,69 @@ public class MainActivity extends AppCompatActivity {
     // 疲勞警報通知發送 (Heads-up Notification + 震動反饋 + 彈窗)
     // -------------------------------------------------------------------------
     private void triggerFatigueAlertNotification(String message) {
-        // 1. 手機震動
-        if (mVibrator != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                mVibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE));
-            } else {
-                mVibrator.vibrate(500);
+        if (isFinishing() || isDestroyed()) return;
+
+        // 1. 手機震動 (安全調用)
+        try {
+            if (mVibrator != null && mVibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    mVibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    mVibrator.vibrate(500);
+                }
             }
+        } catch (Throwable t) {
+            Log.w(TAG, "Vibration failed: " + t.getMessage());
         }
 
         // 2. 系統 Toast
         Toast.makeText(this, "【你的眼睛處於疲勞狀態，請適當休息】", Toast.LENGTH_LONG).show();
 
-        // 3. Android 頂部 Heads-up 橫幅通知
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentTitle("【你的眼睛處於疲勞狀態，請適當休息】")
-                .setContentText(message)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setAutoCancel(true);
+        // 3. Android 頂部 Heads-up 橫幅通知 (安全調用)
+        try {
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                    .setContentTitle("【你的眼睛處於疲勞狀態，請適當休息】")
+                    .setContentText(message)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setAutoCancel(true);
 
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) {
-            manager.notify(101, builder.build());
+            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                manager.notify(101, builder.build());
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Notification trigger failed: " + t.getMessage());
         }
 
         // 4. 應用內紅色警告對話框
-        new AlertDialog.Builder(this)
-                .setTitle("🚨 疲勞警報提醒")
-                .setMessage("【你的眼睛處於疲勞狀態，請適當休息】\n\n系統偵測到眼睛疲勞指數達到紅色危險狀態，請閉眼放鬆 5 分鐘。")
-                .setPositiveButton("我知道了，立即休息", null)
-                .show();
+        try {
+            new AlertDialog.Builder(this)
+                    .setTitle("🚨 疲勞警報提醒")
+                    .setMessage("【你的眼睛處於疲勞狀態，請適當休息】\n\n系統偵測到眼睛疲勞指數達到紅色危險狀態，請閉眼放鬆 5 分鐘。")
+                    .setPositiveButton("我知道了，立即休息", null)
+                    .show();
+        } catch (Throwable t) {
+            Log.w(TAG, "Dialog trigger failed: " + t.getMessage());
+        }
     }
 
     // -------------------------------------------------------------------------
-    // 遙測數據背景循環更新 (30FPS)
+    // 遙測數據背景循環更新 (10FPS)
     // -------------------------------------------------------------------------
     private void startTelemetryLoop() {
         mTelemetryRunnable = new Runnable() {
             @Override
             public void run() {
+                if (isFinishing() || isDestroyed()) return;
+
                 try {
-                    String jsonStr = EfdNativeBridge.nativeGetTelemetryJson();
+                    String jsonStr = EfdNativeBridge.getTelemetryJson();
                     if (jsonStr != null && !jsonStr.isEmpty() && !jsonStr.startsWith("{\"error\"")) {
                         JSONObject obj = new JSONObject(jsonStr);
                         mCurrentScore = (float) obj.optDouble("fatigueScore", 12.0);
                         mCurrentLevel = obj.optInt("fatigueLevel", 0);
                         int lastAlertLevel = obj.optInt("lastAlertLevel", 0);
-                        String alertMsg = obj.optString("lastAlertMsg", "");
 
                         if (mCurrentStage == UIStage.MainDashboard && mDashScoreText != null) {
                             mDashScoreText.setText(String.format("疲勞評分：%.1f / 100", mCurrentScore));
@@ -767,7 +801,7 @@ public class MainActivity extends AppCompatActivity {
                             triggerFatigueAlertNotification("你的眼睛處於疲勞狀態，請適當休息");
                         }
                     }
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     // ignore
                 }
 
@@ -783,7 +817,10 @@ public class MainActivity extends AppCompatActivity {
         if (mHandler != null && mTelemetryRunnable != null) {
             mHandler.removeCallbacks(mTelemetryRunnable);
         }
-        EfdNativeBridge.nativeStopEngine();
+        try {
+            EfdNativeBridge.stopEngine();
+        } catch (Throwable t) {
+            Log.w(TAG, "Error stopping native engine: " + t.getMessage());
+        }
     }
 }
-
