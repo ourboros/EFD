@@ -65,7 +65,7 @@
     // 4. 按鈕群
     self.startBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     self.startBtn.frame = CGRectMake(40, h - 180, w - 80, 50);
-    [self.startBtn setTitle:@"🚀 開始 5 點眼動特徵校準" forState:UIControlStateNormal];
+    [self.startBtn setTitle:@"開始 5 點眼動特徵校準" forState:UIControlStateNormal];
     [self.startBtn setTitleColor:[UIColor colorWithRed:0.145 green:0.161 blue:0.110 alpha:1.0] forState:UIControlStateNormal];
     self.startBtn.backgroundColor = [UIColor colorWithRed:0.969 green:0.890 blue:0.686 alpha:1.0];
     self.startBtn.layer.cornerRadius = 10;
@@ -75,7 +75,7 @@
 
     self.alertBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     self.alertBtn.frame = CGRectMake(40, h - 115, w - 80, 50);
-    [self.alertBtn setTitle:@"🚨 測試疲勞提醒通知 (紅色警報)" forState:UIControlStateNormal];
+    [self.alertBtn setTitle:@"測試疲勞提醒通知 (紅色警報)" forState:UIControlStateNormal];
     [self.alertBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     self.alertBtn.backgroundColor = [UIColor colorWithRed:0.922 green:0.341 blue:0.341 alpha:1.0];
     self.alertBtn.layer.cornerRadius = 10;
@@ -87,7 +87,7 @@
 - (void)onStartCalib {
     if (self.engine && *self.engine) {
         (*self.engine)->calibrate(3.0f);
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"✨ 校準完成"
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"校準完成"
                                                                        message:@"個人 EAR 判定閾值基準已自動校準！"
                                                                 preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"確定" style:UIAlertActionStyleDefault handler:nil]];
@@ -116,3 +116,4 @@
 }
 
 @end
+

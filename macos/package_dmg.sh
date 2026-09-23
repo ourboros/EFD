@@ -27,3 +27,4 @@ hdiutil create -volname "EFD-Installer" -srcfolder "${DMG_STAGE}" -ov -format UD
 
 echo "=== [3/3] macOS DMG 安裝檔打包完成！==="
 echo "輸出路徑: ${DMG_OUTPUT}"
+

@@ -38,3 +38,4 @@ codesign --force --deep --sign - "${APP_BUNDLE}"
 
 echo "=== [4/4] macOS EFD.app 建置完成！==="
 echo "路徑: ${APP_BUNDLE}"
+

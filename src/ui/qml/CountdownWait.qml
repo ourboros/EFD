@@ -44,6 +44,7 @@ Item {
             color: "#FFFFFF"
             font.bold: true
             font.pixelSize: 22
+            horizontalAlignment: Text.AlignHCenter
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: pulseCircle.bottom
             anchors.topMargin: 40

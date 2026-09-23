@@ -160,12 +160,12 @@ void SystemTrayManager::showContextMenu() {
     HMENU hMenu = CreatePopupMenu();
     if (!hMenu) return;
 
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_SHOW_MAIN, L"🖥️ 顯示 EFD 監控中心");
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_TOGGLE_FLOATING, L"🔘 切換桌面置頂懸浮指標");
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_RECALIBRATE, L"🔄 重新校準眼睛基準");
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_END_STUDY, L"📋 填寫後測問卷 (14天門禁)");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_SHOW_MAIN, L"顯示 EFD 監控中心");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_TOGGLE_FLOATING, L"切換桌面置頂懸浮指標");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_RECALIBRATE, L"重新校準眼睛基準");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_END_STUDY, L"填寫後測問卷 (14天門禁)");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"❌ 安全退出系統");
+    AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"安全退出系統");
 
     POINT pt;
     GetCursorPos(&pt);

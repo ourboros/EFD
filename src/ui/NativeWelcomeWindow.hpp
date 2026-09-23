@@ -98,6 +98,7 @@ private:
     RECT m_backWelcomeBtnRect{};
     RECT m_skipCalibBtnRect{};
     RECT m_proceedDashboardBtnRect{};
+    RECT m_closeBgResultBtnRect{};
     RECT m_restartCalibBtnRect{};
     RECT m_recalibBtnRect{};
     RECT m_settingsBtnRect{};
@@ -119,6 +120,7 @@ private:
     bool m_isHoveringBackWelcomeBtn = false;
     bool m_isHoveringSkipCalibBtn = false;
     bool m_isHoveringProceedDashboardBtn = false;
+    bool m_isHoveringCloseBgResultBtn = false;
     bool m_isHoveringRestartCalibBtn = false;
     bool m_isHoveringRecalibBtn = false;
     bool m_isHoveringSettingsBtn = false;

@@ -18,12 +18,12 @@ Item {
             spacing: 28
             width: Math.min(parent.width * 0.9, 800)
 
-            // Logo 圖像 (design/1x/資產 4.png)
+            // Logo 圖像 (design/1x/資產 7.png) - 縮小 50%
             Image {
                 id: logoImage
                 source: "assets/logo.png"
-                width: 140
-                height: 140
+                width: 110
+                height: 66
                 fillMode: Image.PreserveAspectFit
                 anchors.horizontalCenter: parent.horizontalCenter
                 smooth: true

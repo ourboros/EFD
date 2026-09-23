@@ -147,6 +147,23 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    @SuppressWarnings("deprecation")
+    private void styleButton(Button btn, String bgColorHex, String textColorHex) {
+        if (btn == null) return;
+        btn.setTypeface(null, android.graphics.Typeface.BOLD);
+        btn.setTextColor(Color.parseColor(textColorHex));
+        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+        shape.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        shape.setColor(Color.parseColor(bgColorHex));
+        float density = getResources().getDisplayMetrics().density;
+        shape.setCornerRadius(20f * density); // 20px 圓角邊框
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            btn.setBackground(shape);
+        } else {
+            btn.setBackgroundDrawable(shape);
+        }
+    }
+
     private void setupViews() {
         mMainContainer = new LinearLayout(this);
         mMainContainer.setOrientation(LinearLayout.VERTICAL);
@@ -177,8 +194,8 @@ public class MainActivity extends AppCompatActivity {
         mNavBarContainer.setPadding(12, 10, 12, 10);
 
         String[] labels = {
-                "🏠 歡迎", "📖 說明", "⏱️ 倒數", "🎯 測驗",
-                "✨ 結果", "📊 監控", "⚙️ 設定", "🔒 門禁", "📋 問卷"
+                "歡迎", "說明", "倒數", "測驗",
+                "結果", "監控", "設定", "門禁", "問卷"
         };
         UIStage[] stages = UIStage.values();
 
@@ -188,8 +205,8 @@ public class MainActivity extends AppCompatActivity {
             btn.setText(labels[i]);
             btn.setTextSize(11);
             btn.setPadding(18, 6, 18, 6);
-            btn.setTextColor(stage == mCurrentStage ? Color.WHITE : Color.parseColor("#F7E3AF"));
-            btn.setBackgroundColor(stage == mCurrentStage ? Color.parseColor("#1EB18A") : Color.parseColor("#343A26"));
+            boolean isActive = (stage == mCurrentStage);
+            styleButton(btn, isActive ? "#1EB18A" : "#343A26", isActive ? "#FFFFFF" : "#F7E3AF");
 
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -218,8 +235,7 @@ public class MainActivity extends AppCompatActivity {
             if (child instanceof Button) {
                 Button btn = (Button) child;
                 boolean isActive = (stages[i] == mCurrentStage);
-                btn.setTextColor(isActive ? Color.WHITE : Color.parseColor("#F7E3AF"));
-                btn.setBackgroundColor(isActive ? Color.parseColor("#1EB18A") : Color.parseColor("#343A26"));
+                styleButton(btn, isActive ? "#1EB18A" : "#343A26", isActive ? "#FFFFFF" : "#F7E3AF");
             }
         }
     }
@@ -268,37 +284,21 @@ public class MainActivity extends AppCompatActivity {
         layout.setBackgroundColor(Color.parseColor("#1EB18A")); // 薄荷綠
         layout.setPadding(32, 32, 32, 32);
 
-        // 純白圓形徽章容器
-        FrameLayout badge = new FrameLayout(this);
-        int badgeSize = 280;
-        FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(badgeSize, badgeSize);
-        badgeParams.gravity = Gravity.CENTER;
+        // 載入資產 10 (資產 10.png) 圖片 - 縮小比例，透明無邊框
+        android.widget.ImageView logoImage = new android.widget.ImageView(this);
+        int logoResId = getResources().getIdentifier("logo10", "drawable", getPackageName());
+        if (logoResId != 0) {
+            logoImage.setImageResource(logoResId);
+        }
+        logoImage.setAdjustViewBounds(true);
+        logoImage.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
 
-        View circleBg = new View(this) {
-            @Override
-            protected void onDraw(Canvas canvas) {
-                super.onDraw(canvas);
-                Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-                p.setColor(Color.WHITE);
-                canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, getWidth() / 2f - 4, p);
-                p.setStyle(Paint.Style.STROKE);
-                p.setColor(Color.parseColor("#F7E3AF"));
-                p.setStrokeWidth(6f);
-                canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, getWidth() / 2f - 4, p);
-
-                // 向量眼睛標章
-                p.setStyle(Paint.Style.STROKE);
-                p.setColor(Color.parseColor("#1EB18A"));
-                p.setStrokeWidth(8f);
-                float cx = getWidth() / 2f;
-                float cy = getHeight() / 2f;
-                canvas.drawOval(cx - 70, cy - 40, cx + 70, cy + 40, p);
-                p.setStyle(Paint.Style.FILL);
-                canvas.drawCircle(cx, cy, 22, p);
-            }
-        };
-        badge.addView(circleBg, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        layout.addView(badge, badgeParams);
+        int logoWidth = 180; // 適合手機螢幕置中的 Logo 寬度
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(
+                logoWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
+        logoParams.gravity = Gravity.CENTER;
+        logoParams.setMargins(0, 16, 0, 24);
+        layout.addView(logoImage, logoParams);
 
         TextView title = new TextView(this);
         title.setText("感謝協助測試EFD");
@@ -317,11 +317,10 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(subtitle);
 
         Button startBtn = new Button(this);
-        startBtn.setText("🚀 開始眼動校準測驗");
+        startBtn.setText("開始眼動校準測驗");
         startBtn.setTextSize(16);
-        startBtn.setTextColor(Color.parseColor("#25291C"));
-        startBtn.setBackgroundColor(Color.parseColor("#F7E3AF"));
         startBtn.setPadding(32, 16, 32, 16);
+        styleButton(startBtn, "#F7E3AF", "#25291C");
         startBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
         layout.addView(startBtn);
 
@@ -340,7 +339,7 @@ public class MainActivity extends AppCompatActivity {
         layout.setPadding(32, 24, 32, 24);
 
         TextView title = new TextView(this);
-        title.setText("📖 特徵提取測驗說明");
+        title.setText("特徵提取測驗說明");
         title.setTextSize(22);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
@@ -355,10 +354,10 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(desc);
 
         Button readyBtn = new Button(this);
-        readyBtn.setText("✅ 我準備好了，開始測驗");
+        readyBtn.setText("我準備好了，開始測驗");
         readyBtn.setTextSize(16);
-        readyBtn.setTextColor(Color.WHITE);
-        readyBtn.setBackgroundColor(Color.parseColor("#1EB18A"));
+        readyBtn.setPadding(32, 16, 32, 16);
+        styleButton(readyBtn, "#1EB18A", "#FFFFFF");
         readyBtn.setOnClickListener(v -> setStage(UIStage.CountdownWait));
         layout.addView(readyBtn);
 
@@ -386,6 +385,7 @@ public class MainActivity extends AppCompatActivity {
         hint.setText("請將手機拿正，平視前鏡頭...");
         hint.setTextSize(16);
         hint.setTextColor(Color.WHITE);
+        hint.setGravity(Gravity.CENTER);
         hint.setPadding(0, 24, 0, 0);
         layout.addView(hint);
 
@@ -483,7 +483,7 @@ public class MainActivity extends AppCompatActivity {
         layout.setPadding(32, 32, 32, 32);
 
         TextView icon = new TextView(this);
-        icon.setText("✨");
+        icon.setText("");
         icon.setTextSize(60);
         icon.setGravity(Gravity.CENTER);
         layout.addView(icon);
@@ -505,12 +505,28 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(val);
 
         Button proceedBtn = new Button(this);
-        proceedBtn.setText("前往即時眼動監控中心 ➔");
-        proceedBtn.setTextSize(16);
-        proceedBtn.setTextColor(Color.parseColor("#25291C"));
-        proceedBtn.setBackgroundColor(Color.parseColor("#F7E3AF"));
+        proceedBtn.setText("進入即時眼動監控中心 ➔");
+        proceedBtn.setTextSize(15);
+        proceedBtn.setPadding(24, 14, 24, 14);
+        styleButton(proceedBtn, "#F7E3AF", "#25291C");
         proceedBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
         layout.addView(proceedBtn);
+
+        // 新增按鈕：數據提取後關閉系統介面 (背景持續監控)
+        Button closeBgBtn = new Button(this);
+        closeBgBtn.setText("關閉系統介面 (背景持續監控)");
+        closeBgBtn.setTextSize(14);
+        closeBgBtn.setPadding(24, 12, 24, 12);
+        styleButton(closeBgBtn, "#FFFFFF", "#1EB18A");
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        closeLp.setMargins(0, 12, 0, 0);
+        closeBgBtn.setLayoutParams(closeLp);
+        closeBgBtn.setOnClickListener(v -> {
+            Toast.makeText(this, "EFD 已轉入背景監控，僅於疲勞超標時跳出提醒", Toast.LENGTH_LONG).show();
+            moveTaskToBack(true);
+        });
+        layout.addView(closeBgBtn);
 
         mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -532,7 +548,7 @@ public class MainActivity extends AppCompatActivity {
         layout.setPadding(24, 20, 24, 32);
 
         TextView header = new TextView(this);
-        header.setText("📊 即時眼動與疲勞監控中心");
+        header.setText("即時眼動與疲勞監控中心");
         header.setTextSize(20);
         header.setTextColor(Color.WHITE);
         header.setGravity(Gravity.CENTER);
@@ -569,26 +585,48 @@ public class MainActivity extends AppCompatActivity {
         // 控制按鈕群
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.VERTICAL);
-        btns.setPadding(0, 24, 0, 0);
+        btns.setPadding(0, 20, 0, 0);
+
+        Button closeBgBtn = new Button(this);
+        closeBgBtn.setText("關閉系統介面 (背景持續監控)");
+        closeBgBtn.setPadding(16, 14, 16, 14);
+        styleButton(closeBgBtn, "#F7E3AF", "#25291C");
+        closeBgBtn.setOnClickListener(v -> {
+            Toast.makeText(this, "EFD 已轉入背景監控，僅於疲勞超標時跳出提醒", Toast.LENGTH_LONG).show();
+            moveTaskToBack(true);
+        });
+        btns.addView(closeBgBtn);
 
         Button testAlertBtn = new Button(this);
-        testAlertBtn.setText("🚨 立即觸發紅色疲勞提醒通知");
-        testAlertBtn.setTextColor(Color.WHITE);
-        testAlertBtn.setBackgroundColor(Color.parseColor("#EB5757"));
+        testAlertBtn.setText("立即觸發紅色疲勞提醒通知");
+        testAlertBtn.setPadding(16, 12, 16, 12);
+        styleButton(testAlertBtn, "#EB5757", "#FFFFFF");
+        LinearLayout.LayoutParams testLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        testLp.setMargins(0, 10, 0, 0);
+        testAlertBtn.setLayoutParams(testLp);
         testAlertBtn.setOnClickListener(v -> triggerFatigueAlertNotification("你的眼睛處於疲勞狀態，請適當休息"));
         btns.addView(testAlertBtn);
 
         Button settingsBtn = new Button(this);
-        settingsBtn.setText("⚙️ 系統設定與相機調校");
-        settingsBtn.setTextColor(Color.WHITE);
-        settingsBtn.setBackgroundColor(Color.parseColor("#485338"));
+        settingsBtn.setText("系統設定與相機調校");
+        settingsBtn.setPadding(16, 12, 16, 12);
+        styleButton(settingsBtn, "#485338", "#FFFFFF");
+        LinearLayout.LayoutParams setLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        setLp.setMargins(0, 10, 0, 0);
+        settingsBtn.setLayoutParams(setLp);
         settingsBtn.setOnClickListener(v -> setStage(UIStage.SettingsPanel));
         btns.addView(settingsBtn);
 
         Button endStudyBtn = new Button(this);
-        endStudyBtn.setText("📋 結束施測 / 14天科研問卷門禁");
-        endStudyBtn.setTextColor(Color.parseColor("#25291C"));
-        endStudyBtn.setBackgroundColor(Color.parseColor("#F7E3AF"));
+        endStudyBtn.setText("結束施測 / 14天科研問卷門禁");
+        endStudyBtn.setPadding(16, 12, 16, 12);
+        styleButton(endStudyBtn, "#343A26", "#F7E3AF");
+        LinearLayout.LayoutParams endLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        endLp.setMargins(0, 10, 0, 0);
+        endStudyBtn.setLayoutParams(endLp);
         endStudyBtn.setOnClickListener(v -> setStage(UIStage.StudyCompletedGate));
         btns.addView(endStudyBtn);
 
@@ -611,7 +649,7 @@ public class MainActivity extends AppCompatActivity {
         layout.setPadding(24, 20, 24, 32);
 
         TextView title = new TextView(this);
-        title.setText("⚙️ 系統設定與眼動重測");
+        title.setText("系統設定與眼動重測");
         title.setTextSize(20);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
@@ -619,23 +657,28 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(title);
 
         Button recalibBtn = new Button(this);
-        recalibBtn.setText("🔄 重新進行眼動校準");
-        recalibBtn.setTextColor(Color.WHITE);
-        recalibBtn.setBackgroundColor(Color.parseColor("#1EB18A"));
+        recalibBtn.setText("重新進行眼動校準");
+        styleButton(recalibBtn, "#1EB18A", "#FFFFFF");
         recalibBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
         layout.addView(recalibBtn);
 
         Button testNotifBtn = new Button(this);
-        testNotifBtn.setText("🔔 測試發送【你的眼睛處於疲勞狀態，請適當休息】");
-        testNotifBtn.setTextColor(Color.WHITE);
-        testNotifBtn.setBackgroundColor(Color.parseColor("#EB5757"));
+        testNotifBtn.setText("測試發送【你的眼睛處於疲勞狀態，請適當休息】");
+        styleButton(testNotifBtn, "#EB5757", "#FFFFFF");
+        LinearLayout.LayoutParams testLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        testLp.setMargins(0, 10, 0, 0);
+        testNotifBtn.setLayoutParams(testLp);
         testNotifBtn.setOnClickListener(v -> triggerFatigueAlertNotification("你的眼睛處於疲勞狀態，請適當休息"));
         layout.addView(testNotifBtn);
 
         Button returnBtn = new Button(this);
-        returnBtn.setText("💾 儲存並返回監控中心");
-        returnBtn.setTextColor(Color.parseColor("#25291C"));
-        returnBtn.setBackgroundColor(Color.parseColor("#96C5F7"));
+        returnBtn.setText("儲存並返回監控中心");
+        styleButton(returnBtn, "#96C5F7", "#25291C");
+        LinearLayout.LayoutParams retLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        retLp.setMargins(0, 10, 0, 0);
+        returnBtn.setLayoutParams(retLp);
         returnBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
         layout.addView(returnBtn);
 
@@ -663,10 +706,9 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(title);
 
         Button surveyBtn = new Button(this);
-        surveyBtn.setText("📝 前往填寫科研後測問卷");
+        surveyBtn.setText("前往填寫科研後測問卷");
         surveyBtn.setTextSize(16);
-        surveyBtn.setTextColor(Color.parseColor("#25291C"));
-        surveyBtn.setBackgroundColor(Color.parseColor("#F7E3AF"));
+        styleButton(surveyBtn, "#F7E3AF", "#25291C");
         surveyBtn.setOnClickListener(v -> {
             EfdNativeBridge.submitQuestionnaire("Study_Post_Survey_Completed");
             setStage(UIStage.QuestionnaireSubmitted);
@@ -688,7 +730,7 @@ public class MainActivity extends AppCompatActivity {
         layout.setPadding(32, 32, 32, 32);
 
         TextView title = new TextView(this);
-        title.setText("🎉 問卷已成功送出！");
+        title.setText("問卷已成功送出！");
         title.setTextSize(24);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
@@ -703,9 +745,8 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(tokenText);
 
         Button exitBtn = new Button(this);
-        exitBtn.setText("🚪 關閉並結束應用程式");
-        exitBtn.setTextColor(Color.WHITE);
-        exitBtn.setBackgroundColor(Color.parseColor("#EB5757"));
+        exitBtn.setText("關閉並結束應用程式");
+        styleButton(exitBtn, "#EB5757", "#FFFFFF");
         exitBtn.setOnClickListener(v -> finish());
         layout.addView(exitBtn);
 
