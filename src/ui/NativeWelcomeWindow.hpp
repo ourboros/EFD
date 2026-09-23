@@ -113,7 +113,6 @@ private:
     RECT m_toggleSoundBtnRect{};
     RECT m_toggleCamModeBtnRect{};
     RECT m_sensitivityBtnRect{};
-    RECT m_testAlertBtnRect{};
 
     bool m_isHoveringStartBtn = false;
     bool m_isHoveringReadyBtn = false;
@@ -135,7 +134,6 @@ private:
     bool m_isHoveringToggleSoundBtn = false;
     bool m_isHoveringToggleCamModeBtn = false;
     bool m_isHoveringSensitivityBtn = false;
-    bool m_isHoveringTestAlertBtn = false;
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void onPaint(HWND hwnd);

@@ -62,23 +62,23 @@
     self.scoreLabel.textAlignment = NSTextAlignmentCenter;
     [self.view addSubview:self.scoreLabel];
 
-    // 4. 按鈕群
+    // 4. 按鈕群 (粗體字體、20px 圓角邊框, 純文字)
     self.startBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     self.startBtn.frame = CGRectMake(40, h - 180, w - 80, 50);
-    [self.startBtn setTitle:@"開始 5 點眼動特徵校準" forState:UIControlStateNormal];
+    [self.startBtn setTitle:@"開始眼動特徵校準" forState:UIControlStateNormal];
     [self.startBtn setTitleColor:[UIColor colorWithRed:0.145 green:0.161 blue:0.110 alpha:1.0] forState:UIControlStateNormal];
     self.startBtn.backgroundColor = [UIColor colorWithRed:0.969 green:0.890 blue:0.686 alpha:1.0];
-    self.startBtn.layer.cornerRadius = 10;
+    self.startBtn.layer.cornerRadius = 20;
     self.startBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
     [self.startBtn addTarget:self action:@selector(onStartCalib) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.startBtn];
 
     self.alertBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     self.alertBtn.frame = CGRectMake(40, h - 115, w - 80, 50);
-    [self.alertBtn setTitle:@"測試疲勞提醒通知 (紅色警報)" forState:UIControlStateNormal];
+    [self.alertBtn setTitle:@"警告通知發送" forState:UIControlStateNormal];
     [self.alertBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     self.alertBtn.backgroundColor = [UIColor colorWithRed:0.922 green:0.341 blue:0.341 alpha:1.0];
-    self.alertBtn.layer.cornerRadius = 10;
+    self.alertBtn.layer.cornerRadius = 20;
     self.alertBtn.titleLabel.font = [UIFont boldSystemFontOfSize:15];
     [self.alertBtn addTarget:self action:@selector(onTriggerAlert) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.alertBtn];

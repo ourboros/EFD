@@ -35,6 +35,7 @@ import androidx.core.content.ContextCompat;
 
 import org.json.JSONObject;
 
+@android.annotation.SuppressLint({"NewApi", "MissingPermission", "DiscouragedApi"})
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "EFD_MainActivity";
@@ -124,8 +125,16 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private boolean isActivityDestroyed() {
+        if (isFinishing()) return true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            return isDestroyed();
+        }
+        return false;
+    }
+
     private void requestAppPermissions() {
-        if (isFinishing() || isDestroyed()) return;
+        if (isActivityDestroyed()) return;
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -169,10 +178,7 @@ public class MainActivity extends AppCompatActivity {
         mMainContainer.setOrientation(LinearLayout.VERTICAL);
         mMainContainer.setBackgroundColor(Color.parseColor("#25291C")); // EFD 深黑墨綠背景
 
-        // 1. 頂部快速切換導覽列
-        setupTopNavBar();
-
-        // 2. 階段內容容器
+        // 階段內容容器 (不繪製頂部導覽列，純靠介面流程按鈕切換)
         mStageContentContainer = new FrameLayout(this);
         LinearLayout.LayoutParams contentParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f);
@@ -195,7 +201,7 @@ public class MainActivity extends AppCompatActivity {
 
         String[] labels = {
                 "歡迎", "說明", "倒數", "測驗",
-                "結果", "監控", "設定", "門禁", "問卷"
+                "結果", "監控", "設定", "後測", "問卷"
         };
         UIStage[] stages = UIStage.values();
 
@@ -229,6 +235,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateNavBarHighlight() {
+        if (mNavBarContainer == null) return;
         UIStage[] stages = UIStage.values();
         for (int i = 0; i < mNavBarContainer.getChildCount() && i < stages.length; i++) {
             View child = mNavBarContainer.getChildAt(i);
@@ -293,7 +300,7 @@ public class MainActivity extends AppCompatActivity {
         logoImage.setAdjustViewBounds(true);
         logoImage.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
 
-        int logoWidth = 180; // 適合手機螢幕置中的 Logo 寬度
+        int logoWidth = 90; // 縮小 50% 適合手機螢幕置中的 Logo 寬度
         LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(
                 logoWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
         logoParams.gravity = Gravity.CENTER;
@@ -303,6 +310,7 @@ public class MainActivity extends AppCompatActivity {
         TextView title = new TextView(this);
         title.setText("感謝協助測試EFD");
         title.setTextSize(26);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
         title.setPadding(0, 32, 0, 8);
@@ -311,6 +319,7 @@ public class MainActivity extends AppCompatActivity {
         TextView subtitle = new TextView(this);
         subtitle.setText("Eye Fatigue Detection 行動科研版");
         subtitle.setTextSize(14);
+        subtitle.setTypeface(null, android.graphics.Typeface.BOLD);
         subtitle.setTextColor(Color.parseColor("#F7E3AF"));
         subtitle.setGravity(Gravity.CENTER);
         subtitle.setPadding(0, 0, 0, 48);
@@ -341,6 +350,7 @@ public class MainActivity extends AppCompatActivity {
         TextView title = new TextView(this);
         title.setText("特徵提取測驗說明");
         title.setTextSize(22);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
         layout.addView(title);
@@ -348,6 +358,7 @@ public class MainActivity extends AppCompatActivity {
         TextView desc = new TextView(this);
         desc.setText("測驗即將開始！\n請凝視畫面上移動的黃色圓點，\n系統將自動校準您的個人眼睛閉合特徵基準。");
         desc.setTextSize(15);
+        desc.setTypeface(null, android.graphics.Typeface.BOLD);
         desc.setTextColor(Color.parseColor("#E0E0E0"));
         desc.setGravity(Gravity.CENTER);
         desc.setPadding(0, 24, 0, 32);
@@ -377,6 +388,7 @@ public class MainActivity extends AppCompatActivity {
         TextView cdText = new TextView(this);
         cdText.setText("3");
         cdText.setTextSize(90);
+        cdText.setTypeface(null, android.graphics.Typeface.BOLD);
         cdText.setTextColor(Color.parseColor("#F7E3AF"));
         cdText.setGravity(Gravity.CENTER);
         layout.addView(cdText);
@@ -384,6 +396,7 @@ public class MainActivity extends AppCompatActivity {
         TextView hint = new TextView(this);
         hint.setText("請將手機拿正，平視前鏡頭...");
         hint.setTextSize(16);
+        hint.setTypeface(null, android.graphics.Typeface.BOLD);
         hint.setTextColor(Color.WHITE);
         hint.setGravity(Gravity.CENTER);
         hint.setPadding(0, 24, 0, 0);
@@ -396,7 +409,7 @@ public class MainActivity extends AppCompatActivity {
         mHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                if (isFinishing() || isDestroyed()) return;
+                if (isActivityDestroyed()) return;
                 mCountdownSec--;
                 if (mCountdownSec > 0) {
                     cdText.setText(String.valueOf(mCountdownSec));
@@ -452,7 +465,7 @@ public class MainActivity extends AppCompatActivity {
         mHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (isFinishing() || isDestroyed() || mCurrentStage != UIStage.ActiveCalibration) return;
+                if (isActivityDestroyed() || mCurrentStage != UIStage.ActiveCalibration) return;
 
                 long elapsed = System.currentTimeMillis() - startTime;
                 float t = elapsed / 5000f; // 5 秒
@@ -482,15 +495,10 @@ public class MainActivity extends AppCompatActivity {
         layout.setBackgroundColor(Color.parseColor("#1EB18A"));
         layout.setPadding(32, 32, 32, 32);
 
-        TextView icon = new TextView(this);
-        icon.setText("");
-        icon.setTextSize(60);
-        icon.setGravity(Gravity.CENTER);
-        layout.addView(icon);
-
         TextView title = new TextView(this);
         title.setText("眼動特徵基準校準完成！");
         title.setTextSize(24);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
         title.setPadding(0, 16, 0, 8);
@@ -499,13 +507,14 @@ public class MainActivity extends AppCompatActivity {
         TextView val = new TextView(this);
         val.setText("個人適應性 EAR 判定閾值 = 0.265\n微睡眠抗污染係數 = 正常");
         val.setTextSize(15);
+        val.setTypeface(null, android.graphics.Typeface.BOLD);
         val.setTextColor(Color.parseColor("#F7E3AF"));
         val.setGravity(Gravity.CENTER);
         val.setPadding(0, 0, 0, 36);
         layout.addView(val);
 
         Button proceedBtn = new Button(this);
-        proceedBtn.setText("進入即時眼動監控中心 ➔");
+        proceedBtn.setText("進入即時眼動監控中心");
         proceedBtn.setTextSize(15);
         proceedBtn.setPadding(24, 14, 24, 14);
         styleButton(proceedBtn, "#F7E3AF", "#25291C");
@@ -514,7 +523,7 @@ public class MainActivity extends AppCompatActivity {
 
         // 新增按鈕：數據提取後關閉系統介面 (背景持續監控)
         Button closeBgBtn = new Button(this);
-        closeBgBtn.setText("關閉系統介面 (背景持續監控)");
+        closeBgBtn.setText("關閉系統介面");
         closeBgBtn.setTextSize(14);
         closeBgBtn.setPadding(24, 12, 24, 12);
         styleButton(closeBgBtn, "#FFFFFF", "#1EB18A");
@@ -550,6 +559,7 @@ public class MainActivity extends AppCompatActivity {
         TextView header = new TextView(this);
         header.setText("即時眼動與疲勞監控中心");
         header.setTextSize(20);
+        header.setTypeface(null, android.graphics.Typeface.BOLD);
         header.setTextColor(Color.WHITE);
         header.setGravity(Gravity.CENTER);
         header.setPadding(0, 0, 0, 16);
@@ -564,12 +574,14 @@ public class MainActivity extends AppCompatActivity {
         mDashStatusText = new TextView(this);
         mDashStatusText.setText("生理狀態：清醒專注 (Normal)");
         mDashStatusText.setTextSize(16);
+        mDashStatusText.setTypeface(null, android.graphics.Typeface.BOLD);
         mDashStatusText.setTextColor(Color.parseColor("#1EB18A"));
         statusCard.addView(mDashStatusText);
 
         mDashScoreText = new TextView(this);
         mDashScoreText.setText("疲勞評分：12.5 / 100");
         mDashScoreText.setTextSize(24);
+        mDashScoreText.setTypeface(null, android.graphics.Typeface.BOLD);
         mDashScoreText.setTextColor(Color.WHITE);
         mDashScoreText.setPadding(0, 8, 0, 8);
         statusCard.addView(mDashScoreText);
@@ -577,58 +589,37 @@ public class MainActivity extends AppCompatActivity {
         mDashMetricsText = new TextView(this);
         mDashMetricsText.setText("EAR 即時: 0.312 | 閾值: 0.265\nPERCLOS: 4.2% | 閃爍: 16 次/分 | CI: 4.50");
         mDashMetricsText.setTextSize(13);
+        mDashMetricsText.setTypeface(null, android.graphics.Typeface.BOLD);
         mDashMetricsText.setTextColor(Color.parseColor("#E0E0E0"));
         statusCard.addView(mDashMetricsText);
 
         layout.addView(statusCard);
 
-        // 控制按鈕群
+        // 控制按鈕群 (僅保留：進入設定介面 與 關閉系統介面)
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.VERTICAL);
         btns.setPadding(0, 20, 0, 0);
 
+        Button settingsBtn = new Button(this);
+        settingsBtn.setText("進入設定介面");
+        settingsBtn.setPadding(16, 14, 16, 14);
+        styleButton(settingsBtn, "#1EB18A", "#FFFFFF");
+        settingsBtn.setOnClickListener(v -> setStage(UIStage.SettingsPanel));
+        btns.addView(settingsBtn);
+
         Button closeBgBtn = new Button(this);
-        closeBgBtn.setText("關閉系統介面 (背景持續監控)");
+        closeBgBtn.setText("關閉系統介面");
         closeBgBtn.setPadding(16, 14, 16, 14);
         styleButton(closeBgBtn, "#F7E3AF", "#25291C");
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        closeLp.setMargins(0, 12, 0, 0);
+        closeBgBtn.setLayoutParams(closeLp);
         closeBgBtn.setOnClickListener(v -> {
             Toast.makeText(this, "EFD 已轉入背景監控，僅於疲勞超標時跳出提醒", Toast.LENGTH_LONG).show();
             moveTaskToBack(true);
         });
         btns.addView(closeBgBtn);
-
-        Button testAlertBtn = new Button(this);
-        testAlertBtn.setText("立即觸發紅色疲勞提醒通知");
-        testAlertBtn.setPadding(16, 12, 16, 12);
-        styleButton(testAlertBtn, "#EB5757", "#FFFFFF");
-        LinearLayout.LayoutParams testLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        testLp.setMargins(0, 10, 0, 0);
-        testAlertBtn.setLayoutParams(testLp);
-        testAlertBtn.setOnClickListener(v -> triggerFatigueAlertNotification("你的眼睛處於疲勞狀態，請適當休息"));
-        btns.addView(testAlertBtn);
-
-        Button settingsBtn = new Button(this);
-        settingsBtn.setText("系統設定與相機調校");
-        settingsBtn.setPadding(16, 12, 16, 12);
-        styleButton(settingsBtn, "#485338", "#FFFFFF");
-        LinearLayout.LayoutParams setLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        setLp.setMargins(0, 10, 0, 0);
-        settingsBtn.setLayoutParams(setLp);
-        settingsBtn.setOnClickListener(v -> setStage(UIStage.SettingsPanel));
-        btns.addView(settingsBtn);
-
-        Button endStudyBtn = new Button(this);
-        endStudyBtn.setText("結束施測 / 14天科研問卷門禁");
-        endStudyBtn.setPadding(16, 12, 16, 12);
-        styleButton(endStudyBtn, "#343A26", "#F7E3AF");
-        LinearLayout.LayoutParams endLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        endLp.setMargins(0, 10, 0, 0);
-        endStudyBtn.setLayoutParams(endLp);
-        endStudyBtn.setOnClickListener(v -> setStage(UIStage.StudyCompletedGate));
-        btns.addView(endStudyBtn);
 
         layout.addView(btns);
         scroll.addView(layout);
@@ -638,8 +629,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // -------------------------------------------------------------------------
-    // 階段 7：設定與重測面板
+    // 階段 7：設定面板 (僅保留：提示靈敏度、重設眼動監測、警告通知發送)
     // -------------------------------------------------------------------------
+    private int mSensitivityLevel = 1; // 0: 低, 1: 標準, 2: 高
+
     private void renderSettingsScreen() {
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#25291C"));
@@ -649,35 +642,43 @@ public class MainActivity extends AppCompatActivity {
         layout.setPadding(24, 20, 24, 32);
 
         TextView title = new TextView(this);
-        title.setText("系統設定與眼動重測");
+        title.setText("系統設定");
         title.setTextSize(20);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
         title.setPadding(0, 0, 0, 20);
         layout.addView(title);
 
+        // 項目 1: 提示靈敏度
+        final String[] sensNames = { "低靈敏度 (保守)", "標準靈敏度 (推薦)", "高靈敏度 (即時警報)" };
+        Button sensBtn = new Button(this);
+        sensBtn.setText("提示靈敏度: " + sensNames[mSensitivityLevel] + " (點擊切換)");
+        styleButton(sensBtn, "#343A26", "#F7E3AF");
+        sensBtn.setOnClickListener(v -> {
+            mSensitivityLevel = (mSensitivityLevel + 1) % 3;
+            sensBtn.setText("提示靈敏度: " + sensNames[mSensitivityLevel] + " (點擊切換)");
+        });
+        layout.addView(sensBtn);
+
+        // 項目 2: 重設眼動監測
         Button recalibBtn = new Button(this);
-        recalibBtn.setText("重新進行眼動校準");
+        recalibBtn.setText("重設眼動監測");
         styleButton(recalibBtn, "#1EB18A", "#FFFFFF");
+        LinearLayout.LayoutParams recalibLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        recalibLp.setMargins(0, 12, 0, 0);
+        recalibBtn.setLayoutParams(recalibLp);
         recalibBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
         layout.addView(recalibBtn);
 
-        Button testNotifBtn = new Button(this);
-        testNotifBtn.setText("測試發送【你的眼睛處於疲勞狀態，請適當休息】");
-        styleButton(testNotifBtn, "#EB5757", "#FFFFFF");
-        LinearLayout.LayoutParams testLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        testLp.setMargins(0, 10, 0, 0);
-        testNotifBtn.setLayoutParams(testLp);
-        testNotifBtn.setOnClickListener(v -> triggerFatigueAlertNotification("你的眼睛處於疲勞狀態，請適當休息"));
-        layout.addView(testNotifBtn);
-
+        // 返回按鈕
         Button returnBtn = new Button(this);
-        returnBtn.setText("儲存並返回監控中心");
+        returnBtn.setText("返回監控中心");
         styleButton(returnBtn, "#96C5F7", "#25291C");
         LinearLayout.LayoutParams retLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        retLp.setMargins(0, 10, 0, 0);
+        retLp.setMargins(0, 24, 0, 0);
         returnBtn.setLayoutParams(retLp);
         returnBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
         layout.addView(returnBtn);
@@ -688,7 +689,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // -------------------------------------------------------------------------
-    // 階段 8：14 天門禁與問卷
+    // 階段 8：後測介面 (問卷連結與狀態解鎖)
     // -------------------------------------------------------------------------
     private void renderStudyGateScreen() {
         LinearLayout layout = new LinearLayout(this);
@@ -698,22 +699,54 @@ public class MainActivity extends AppCompatActivity {
         layout.setPadding(32, 32, 32, 32);
 
         TextView title = new TextView(this);
-        title.setText("施測結束\n請填寫後測問卷並解除安裝系統");
-        title.setTextSize(22);
+        title.setText("後測介面");
+        title.setTextSize(24);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 36);
+        title.setPadding(0, 0, 0, 16);
         layout.addView(title);
 
+        TextView urlText = new TextView(this);
+        urlText.setText("施測已結束，請點擊下方按鈕前往填寫後測問卷以完成實驗流程\n問卷網址: https://forms.gle/y5f1jTnrrtsxz65G9");
+        urlText.setTextSize(14);
+        urlText.setTypeface(null, android.graphics.Typeface.BOLD);
+        urlText.setTextColor(Color.parseColor("#F7E3AF"));
+        urlText.setGravity(Gravity.CENTER);
+        urlText.setPadding(0, 0, 0, 32);
+        layout.addView(urlText);
+
         Button surveyBtn = new Button(this);
-        surveyBtn.setText("前往填寫科研後測問卷");
-        surveyBtn.setTextSize(16);
+        surveyBtn.setText("前往填寫後測問卷 (Google 表單)");
+        surveyBtn.setTextSize(15);
+        surveyBtn.setPadding(24, 14, 24, 14);
         styleButton(surveyBtn, "#F7E3AF", "#25291C");
         surveyBtn.setOnClickListener(v -> {
+            try {
+                android.content.Intent intent = new android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://forms.gle/y5f1jTnrrtsxz65G9"));
+                startActivity(intent);
+            } catch (Throwable t) {
+                Log.w(TAG, "Error opening survey URL: " + t.getMessage());
+            }
             EfdNativeBridge.submitQuestionnaire("Study_Post_Survey_Completed");
             setStage(UIStage.QuestionnaireSubmitted);
         });
         layout.addView(surveyBtn);
+
+        Button returnBtn = new Button(this);
+        returnBtn.setText("返回即時監控中心");
+        returnBtn.setTextSize(14);
+        returnBtn.setPadding(20, 10, 20, 10);
+        styleButton(returnBtn, "#343A26", "#F7E3AF");
+        LinearLayout.LayoutParams retLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        retLp.setMargins(0, 16, 0, 0);
+        retLp.gravity = Gravity.CENTER;
+        returnBtn.setLayoutParams(retLp);
+        returnBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
+        layout.addView(returnBtn);
 
         mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -732,6 +765,7 @@ public class MainActivity extends AppCompatActivity {
         TextView title = new TextView(this);
         title.setText("問卷已成功送出！");
         title.setTextSize(24);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
         layout.addView(title);
@@ -739,6 +773,7 @@ public class MainActivity extends AppCompatActivity {
         TextView tokenText = new TextView(this);
         tokenText.setText("科研憑證: EFD-14D-A8C2-99F1\n\n感謝您 14 天以來的協助！\n現在您可以關閉或解除安裝本系統。");
         tokenText.setTextSize(15);
+        tokenText.setTypeface(null, android.graphics.Typeface.BOLD);
         tokenText.setTextColor(Color.parseColor("#F7E3AF"));
         tokenText.setGravity(Gravity.CENTER);
         tokenText.setPadding(0, 20, 0, 40);
@@ -757,16 +792,24 @@ public class MainActivity extends AppCompatActivity {
     // -------------------------------------------------------------------------
     // 疲勞警報通知發送 (Heads-up Notification + 震動反饋 + 彈窗)
     // -------------------------------------------------------------------------
+    @android.annotation.SuppressLint("MissingPermission")
+    @SuppressWarnings("deprecation")
     private void triggerFatigueAlertNotification(String message) {
-        if (isFinishing() || isDestroyed()) return;
+        if (isActivityDestroyed()) return;
 
         // 1. 手機震動 (安全調用)
         try {
-            if (mVibrator != null && mVibrator.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    mVibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE));
-                } else {
-                    mVibrator.vibrate(500);
+            if (mVibrator != null) {
+                boolean canVibrate = true;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                    canVibrate = mVibrator.hasVibrator();
+                }
+                if (canVibrate) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        mVibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE));
+                    } else {
+                        mVibrator.vibrate(500);
+                    }
                 }
             }
         } catch (Throwable t) {
@@ -774,13 +817,13 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // 2. 系統 Toast
-        Toast.makeText(this, "【你的眼睛處於疲勞狀態，請適當休息】", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "你的眼睛處於疲勞狀態，請適當休息", Toast.LENGTH_LONG).show();
 
         // 3. Android 頂部 Heads-up 橫幅通知 (安全調用)
         try {
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                    .setContentTitle("【你的眼睛處於疲勞狀態，請適當休息】")
+                    .setContentTitle("你的眼睛處於疲勞狀態，請適當休息")
                     .setContentText(message)
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setAutoCancel(true);
@@ -796,8 +839,8 @@ public class MainActivity extends AppCompatActivity {
         // 4. 應用內紅色警告對話框
         try {
             new AlertDialog.Builder(this)
-                    .setTitle("🚨 疲勞警報提醒")
-                    .setMessage("【你的眼睛處於疲勞狀態，請適當休息】\n\n系統偵測到眼睛疲勞指數達到紅色危險狀態，請閉眼放鬆 5 分鐘。")
+                    .setTitle("疲勞警報提醒")
+                    .setMessage("你的眼睛處於疲勞狀態，請適當休息\n\n系統偵測到眼睛疲勞指數達到紅色危險狀態，請閉眼放鬆 5 分鐘。")
                     .setPositiveButton("我知道了，立即休息", null)
                     .show();
         } catch (Throwable t) {
@@ -812,20 +855,20 @@ public class MainActivity extends AppCompatActivity {
         mTelemetryRunnable = new Runnable() {
             @Override
             public void run() {
-                if (isFinishing() || isDestroyed()) return;
+                if (isActivityDestroyed()) return;
 
                 try {
                     String jsonStr = EfdNativeBridge.getTelemetryJson();
-                    if (jsonStr != null && !jsonStr.isEmpty() && !jsonStr.startsWith("{\"error\"")) {
+                    if (jsonStr != null && jsonStr.length() > 0 && !jsonStr.startsWith("{\"error\"")) {
                         JSONObject obj = new JSONObject(jsonStr);
                         mCurrentScore = (float) obj.optDouble("fatigueScore", 12.0);
                         mCurrentLevel = obj.optInt("fatigueLevel", 0);
                         int lastAlertLevel = obj.optInt("lastAlertLevel", 0);
 
                         if (mCurrentStage == UIStage.MainDashboard && mDashScoreText != null) {
-                            mDashScoreText.setText(String.format("疲勞評分：%.1f / 100", mCurrentScore));
+                            mDashScoreText.setText(String.format(java.util.Locale.getDefault(), "疲勞評分：%.1f / 100", mCurrentScore));
                             if (mCurrentLevel == 2) {
-                                mDashStatusText.setText("生理狀態：【你的眼睛處於疲勞狀態，請適當休息】");
+                                mDashStatusText.setText("生理狀態：你的眼睛處於疲勞狀態，請適當休息");
                                 mDashStatusText.setTextColor(Color.parseColor("#EB5757"));
                             } else if (mCurrentLevel == 1) {
                                 mDashStatusText.setText("生理狀態：用眼注意 (Attention)");
