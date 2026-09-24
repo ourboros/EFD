@@ -86,7 +86,6 @@ set(EFD_CORE_SOURCES
 )
 
 if(WIN32)
-    list(APPEND EFD_CORE_SOURCES src/vision/drivers/WindowsMfCameraDriver.cpp)
     list(APPEND EFD_CORE_SOURCES 
         src/vision/drivers/WindowsMfCameraDriver.cpp
         src/platform/windows/SystemTrayManager.cpp
@@ -100,7 +99,6 @@ add_library(efd_core STATIC
 )
 
 if(WIN32)
-    target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib)
     target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib gdi32 user32 shell32 gdiplus)
 endif()
 
@@ -116,19 +114,23 @@ target_compile_features(efd_core PUBLIC cxx_std_20)
 # CLI / Simulation App Target: efd_cli
 # -----------------------------------------------------------------------------
 if(EFD_BUILD_CLI)
-    add_executable(efd_cli
-        src/main.cpp
-        src/ui/NativeWelcomeWindow.cpp
-        src/ui/NativeWelcomeWindow.hpp
-        src/ui/FatigueFloatingIndicator.cpp
-        src/ui/FatigueFloatingIndicator.hpp
-        src/platform/windows/SystemTrayManager.cpp
-        src/platform/windows/SystemTrayManager.hpp
-        src/ui/Theme.hpp
-    )
-    target_link_libraries(efd_cli PRIVATE efd_core)
     if(WIN32)
-        target_link_libraries(efd_cli PRIVATE gdi32 user32 shell32 gdiplus)
+        add_executable(efd_cli
+            src/main.cpp
+            src/ui/NativeWelcomeWindow.cpp
+            src/ui/NativeWelcomeWindow.hpp
+            src/ui/FatigueFloatingIndicator.cpp
+            src/ui/FatigueFloatingIndicator.hpp
+            src/platform/windows/SystemTrayManager.cpp
+            src/platform/windows/SystemTrayManager.hpp
+            src/ui/Theme.hpp
+        )
+        target_link_libraries(efd_cli PRIVATE efd_core gdi32 user32 shell32 gdiplus)
+    else()
+        add_executable(efd_cli
+            src/main.cpp
+        )
+        target_link_libraries(efd_cli PRIVATE efd_core)
     endif()
 endif()
 
@@ -137,14 +139,28 @@ endif()
 # -----------------------------------------------------------------------------
 set(EFD_GUI_SOURCES
     src/ui/main_gui.cpp
-    src/ui/NativeWelcomeWindow.cpp
-    src/ui/NativeWelcomeWindow.hpp
-    src/ui/FatigueFloatingIndicator.cpp
-    src/ui/FatigueFloatingIndicator.hpp
-    src/platform/windows/SystemTrayManager.cpp
-    src/platform/windows/SystemTrayManager.hpp
-    src/ui/Theme.hpp
 )
+
+if(WIN32)
+    list(APPEND EFD_GUI_SOURCES
+        src/ui/NativeWelcomeWindow.cpp
+        src/ui/NativeWelcomeWindow.hpp
+        src/ui/FatigueFloatingIndicator.cpp
+        src/ui/FatigueFloatingIndicator.hpp
+        src/platform/windows/SystemTrayManager.cpp
+        src/platform/windows/SystemTrayManager.hpp
+        src/platform/windows/app.rc
+        src/ui/Theme.hpp
+    )
+elseif(APPLE AND NOT IOS)
+    list(APPEND EFD_GUI_SOURCES
+        src/ui/macos/MacWelcomeWindow.h
+        src/ui/macos/MacWelcomeWindow.mm
+        src/platform/macos/MacStatusItemManager.h
+        src/platform/macos/MacStatusItemManager.mm
+        src/ui/Theme.hpp
+    )
+endif()
 
 add_executable(efd_gui
     ${EFD_GUI_SOURCES}
@@ -168,8 +184,28 @@ elseif(APPLE AND NOT IOS)
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist
         MACOSX_BUNDLE_BUNDLE_NAME "EFD"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
     )
-    target_link_libraries(efd_gui PRIVATE "-framework Foundation" "-framework AVFoundation" "-framework AppKit")
+    target_link_libraries(efd_gui PRIVATE 
+        "-framework Cocoa"
+        "-framework AppKit"
+        "-framework Foundation"
+        "-framework AVFoundation"
+        "-framework QuartzCore"
+        "-framework UserNotifications"
+    )
+    add_custom_command(TARGET efd_gui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+            "$<TARGET_FILE_DIR:efd_gui>/../Resources/assets"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/design"
+            "$<TARGET_FILE_DIR:efd_gui>/../Resources/design"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/macos/AppIcon.icns"
+            "$<TARGET_FILE_DIR:efd_gui>/../Resources/AppIcon.icns"
+    )
 endif()
 
 # -----------------------------------------------------------------------------

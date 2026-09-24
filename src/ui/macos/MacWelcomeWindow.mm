@@ -76,6 +76,9 @@ enum class MacUIStage : uint8_t {
     NSImage* _logoImage;
     NSTrackingArea* _trackingArea;
     NSTimer* _animationTimer;
+
+    efd::EngineTelemetry _latestTelemetry;
+    BOOL _hasTelemetry;
 }
 
 @property (nonatomic, weak) NSWindow* parentWindow;
@@ -84,6 +87,8 @@ enum class MacUIStage : uint8_t {
 - (instancetype)initWithFrame:(NSRect)frame engine:(efd::AsyncPipelineEngine*)engine;
 - (void)setStage:(efd::MacUIStage)stage;
 - (void)onTimerTick;
+- (void)updateTelemetry:(const efd::EngineTelemetry&)telemetry;
+- (void)minimizeToBackground;
 @end
 
 @implementation EFDMainCanvasView
@@ -115,6 +120,9 @@ enum class MacUIStage : uint8_t {
         _logoImage = [self loadAssetImage:@"資產 10.png"];
         if (!_logoImage) {
             _logoImage = [self loadAssetImage:@"logo10.png"];
+        }
+        if (!_logoImage) {
+            _logoImage = [self loadAssetImage:@"logo.png"];
         }
 
         // 啟動 60 FPS 動畫定時器 (16ms)
@@ -181,6 +189,31 @@ enum class MacUIStage : uint8_t {
         }
     }
     [self setNeedsDisplay:YES];
+}
+
+- (void)updateTelemetry:(const efd::EngineTelemetry&)telemetry {
+    _latestTelemetry = telemetry;
+    _hasTelemetry = YES;
+    if (_currentStage == efd::MacUIStage::MainDashboard ||
+        _currentStage == efd::MacUIStage::CalibrationResult) {
+        [self setNeedsDisplay:YES];
+    }
+}
+
+- (void)minimizeToBackground {
+    if (_engine && !_engine->isRunning()) {
+        _engine->start();
+    }
+    if (self.parentWindow) {
+        [self.parentWindow orderOut:nil];
+    }
+    // 使用者要求：按下關閉系統後，主介面關閉，執行檔/終端機視窗自動最小化
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSString* script = @"tell application \"Terminal\" to set miniaturized of every window whose visible is true to true\n"
+                           @"tell application \"iTerm\" to set miniaturized of every window whose visible is true to true";
+        NSAppleScript* appleScript = [[NSAppleScript alloc] initWithSource:script];
+        [appleScript executeAndReturnError:nil];
+    });
 }
 
 - (void)onTimerTick {
@@ -610,8 +643,10 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
         drawCenteredText(tag, NSMakeRect(mx, my + 46.0, subW, 14.0), [NSFont boldSystemFontOfSize:9], [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0]);
     };
 
-    drawMetric(0, @"個人基準 EAR", @"0.312", @"睜眼常態值");
-    drawMetric(1, @"閉眼判定閾值", @"0.255", @"動態自適應");
+    float baseEar = _hasTelemetry ? _latestTelemetry.eyeMetrics.earAvg : 0.312f;
+    float threshEar = baseEar * 0.82f;
+    drawMetric(0, @"個人基準 EAR", [NSString stringWithFormat:@"%.3f", baseEar], @"睜眼常態值");
+    drawMetric(1, @"閉眼判定閾值", [NSString stringWithFormat:@"%.3f", threshEar], @"動態自適應");
     drawMetric(2, @"特徵採樣品質", @"99.2%", @"高精度捕捉");
     drawMetric(3, @"相機串流 FPS", @"30 FPS", @"即時推論中");
 
@@ -658,8 +693,25 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
 
     drawRoundedButton(NSMakeRect(cardX, cardY, cardW, cardH), 16.0, [NSColor colorWithCalibratedRed:52/255.0 green:58/255.0 blue:38/255.0 alpha:1.0]);
 
+    float curEar = _hasTelemetry ? _latestTelemetry.eyeMetrics.earAvg : 0.312f;
+    float curPerclos = _hasTelemetry ? (_latestTelemetry.eyeMetrics.perclos * 100.0f) : 4.2f;
+    float curMse = _hasTelemetry ? _latestTelemetry.complexityMetrics.complexityIndex : 4.50f;
+    float curScore = _hasTelemetry ? _latestTelemetry.systemState.currentFatigueScore : 12.5f;
+
     NSString* statusText = @"生理狀態：清醒專注 (Normal)";
     NSColor* statusColor = [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0];
+    if (_hasTelemetry) {
+        if (_latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::SevereWarning) {
+            statusText = [NSString stringWithFormat:@"生理狀態：嚴重疲勞警告 (SevereWarning - 分數 %.1f)", curScore];
+            statusColor = [NSColor colorWithCalibratedRed:235/255.0 green:87/255.0 blue:87/255.0 alpha:1.0];
+        } else if (_latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::Attention) {
+            statusText = [NSString stringWithFormat:@"生理狀態：注意力提醒 (Attention - 分數 %.1f)", curScore];
+            statusColor = [NSColor colorWithCalibratedRed:247/255.0 green:190/255.0 blue:70/255.0 alpha:1.0];
+        } else {
+            statusText = [NSString stringWithFormat:@"生理狀態：正常專注 (Normal - 分數 %.1f)", curScore];
+            statusColor = [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0];
+        }
+    }
     drawCenteredText(statusText, NSMakeRect(cardX, cardY + 12.0, cardW, 24.0), [NSFont boldSystemFontOfSize:17], statusColor);
 
     drawCenteredText(@"相機串流: 前置攝影機運作中 (30 FPS) | 離線特徵提取模式", NSMakeRect(cardX, cardY + 44.0, cardW, 20.0), [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedWhite:0.75 alpha:1.0]);
@@ -679,10 +731,10 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
         drawCenteredText(val, NSMakeRect(ix, gridY + 36.0, itemW, 30.0), [NSFont boldSystemFontOfSize:22], [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0]);
     };
 
-    drawMetricCard(0, @"雙眼 EAR", @"0.312");
-    drawMetricCard(1, @"PERCLOS 閉眼比", @"4.2%");
-    drawMetricCard(2, @"複雜度 (MSE)", @"4.50");
-    drawMetricCard(3, @"綜合疲勞分數", @"12.5");
+    drawMetricCard(0, @"雙眼 EAR", [NSString stringWithFormat:@"%.3f", curEar]);
+    drawMetricCard(1, @"PERCLOS 閉眼比", [NSString stringWithFormat:@"%.1f%%", curPerclos]);
+    drawMetricCard(2, @"複雜度 (MSE)", [NSString stringWithFormat:@"%.2f", curMse]);
+    drawMetricCard(3, @"綜合疲勞分數", [NSString stringWithFormat:@"%.1f", curScore]);
 
     // 底部控制按鈕：進入設定介面 與 關閉系統介面 (20px 圓角邊框, 粗體)
     CGFloat btnW = 210.0;
@@ -871,7 +923,7 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
             if (NSPointInRect(loc, _proceedDashboardBtnRect)) {
                 [self setStage:efd::MacUIStage::MainDashboard];
             } else if (NSPointInRect(loc, _closeBgResultBtnRect)) {
-                [self.parentWindow orderOut:nil]; // 關閉介面至背景執行
+                [self minimizeToBackground];
             } else if (NSPointInRect(loc, _restartCalibBtnRect)) {
                 [self setStage:efd::MacUIStage::CalibrationInstruction];
             }
@@ -880,7 +932,7 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
             if (NSPointInRect(loc, _settingsBtnRect)) {
                 [self setStage:efd::MacUIStage::SettingsPanel];
             } else if (NSPointInRect(loc, _minimizeTrayBtnRect)) {
-                [self.parentWindow orderOut:nil]; // 關閉介面至背景執行
+                [self minimizeToBackground];
             }
             break;
         case efd::MacUIStage::SettingsPanel:
@@ -1105,19 +1157,65 @@ int MacWelcomeWindow::run() {
             }
         });
 
-        // 綁定引擎遙測事件
+        // 設定應用程式 Dock 圖示為「資產 10」
+        NSImage* appIcon = nil;
+        NSString* iconPath = [[NSBundle mainBundle] pathForResource:@"AppIcon" ofType:@"icns"];
+        if (iconPath) {
+            appIcon = [[NSImage alloc] initWithContentsOfFile:iconPath];
+        }
+        if (!appIcon) {
+            iconPath = [[NSBundle mainBundle] pathForResource:@"資產 10" ofType:@"png" inDirectory:@"design/1x"];
+            if (iconPath) appIcon = [[NSImage alloc] initWithContentsOfFile:iconPath];
+        }
+        if (appIcon) {
+            [NSApp setApplicationIconImage:appIcon];
+        }
+
+        // 綁定引擎遙測事件 (持續在終端機輸出即時眼動數據)
+        static int s_macTelemetryLogCount = 0;
         m_impl->engine.setTelemetryCallback([this](const EngineTelemetry& t) {
             this->m_impl->statusItemManager.updateStatus(
                 t.systemState.fatigueLevel,
                 t.systemState.currentFatigueScore,
                 t.lifecycleSummary
             );
+
+            // 控制台/終端機持續輸出即時眼動數據串流 (每 15 影格或閉眼瞬間)
+            int count = ++s_macTelemetryLogCount;
+            if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
+                const char* levelStr = "清醒放鬆 (Relaxed)";
+                if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
+                else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) levelStr = "嚴重疲勞警告 (SevereWarning)";
+                else if (t.systemState.fatigueLevel == FatigueLevel::UserAway) levelStr = "離座偵測 (UserAway)";
+
+                std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed
+                          << " | EAR: " << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
+                          << (t.eyeMetrics.isEyeClosed ? " (閉眼)" : " (睜眼)")
+                          << " | 閉眼比 (PERCLOS): " << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
+                          << " | 複雜度 (MSE): " << std::setprecision(2) << t.complexityMetrics.complexityIndex
+                          << " | 疲勞分數: " << std::setprecision(1) << t.systemState.currentFatigueScore
+                          << " | 生理狀態: " << levelStr;
+
+                if (t.systemState.cooldownState == CooldownState::InCooldown) {
+                    std::cout << " [冷卻中: " << t.systemState.cooldownRemainingSeconds << "s]";
+                }
+                std::cout << std::endl;
+            }
+
+            if (this->m_impl->canvasView) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [this->m_impl->canvasView updateTelemetry:t];
+                });
+            }
         });
 
         // 綁定警報事件 (僅在疲勞超標時跳出通知)
         m_impl->engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
             (void)msg;
             if (level == FatigueLevel::SevereWarning || score >= 70.0f) {
+                std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
+                          << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 <<<\n\n";
+
                 this->m_impl->statusItemManager.showNotification(
                     "你的眼睛處於疲勞狀態，請適當休息",
                     "你的眼睛處於疲勞狀態，請適當休息",
@@ -1135,3 +1233,4 @@ int MacWelcomeWindow::run() {
 }
 
 } // namespace efd
+

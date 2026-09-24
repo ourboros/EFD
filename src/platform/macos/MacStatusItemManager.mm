@@ -208,3 +208,4 @@ bool MacStatusItemManager::isInitialized() const {
 }
 
 } // namespace efd
+

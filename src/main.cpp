@@ -15,9 +15,7 @@
 #include "analysis/AdaptiveBaseline.hpp"
 #include "state/FatigueStateMachine.hpp"
 #include "platform/PlatformLifecycleAdapter.hpp"
-#include "platform/windows/SystemTrayManager.hpp"
 #include "engine/AsyncPipelineEngine.hpp"
-#include "ui/NativeWelcomeWindow.hpp"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -27,6 +25,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "platform/windows/SystemTrayManager.hpp"
+#include "ui/NativeWelcomeWindow.hpp"
 #endif
 
 // CLI 模擬測試模式
@@ -38,17 +38,15 @@ int runCliSimulation() {
     std::cout << "====================================================\n\n";
 
     efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
-    efd::SystemTrayManager tray;
 #ifdef _WIN32
+    efd::SystemTrayManager tray;
     tray.initialize(nullptr);
-#endif
 
     engine.setAlertCallback([&tray](efd::FatigueLevel level, float score, const std::string& msg) {
         std::cout << "\n>>> [ALERT TRIGGERED] Level: " << static_cast<int>(level)
                   << " | Fatigue Score: " << std::fixed << std::setprecision(1) << score
                   << " | " << msg << " <<<\n";
 
-#ifdef _WIN32
         if (level == efd::FatigueLevel::SevereWarning) {
             std::cout << " -> [Windows 系統通知處已發送] 標題：【你的眼睛處於疲勞狀態，請適當休息】\n\n";
             tray.showBalloonNotification(
@@ -64,8 +62,14 @@ int runCliSimulation() {
                 level
             );
         }
-#endif
     });
+#else
+    engine.setAlertCallback([](efd::FatigueLevel level, float score, const std::string& msg) {
+        std::cout << "\n>>> [ALERT TRIGGERED] Level: " << static_cast<int>(level)
+                  << " | Fatigue Score: " << std::fixed << std::setprecision(1) << score
+                  << " | " << msg << " <<<\n";
+    });
+#endif
 
     std::atomic<int> printCounter{0};
     engine.setTelemetryCallback([&printCounter](const efd::EngineTelemetry& telemetry) {
@@ -181,8 +185,12 @@ int main(int argc, char* argv[]) {
         return runCliSimulation();
     }
 
-    // 預設模式：直接啟動完整的七階段歡迎、黃點視覺校準、疲勞監控與科研後測圖形視窗！
+    // 預設模式：Windows 下啟動原生視窗，其他系統執行命令列模擬
+#ifdef _WIN32
     std::cout << "[EFD System] 啟動 EFD 七階段視覺校準、疲勞監控與科研後測圖形介面系統...\n";
     efd::NativeWelcomeWindow window(960, 640);
     return window.run();
+#else
+    return runCliSimulation();
+#endif
 }

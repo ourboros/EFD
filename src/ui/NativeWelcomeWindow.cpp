@@ -148,7 +148,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
         }
     });
 
-    // 綁定五執行緒引擎遙測事件 (即時更新 HUD 與托盤)
+    // 綁定五執行緒引擎遙測事件 (即時更新 HUD、托盤與終端機控制台)
+    static int s_telemetryLogCount = 0;
     m_engine.setTelemetryCallback([this](const EngineTelemetry& t) {
         this->m_latestTelemetry = t;
         // 即時同步至懸浮指標 HUD
@@ -165,6 +166,28 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
             utf8ToWide(t.lifecycleSummary)
         );
 
+        // 控制台持續輸出最新眼動與疲勞遙測數據 (每 15 幀或閉眼時輸出)
+        int count = ++s_telemetryLogCount;
+        if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
+            const char* levelStr = "清醒放鬆 (Relaxed)";
+            if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
+            else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) levelStr = "嚴重疲勞警告 (SevereWarning)";
+            else if (t.systemState.fatigueLevel == FatigueLevel::UserAway) levelStr = "離座偵測 (UserAway)";
+
+            std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed
+                      << " | EAR: " << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
+                      << (t.eyeMetrics.isEyeClosed ? " (閉眼)" : " (睜眼)")
+                      << " | 閉眼比 (PERCLOS): " << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
+                      << " | 複雜度 (MSE): " << std::setprecision(2) << t.complexityMetrics.complexityIndex
+                      << " | 疲勞分數: " << std::setprecision(1) << t.systemState.currentFatigueScore
+                      << " | 生理狀態: " << levelStr;
+
+            if (t.systemState.cooldownState == CooldownState::InCooldown) {
+                std::cout << " [冷卻中: " << t.systemState.cooldownRemainingSeconds << "s]";
+            }
+            std::cout << "\n";
+        }
+
         if (this->m_hwnd && (this->m_currentStage == UIStage::MainDashboard || 
                              this->m_currentStage == UIStage::CalibrationInstruction ||
                              this->m_currentStage == UIStage::SettingsPanel)) {
@@ -173,8 +196,12 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     });
 
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
+        (void)msg;
         // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 70.0) 跳出提醒
         if (level == FatigueLevel::SevereWarning || score >= 70.0f) {
+            std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
+                      << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 <<<\n\n";
+
             std::ostringstream oss;
             oss << "疲勞指數 " << std::fixed << std::setprecision(1) << score << " - 你的眼睛處於疲勞狀態，請適當休息";
             this->m_dashboardMessage = oss.str();
@@ -221,6 +248,11 @@ void NativeWelcomeWindow::minimizeToTray() {
     if (m_hwnd) {
         ShowWindow(m_hwnd, SW_HIDE);
         // 靜默轉入背景執行，僅於眼睛疲勞值超標時跳出提醒
+    }
+    // 使用者要求：當按下關閉系統後，主介面隱藏，但執行檔(批次檔案/主控台視窗)自動最小化
+    HWND hConsole = GetConsoleWindow();
+    if (hConsole) {
+        ShowWindow(hConsole, SW_MINIMIZE);
     }
 }
 
@@ -1559,10 +1591,26 @@ void NativeWelcomeWindow::drawQuestionnaireSubmitted(Gdiplus::Graphics& g, int w
 }
 
 int NativeWelcomeWindow::run() {
+    HINSTANCE hInst = GetModuleHandle(NULL);
+    HICON hIcon = LoadIconW(hInst, MAKEINTRESOURCEW(1)); // 讀取 app.rc 嵌入之「資產 10」ICO
+    if (!hIcon) {
+        hIcon = (HICON)LoadImageW(hInst, L"assets/app.ico", IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+    }
+    if (!hIcon) {
+        hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    }
+
+    HICON hIconSm = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED);
+    if (!hIconSm) {
+        hIconSm = (HICON)LoadImageW(hInst, L"assets/app.ico", IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_LOADFROMFILE);
+    }
+
     WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
     wc.lpfnWndProc = WndProc;
-    wc.hInstance = GetModuleHandle(NULL);
+    wc.hInstance = hInst;
     wc.lpszClassName = L"EFD_FullNativeWindow";
+    wc.hIcon = hIcon;
+    wc.hIconSm = hIconSm ? hIconSm : hIcon;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.style = CS_HREDRAW | CS_VREDRAW;
 
@@ -1584,6 +1632,13 @@ int NativeWelcomeWindow::run() {
 
     if (!m_hwnd) {
         return -1;
+    }
+
+    if (hIcon) {
+        SendMessageW(m_hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(hIcon));
+    }
+    if (hIconSm) {
+        SendMessageW(m_hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hIconSm));
     }
 
     // 初始化系統托盤常駐與置頂懸浮指標 HUD
