@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(EFD 
-    VERSION 1.0.0 
+    VERSION 2.0.0 
     DESCRIPTION "Eye Fatigue Detection Native System"
     LANGUAGES CXX C
 )
@@ -185,7 +185,7 @@ elseif(APPLE AND NOT IOS)
         MACOSX_BUNDLE_BUNDLE_NAME "EFD"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "1.0.0"
+        MACOSX_BUNDLE_BUNDLE_VERSION "2.0.0"
     )
     target_link_libraries(efd_gui PRIVATE 
         "-framework Cocoa"
@@ -202,9 +202,6 @@ elseif(APPLE AND NOT IOS)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/design"
             "$<TARGET_FILE_DIR:efd_gui>/../Resources/design"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/macos/AppIcon.icns"
-            "$<TARGET_FILE_DIR:efd_gui>/../Resources/AppIcon.icns"
     )
 endif()
 

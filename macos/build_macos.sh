@@ -44,11 +44,8 @@ if [ -n "${LOGO_SRC}" ]; then
     cp "${LOGO_SRC}" "${APP_BUNDLE}/Contents/Resources/logo.png" 2>/dev/null || true
 fi
 
-# 4. 生成或複製 macOS 原生 AppIcon.icns
-if [ -f "${PROJECT_ROOT}/macos/AppIcon.icns" ]; then
-    echo " -> 複製已生成之 Retina 高解析度應用程式圖示 (AppIcon.icns)..."
-    cp "${PROJECT_ROOT}/macos/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
-elif [ -n "${LOGO_SRC}" ] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
+# 4. 生成 macOS 原生 AppIcon.icns
+if [ -n "${LOGO_SRC}" ] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
     echo " -> 正在生成 Retina 高解析度應用程式圖示 (AppIcon.icns)..."
     ICONSET_DIR="${BUILD_DIR}/AppIcon.iconset"
     rm -rf "${ICONSET_DIR}"

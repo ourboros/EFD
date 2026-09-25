@@ -197,8 +197,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
 
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
-        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 70.0) 跳出提醒
-        if (level == FatigueLevel::SevereWarning || score >= 70.0f) {
+        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 65.0) 跳出提醒 (降低門檻放寬嚴重疲勞等級)
+        if (level == FatigueLevel::SevereWarning || score >= 65.0f) {
             std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
                       << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 <<<\n\n";
 
@@ -249,7 +249,7 @@ void NativeWelcomeWindow::minimizeToTray() {
         ShowWindow(m_hwnd, SW_HIDE);
         // 靜默轉入背景執行，僅於眼睛疲勞值超標時跳出提醒
     }
-    // 使用者要求：當按下關閉系統後，主介面隱藏，但執行檔(批次檔案/主控台視窗)自動最小化
+    // 自動最小化背景命令列主視窗
     HWND hConsole = GetConsoleWindow();
     if (hConsole) {
         ShowWindow(hConsole, SW_MINIMIZE);
@@ -1591,26 +1591,10 @@ void NativeWelcomeWindow::drawQuestionnaireSubmitted(Gdiplus::Graphics& g, int w
 }
 
 int NativeWelcomeWindow::run() {
-    HINSTANCE hInst = GetModuleHandle(NULL);
-    HICON hIcon = LoadIconW(hInst, MAKEINTRESOURCEW(1)); // 讀取 app.rc 嵌入之「資產 10」ICO
-    if (!hIcon) {
-        hIcon = (HICON)LoadImageW(hInst, L"assets/app.ico", IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
-    }
-    if (!hIcon) {
-        hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    }
-
-    HICON hIconSm = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED);
-    if (!hIconSm) {
-        hIconSm = (HICON)LoadImageW(hInst, L"assets/app.ico", IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_LOADFROMFILE);
-    }
-
     WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
     wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInst;
+    wc.hInstance = GetModuleHandle(NULL);
     wc.lpszClassName = L"EFD_FullNativeWindow";
-    wc.hIcon = hIcon;
-    wc.hIconSm = hIconSm ? hIconSm : hIcon;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.style = CS_HREDRAW | CS_VREDRAW;
 
@@ -1632,13 +1616,6 @@ int NativeWelcomeWindow::run() {
 
     if (!m_hwnd) {
         return -1;
-    }
-
-    if (hIcon) {
-        SendMessageW(m_hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(hIcon));
-    }
-    if (hIconSm) {
-        SendMessageW(m_hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hIconSm));
     }
 
     // 初始化系統托盤常駐與置頂懸浮指標 HUD

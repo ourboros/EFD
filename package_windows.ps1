@@ -5,9 +5,9 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
 $BuildDir = Join-Path $ProjectRoot "build\vs-x64\Release"
-$DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v1.0.0-Windows"
-$ZipRootOutput = Join-Path $ProjectRoot "EFD-v1.0.0-Windows.zip"
-$ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v1.0.0-Windows.zip"
+$DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v2.0.0-Windows"
+$ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.0.0-Windows.zip"
+$ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.0.0-Windows.zip"
 
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "  [EFD] 開始打包 Windows 桌面端分發套件..." -ForegroundColor Cyan
@@ -67,15 +67,10 @@ $startBatLines = @(
     '    exit /b 1',
     ')',
     '',
-    'echo 正在啟動 EFD 即時視覺與疲勞監控核心...',
-    'echo 關閉介面後本視窗將自動最小化至工作列，並在背景持續輸出最新眼動數據。',
-    'echo.',
-    '"%~dp0EFD.exe"',
-    'if %ERRORLEVEL% neq 0 (',
-    '    pause',
-    ')'
+    'start "" "%~dp0EFD.exe"',
+    'exit'
 )
-[System.IO.File]::WriteAllLines((Join-Path $DistDir "啟動 EFD.bat"), $startBatLines, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllLines((Join-Path $DistDir "啟動 EFD.bat"), $startBatLines, [System.Text.Encoding]::GetEncoding(65001))
 
 $shortcutBatLines = @(
     '@echo off',
@@ -84,7 +79,7 @@ $shortcutBatLines = @(
     '',
     'echo 正在建立 EFD 桌面捷徑...',
     '',
-    'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath(\"Desktop\"), \"EFD 眼睛疲勞監測.lnk\")); $s.TargetPath = \"%~dp0EFD.exe\"; $s.WorkingDirectory = \"%~dp0\"; $s.Description = \"EFD 眼睛特徵提取與即時疲勞監控研究系統\"; if (Test-Path \"%~dp0assets\app.ico\") { $s.IconLocation = \"%~dp0assets\app.ico\"; } else { $s.IconLocation = \"%~dp0EFD.exe,0\"; }; $s.Save();"',
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath(''Desktop''), ''EFD 眼睛疲勞監測.lnk'')); $s.TargetPath = ''%~dp0EFD.exe''; $s.WorkingDirectory = ''%~dp0''; $s.Description = ''EFD 眼睛特徵提取與即時疲勞監控研究系統''; if (Test-Path ''%~dp0assets\app.ico'') { $s.IconLocation = ''%~dp0assets\app.ico''; } else { $s.IconLocation = ''%~dp0EFD.exe,0''; }; $s.Save();"',
     '',
     'if %ERRORLEVEL% equ 0 (',
     '    echo [成功] 桌面捷徑已建立完成！',
@@ -94,14 +89,14 @@ $shortcutBatLines = @(
     'timeout /t 3 >nul',
     'exit'
 )
-[System.IO.File]::WriteAllLines((Join-Path $DistDir "建立桌面捷徑.bat"), $shortcutBatLines, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllLines((Join-Path $DistDir "建立桌面捷徑.bat"), $shortcutBatLines, [System.Text.Encoding]::GetEncoding(65001))
 
 # 7. 複製使用說明文檔
 Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "README_Windows.md") -Force
 Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "使用說明.txt") -Force
 
 # 8. 壓縮打包為 ZIP
-Write-Host " -> 正在壓縮封裝為 EFD-v1.0.0-Windows.zip..." -ForegroundColor Green
+Write-Host " -> 正在壓縮封裝為 EFD-v2.0.0-Windows.zip..." -ForegroundColor Green
 if (Test-Path $ZipRootOutput) { Remove-Item -Force $ZipRootOutput }
 Compress-Archive -Path "$DistDir\*" -DestinationPath $ZipRootOutput -Force
 Copy-Item $ZipRootOutput $ZipBuildOutput -Force
@@ -111,3 +106,4 @@ Write-Host "==================================================================" 
 Write-Host "  [SUCCESS] Windows 桌面端分發套件打包完成！" -ForegroundColor Green
 Write-Host "  輸出路徑: $($zipItem.FullName) ($([Math]::Round($zipItem.Length / 1MB, 2)) MB)" -ForegroundColor Green
 Write-Host "==================================================================" -ForegroundColor Cyan
+
