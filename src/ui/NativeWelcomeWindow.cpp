@@ -170,9 +170,9 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
         int count = ++s_telemetryLogCount;
         if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
             const char* levelStr = "清醒放鬆 (Relaxed)";
-            if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
+            if (t.systemState.fatigueLevel == FatigueLevel::Normal) levelStr = "正常專注 (Normal)";
+            else if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
             else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) levelStr = "嚴重疲勞警告 (SevereWarning)";
-            else if (t.systemState.fatigueLevel == FatigueLevel::UserAway) levelStr = "離座偵測 (UserAway)";
 
             std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed
                       << " | EAR: " << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
@@ -183,7 +183,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
                       << " | 生理狀態: " << levelStr;
 
             if (t.systemState.cooldownState == CooldownState::InCooldown) {
-                std::cout << " [冷卻中: " << t.systemState.cooldownRemainingSeconds << "s]";
+                std::cout << " [冷卻中: " << t.systemState.cooldownRemainingSec << "s]";
             }
             std::cout << "\n";
         }
@@ -197,8 +197,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
 
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
-        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 65.0) 跳出提醒 (降低門檻放寬嚴重疲勞等級)
-        if (level == FatigueLevel::SevereWarning || score >= 65.0f) {
+        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 70.0) 跳出提醒
+        if (level == FatigueLevel::SevereWarning || score >= 70.0f) {
             std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
                       << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 <<<\n\n";
 
@@ -248,11 +248,6 @@ void NativeWelcomeWindow::minimizeToTray() {
     if (m_hwnd) {
         ShowWindow(m_hwnd, SW_HIDE);
         // 靜默轉入背景執行，僅於眼睛疲勞值超標時跳出提醒
-    }
-    // 自動最小化背景命令列主視窗
-    HWND hConsole = GetConsoleWindow();
-    if (hConsole) {
-        ShowWindow(hConsole, SW_MINIMIZE);
     }
 }
 

@@ -127,18 +127,19 @@ void testFatigueStateMachineFullCycle() {
 
     // 2. 觸發一級疲勞警報 (PERCLOS 升高，CI 降低)
     alertTriggered = false;
-    efd::SystemState s2 = fsm.update(true, 0.13f, 26.0f, 1.8f, 1.0f);
+    efd::SystemState s2 = fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
     assert(s2.fatigueLevel == efd::FatigueLevel::Attention);
     assert(s2.cooldownState == efd::CooldownState::InCooldown);
     assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::Attention);
 
     // 3. 冷卻期內經過 5 分鐘進入快篩 (Fast Screening)
-    efd::SystemState s3 = fsm.update(true, 0.08f, 16.0f, 3.0f, 301.0f);
+    efd::SystemState s3 = fsm.update(true, 0.20f, 14.0f, 3.5f, 301.0f);
     assert(s3.cooldownState == efd::CooldownState::FastScreening);
 
-    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.20, CI 1.2) -> 警報升級至 SevereWarning (紅色危險狀態)
+    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning
+    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning (紅色危險狀態)
     alertTriggered = false;
-    efd::SystemState s4 = fsm.update(true, 0.20f, 4.0f, 1.2f, 1.0f);
+    efd::SystemState s4 = fsm.update(true, 0.35f, 4.0f, 1.5f, 1.0f);
     assert(s4.fatigueLevel == efd::FatigueLevel::SevereWarning);
     assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::SevereWarning);
     assert(lastAlertMsg == "你的眼睛處於疲勞狀態，請適當休息");

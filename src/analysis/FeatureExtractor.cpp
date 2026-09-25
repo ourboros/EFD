@@ -68,27 +68,19 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
 
     // 眨眼檢測狀態機
     float frameDurationMs = (fps > 0.0f) ? (1000.0f / fps) : 33.33f;
-    m_elapsedSessionSec += (frameDurationMs / 1000.0f);
-
     if (isClosed) {
         m_currentClosedFrames++;
     } else {
         if (m_wasClosed) {
-            // 一次眨眼完成 (需超過 1 幀以避免雜訊，通常 2~25 幀)
+            // 一次眨眼完成 (需超過 1 幀以避免雜訊，通常 2~15 幀)
             if (m_currentClosedFrames >= 2 && m_currentClosedFrames <= 25) {
                 m_totalBlinks++;
                 m_totalBlinkDurationMs += (m_currentClosedFrames * frameDurationMs);
-                m_blinkTimestamps.push_back(m_elapsedSessionSec);
             }
             m_currentClosedFrames = 0;
         }
     }
     m_wasClosed = isClosed;
-
-    // 清理超過 60 秒的歷史眨眼時間戳記 (維持 60 秒滑動視窗)
-    while (!m_blinkTimestamps.empty() && (m_elapsedSessionSec - m_blinkTimestamps.front() > 60.0f)) {
-        m_blinkTimestamps.pop_front();
-    }
 
     // 計算 PERCLOS (閉眼幀數佔窗口比例)
     float perclos = 0.0f;
@@ -100,12 +92,13 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         perclos = static_cast<float>(closedCount) / static_cast<float>(m_closedHistory.size());
     }
 
-    // 計算真實現行滾動眨眼率 (次/分鐘，排除累積計數除以短視窗的溢位錯誤)
-    float windowDurationSec = std::min(m_elapsedSessionSec, 60.0f);
-    float blinkRatePerMin = 15.0f; // 初始預設常態
-    if (windowDurationSec >= 6.0f) {
-        blinkRatePerMin = (static_cast<float>(m_blinkTimestamps.size()) / windowDurationSec) * 60.0f;
-    }
+    // 計算估計眨眼率 (次/分鐘)
+    float windowDurationSec = (m_closedHistory.size() > 0 && fps > 0.0f)
+                                  ? (static_cast<float>(m_closedHistory.size()) / fps)
+                                  : 1.0f;
+    float blinkRatePerMin = (windowDurationSec > 0.0f)
+                                ? ((static_cast<float>(m_totalBlinks) / windowDurationSec) * 60.0f)
+                                : 0.0f;
 
     float avgDurationMs = (m_totalBlinks > 0)
                               ? (m_totalBlinkDurationMs / static_cast<float>(m_totalBlinks))
@@ -139,8 +132,6 @@ std::vector<float> FeatureExtractor::getEarHistory() const {
 void FeatureExtractor::reset() {
     m_earHistory.clear();
     m_closedHistory.clear();
-    m_blinkTimestamps.clear();
-    m_elapsedSessionSec = 0.0f;
     m_wasClosed = false;
     m_currentClosedFrames = 0;
     m_totalBlinks = 0;

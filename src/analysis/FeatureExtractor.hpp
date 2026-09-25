@@ -35,8 +35,6 @@ private:
     
     std::deque<float> m_earHistory;
     std::deque<bool>  m_closedHistory; // 供 PERCLOS 計算之閉眼布林序列
-    std::deque<float> m_blinkTimestamps; // 供滑動視窗 (60秒) 計算真實現行眨眼率
-    float m_elapsedSessionSec = 0.0f;
 
     bool m_wasClosed = false;
     int  m_currentClosedFrames = 0;

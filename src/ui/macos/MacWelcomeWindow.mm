@@ -1212,7 +1212,7 @@ int MacWelcomeWindow::run() {
         // 綁定警報事件 (僅在疲勞超標時跳出通知)
         m_impl->engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
             (void)msg;
-            if (level == FatigueLevel::SevereWarning || score >= 65.0f) {
+            if (level == FatigueLevel::SevereWarning || score >= 70.0f) {
                 std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
                           << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 <<<\n\n";
 
