@@ -55,7 +55,7 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
     float earAvg = (earLeft + earRight) * 0.5f;
     bool isClosed = (earAvg < m_threshold);
 
-    // 更新歷史序列
+    // 更新歷史序列（供 PERCLOS 計算，使用 30 秒視窗）
     m_earHistory.push_back(earAvg);
     if (m_earHistory.size() > m_maxHistorySize) {
         m_earHistory.pop_front();
@@ -66,23 +66,38 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         m_closedHistory.pop_front();
     }
 
-    // 眨眼檢測狀態機
-    float frameDurationMs = (fps > 0.0f) ? (1000.0f / fps) : 33.33f;
+    // 累計已處理秒數（供 60 秒滾動眨眼計數使用）
+    float frameDurationSec = (fps > 0.0f) ? (1.0f / fps) : (1.0f / 30.0f);
+    float frameDurationMs = frameDurationSec * 1000.0f;
+    m_elapsedSeconds += frameDurationSec;
+
+    // 眨眼偵測狀態機
     if (isClosed) {
         m_currentClosedFrames++;
     } else {
         if (m_wasClosed) {
-            // 一次眨眼完成 (需超過 1 幀以避免雜訊，通常 2~15 幀)
+            // 一次眨眼完成 (需 2~25 幀，避免雜訊與微睡眠誤報)
+            // 正常眨眼 100~400ms @ 30fps = 3~12 幀；最長允許 25 幀 ~ 833ms
             if (m_currentClosedFrames >= 2 && m_currentClosedFrames <= 25) {
+                float blinkDurMs = m_currentClosedFrames * frameDurationMs;
                 m_totalBlinks++;
-                m_totalBlinkDurationMs += (m_currentClosedFrames * frameDurationMs);
+                m_totalBlinkDurationMs += blinkDurMs;
+                m_lastBlinkDurationMs = m_totalBlinkDurationMs / static_cast<float>(m_totalBlinks);
+
+                // 推入 60 秒滾動視窗（記錄眨眼發生時的累計秒數）
+                m_blinkTimestamps.push_back(m_elapsedSeconds);
+                // 移除超過 60 秒的舊紀錄
+                while (!m_blinkTimestamps.empty() &&
+                       (m_elapsedSeconds - m_blinkTimestamps.front()) > 60.0f) {
+                    m_blinkTimestamps.pop_front();
+                }
             }
             m_currentClosedFrames = 0;
         }
     }
     m_wasClosed = isClosed;
 
-    // 計算 PERCLOS (閉眼幀數佔窗口比例)
+    // 計算 PERCLOS（文獻標準：30 秒滑動視窗內閉眼幀數佔比）
     float perclos = 0.0f;
     if (!m_closedHistory.empty()) {
         int closedCount = 0;
@@ -92,17 +107,15 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         perclos = static_cast<float>(closedCount) / static_cast<float>(m_closedHistory.size());
     }
 
-    // 計算估計眨眼率 (次/分鐘)
-    float windowDurationSec = (m_closedHistory.size() > 0 && fps > 0.0f)
-                                  ? (static_cast<float>(m_closedHistory.size()) / fps)
-                                  : 1.0f;
-    float blinkRatePerMin = (windowDurationSec > 0.0f)
-                                ? ((static_cast<float>(m_totalBlinks) / windowDurationSec) * 60.0f)
-                                : 0.0f;
-
-    float avgDurationMs = (m_totalBlinks > 0)
-                              ? (m_totalBlinkDurationMs / static_cast<float>(m_totalBlinks))
-                              : 0.0f;
+    // 計算眨眼率（使用 60 秒滾動視窗內的眨眼次數）
+    // 文獻: PERCLOS = (30 * N_blink) / S，此處使用 60 秒真實計數，得次/分
+    float blinkRatePerMin = 0.0f;
+    if (!m_blinkTimestamps.empty()) {
+        float windowSec = std::min(m_elapsedSeconds, 60.0f);
+        if (windowSec > 0.0f) {
+            blinkRatePerMin = (static_cast<float>(m_blinkTimestamps.size()) / windowSec) * 60.0f;
+        }
+    }
 
     EyeMetrics metrics;
     metrics.earLeft = earLeft;
@@ -111,7 +124,7 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
     metrics.perclos = perclos;
     metrics.blinkCount = m_totalBlinks;
     metrics.blinkRatePerMin = blinkRatePerMin;
-    metrics.avgBlinkDurationMs = avgDurationMs;
+    metrics.avgBlinkDurationMs = m_lastBlinkDurationMs;
     metrics.isEyeClosed = isClosed;
 
     return metrics;
@@ -136,7 +149,9 @@ void FeatureExtractor::reset() {
     m_currentClosedFrames = 0;
     m_totalBlinks = 0;
     m_totalBlinkDurationMs = 0.0f;
+    m_blinkTimestamps.clear();
+    m_elapsedSeconds = 0.0f;
+    m_lastBlinkDurationMs = 150.0f;
 }
 
 } // namespace efd
-

@@ -72,6 +72,8 @@ struct SystemState {
     int awaySeconds = 0;
     int studyDay = 1;                 // 1 ~ 14
     bool isStudyLocked = false;       // 14 天實驗期滿鎖定
+    bool userPresent = true;          // 使用者是否在螢幕前（人臉偵測）
+    float smoothedFatigueScore = 0.0f; // 1 分鐘滑動平均疲勞分數 (趨勢穩定值)
     std::chrono::system_clock::time_point timestamp;
 };
 

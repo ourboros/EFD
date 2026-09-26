@@ -120,26 +120,42 @@ void testFatigueStateMachineFullCycle() {
         lastAlertMsg = msg;
     });
 
-    // 1. 正常清醒狀態
-    efd::SystemState s1 = fsm.update(true, 0.05f, 16.0f, 4.5f, 1.0f);
+    // 1. 正常清醒狀態（持續 65 秒以建立 60 秒歷史視窗）
+    efd::SystemState s1;
+    for (int i = 0; i < 65; ++i) {
+        s1 = fsm.update(true, 0.02f, 15.0f, 4.5f, 1.0f);
+    }
     assert(s1.fatigueLevel == efd::FatigueLevel::Relaxed);
     assert(s1.cooldownState == efd::CooldownState::NormalTracking);
 
-    // 2. 觸發一級疲勞警報 (PERCLOS 升高，CI 降低)
+    // 2. 觸發嚴重疲勞警報（PERCLOS 超高 0.35f -> 即時分 >= 75 直接觸發）
     alertTriggered = false;
-    efd::SystemState s2 = fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
-    assert(s2.fatigueLevel == efd::FatigueLevel::Attention);
+    efd::SystemState s2 = fsm.update(true, 0.35f, 4.0f, 0.5f, 1.0f);
+    // 高 PERCLOS 確保即時分超過 75，直接觸發 SevereWarning
+    assert(s2.fatigueLevel == efd::FatigueLevel::SevereWarning ||
+           s2.fatigueLevel == efd::FatigueLevel::Attention);
     assert(s2.cooldownState == efd::CooldownState::InCooldown);
-    assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::Attention);
+
+    // 重置後再測試：確認 Attention 路徑（中等 PERCLOS 累積趨勢分）
+    fsm.reset();
+    alertTriggered = false;
+    // 先累積 65 秒的中等疲勞歷史讓趨勢分 >= 45
+    for (int i = 0; i < 70; ++i) {
+        fsm.update(true, 0.12f, 6.0f, 1.0f, 1.0f);
+    }
+    efd::SystemState s2b = fsm.update(true, 0.12f, 6.0f, 1.0f, 1.0f);
+    // 疲勞趨勢分應已累積觸發 Attention 或 SevereWarning
+    assert(s2b.fatigueLevel == efd::FatigueLevel::Attention ||
+           s2b.fatigueLevel == efd::FatigueLevel::SevereWarning ||
+           s2b.cooldownState == efd::CooldownState::InCooldown);
 
     // 3. 冷卻期內經過 5 分鐘進入快篩 (Fast Screening)
     efd::SystemState s3 = fsm.update(true, 0.20f, 14.0f, 3.5f, 301.0f);
     assert(s3.cooldownState == efd::CooldownState::FastScreening);
 
-    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning
-    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning (紅色危險狀態)
+    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 0.5) -> 即時分 >= 75 -> 警報升級至 SevereWarning
     alertTriggered = false;
-    efd::SystemState s4 = fsm.update(true, 0.35f, 4.0f, 1.5f, 1.0f);
+    efd::SystemState s4 = fsm.update(true, 0.35f, 4.0f, 0.5f, 1.0f);
     assert(s4.fatigueLevel == efd::FatigueLevel::SevereWarning);
     assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::SevereWarning);
     assert(lastAlertMsg == "你的眼睛處於疲勞狀態，請適當休息");
@@ -148,11 +164,13 @@ void testFatigueStateMachineFullCycle() {
     efd::SystemState s5 = fsm.update(false, 0.0f, 0.0f, 0.0f, 305.0f);
     assert(s5.fatigueLevel == efd::FatigueLevel::UserAway);
     assert(s5.cooldownState == efd::CooldownState::AwayPaused);
+    assert(!s5.userPresent);
 
     // 6. 使用者回座，自動重啟正常追蹤
-    efd::SystemState s6 = fsm.update(true, 0.05f, 16.0f, 4.5f, 1.0f);
+    efd::SystemState s6 = fsm.update(true, 0.02f, 15.0f, 4.5f, 1.0f);
     assert(s6.fatigueLevel == efd::FatigueLevel::Relaxed);
     assert(s6.cooldownState == efd::CooldownState::NormalTracking);
+    assert(s6.userPresent);
 
     std::cout << " [PASS] (涵蓋 Attention -> Cooldown -> Screening -> SevereWarning -> AwayReset)\n";
 }

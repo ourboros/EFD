@@ -211,7 +211,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             m_inferenceQueue.pop();
         }
 
-        // 1. 計算幾何特徵 (EAR / PERCLOS / 眨眼率)
+        // 1. 計算幾何特徵 (EAR / PERCLOS / 眨眼率 / 眨眼持續時間)
         EyeMetrics eyeMetrics = m_extractor.processFrame(package.detection.landmarks, m_camera->getFps());
 
         // 2. 動態滑動窗口基準自適應更新 (改良點 1: 選擇性更新，閉眼不污染清醒基準)
@@ -229,7 +229,10 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             m_cachedComplexity.imfCount = 2;
         }
 
-        // 4. 20/5/5 防打擾狀態機推進
+        // 4. 將最新眨眼持續時間回饋給狀態機（文獻 BKDUR 指標）
+        m_stateMachine.setLastBlinkDurationMs(m_extractor.getLastBlinkDurationMs());
+
+        // 5. 20/5/5 防打擾狀態機推進（以使用者在場標誌 hasFace 作為離座偵測）
         float deltaSec = 1.0f / m_camera->getFps();
         SystemState state = m_stateMachine.update(
             package.detection.hasFace,
@@ -239,8 +242,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             deltaSec
         );
 
-        // 5. 分發遙測至 UI Thread
-        // 5. 定期落盤至本地結構化資料庫 (每 1 秒 30 幀記錄一筆)
+        // 6. 定期落盤至本地結構化資料庫 (每 1 秒 30 幀記錄一筆)
         if (count % 30 == 0) {
             FatigueRecord record;
             record.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -254,7 +256,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             m_database.logRecord(record);
         }
 
-        // 6. 分發遙測至 UI Thread
+        // 7. 分發遙測至 UI Thread（包含在場偵測狀態與趨勢分數）
         if (m_telemetryCallback) {
             EngineTelemetry telemetry;
             telemetry.latestFrame = std::move(package.frame);
@@ -272,7 +274,8 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             std::string driverName = m_camera->getActiveDriverName();
             bool isSynthetic = m_camera->isUsingSyntheticFallback();
             std::string statusLabel = isSynthetic ? "模擬測試相機 (Synthetic)" : driverName;
-            telemetry.lifecycleSummary = "相機狀態: " + statusLabel + " | 30 FPS 串流正常 (累計 " + std::to_string(count) + " 幀)";
+            std::string presenceLabel = state.userPresent ? "使用者在場" : "使用者離座 (UserAway)";
+            telemetry.lifecycleSummary = "相機: " + statusLabel + " | " + presenceLabel + " | 累計 " + std::to_string(count) + " 幀";
 
             m_telemetryCallback(telemetry);
         }

@@ -170,20 +170,26 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
         int count = ++s_telemetryLogCount;
         if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
             const char* levelStr = "清醒放鬆 (Relaxed)";
-            if (t.systemState.fatigueLevel == FatigueLevel::Normal) levelStr = "正常專注 (Normal)";
-            else if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
+            if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
             else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) levelStr = "嚴重疲勞警告 (SevereWarning)";
+            else if (t.systemState.fatigueLevel == FatigueLevel::UserAway) levelStr = "使用者離座 (UserAway)";
+
+            const char* presenceStr = t.systemState.userPresent ? "[在場]" : "[離座-UserAway]";
 
             std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed
+                      << " " << presenceStr
                       << " | EAR: " << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
                       << (t.eyeMetrics.isEyeClosed ? " (閉眼)" : " (睜眼)")
-                      << " | 閉眼比 (PERCLOS): " << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
-                      << " | 複雜度 (MSE): " << std::setprecision(2) << t.complexityMetrics.complexityIndex
-                      << " | 疲勞分數: " << std::setprecision(1) << t.systemState.currentFatigueScore
-                      << " | 生理狀態: " << levelStr;
+                      << " | PERCLOS: " << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
+                      << " | 眨眼率: " << std::setprecision(1) << t.eyeMetrics.blinkRatePerMin << "次/分"
+                      << " | 眨眼時長: " << std::setprecision(0) << t.eyeMetrics.avgBlinkDurationMs << "ms"
+                      << " | MSE CI: " << std::setprecision(2) << t.complexityMetrics.complexityIndex
+                      << " | 即時分: " << std::setprecision(1) << t.systemState.currentFatigueScore
+                      << " | 趨勢分: " << std::setprecision(1) << t.systemState.smoothedFatigueScore
+                      << " | 狀態: " << levelStr;
 
             if (t.systemState.cooldownState == CooldownState::InCooldown) {
-                std::cout << " [冷卻中: " << t.systemState.cooldownRemainingSec << "s]";
+                std::cout << " [冷卻中: " << t.systemState.cooldownRemainingSeconds << "s]";
             }
             std::cout << "\n";
         }
@@ -1218,10 +1224,16 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::Color statusColor = Gdiplus::Color(255, 30, 177, 138); // 正常綠
     const wchar_t* statusText = L"生理狀態：正常清醒 (Relaxed)";
 
-    if (m_latestTelemetry.systemState.fatigueLevel == FatigueLevel::Attention) {
+    bool userPresent = m_latestTelemetry.systemState.userPresent;
+    FatigueLevel fatLvl = m_latestTelemetry.systemState.fatigueLevel;
+
+    if (!userPresent || fatLvl == FatigueLevel::UserAway) {
+        statusColor = Gdiplus::Color(255, 100, 100, 100); // 灰色 — 離座
+        statusText = L"使用者離座，暫停偵測 (UserAway)";
+    } else if (fatLvl == FatigueLevel::Attention) {
         statusColor = Gdiplus::Color(255, 247, 227, 175); // 注意黃
         statusText = L"生理狀態：輕度用眼疲勞 (Attention)";
-    } else if (m_latestTelemetry.systemState.fatigueLevel == FatigueLevel::SevereWarning) {
+    } else if (fatLvl == FatigueLevel::SevereWarning) {
         statusColor = Gdiplus::Color(255, 235, 87, 87); // 警告紅
         statusText = L"生理狀態：你的眼睛處於疲勞狀態，請適當休息";
     }
@@ -1235,53 +1247,68 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF cardTextRect(static_cast<float>(cardX), static_cast<float>(cardY), static_cast<float>(cardW), static_cast<float>(cardH));
     g.DrawString(statusText, -1, &cardFont, cardTextRect, &centerFormat, &cardTextBrush);
 
-    // 4. 即時遙測數據面板 (4 欄動態跳動數值, 圓角卡片)
-    wchar_t b1[32], b2[32], b3[32], b4[32];
+    // 4. 即時遙測數據面板 (5 欄動態跳動數值, 圓角卡片)
+    // b1=EAR, b2=PERCLOS, b3=MSE_CI, b4=即時分, b5=趨勢分（60s EWMA）
+    wchar_t b1[32], b2[32], b3[32], b4[32], b5[32];
     swprintf_s(b1, 32, L"%.3f", static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg));
     swprintf_s(b2, 32, L"%.1f%%", static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f));
     swprintf_s(b3, 32, L"%.2f", static_cast<double>(m_latestTelemetry.complexityMetrics.complexityIndex));
     swprintf_s(b4, 32, L"%.1f", static_cast<double>(m_latestTelemetry.systemState.currentFatigueScore));
+    swprintf_s(b5, 32, L"%.1f", static_cast<double>(m_latestTelemetry.systemState.smoothedFatigueScore));
+
+    // 在場/離座指示標籤（顯示在卡片下方左側）
+    {
+        const wchar_t* presLabel = userPresent ? L"使用者在場" : L"使用者離座";
+        Gdiplus::Color presColor = userPresent ? Gdiplus::Color(255, 100, 220, 150) : Gdiplus::Color(255, 200, 80, 80);
+        Gdiplus::Font presFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush presBrush(presColor);
+        Gdiplus::RectF presRect(static_cast<float>(cardX), static_cast<float>(cardY + cardH + 4), static_cast<float>(cardW), 16.0f);
+        Gdiplus::StringFormat leftFmt;
+        leftFmt.SetAlignment(Gdiplus::StringAlignmentNear);
+        g.DrawString(presLabel, -1, &presFont, presRect, &leftFmt, &presBrush);
+    }
 
     auto drawMetricCard = [&](int ix, int iy, int iw, int ih, const wchar_t* label, const wchar_t* val) {
         Gdiplus::SolidBrush boxBrush(Gdiplus::Color(255, 50, 56, 38));
         drawRoundedButton(g, ix, iy, iw, ih, 16, &boxBrush);
 
-        int lFontSize = isNarrow ? 11 : 12;
+        int lFontSize = isNarrow ? 10 : 11;
         Gdiplus::Font lFont(&fontFamily, static_cast<Gdiplus::REAL>(lFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
         Gdiplus::SolidBrush lBrush(Gdiplus::Color(255, 180, 180, 180));
-        Gdiplus::RectF lRect(static_cast<float>(ix), static_cast<float>(iy + 8), static_cast<float>(iw), 18.0f);
+        Gdiplus::RectF lRect(static_cast<float>(ix), static_cast<float>(iy + 6), static_cast<float>(iw), 16.0f);
         g.DrawString(label, -1, &lFont, lRect, &centerFormat, &lBrush);
 
-        int vFontSize = isNarrow ? 18 : 22;
+        int vFontSize = isNarrow ? 17 : 20;
         Gdiplus::Font vFont(&fontFamily, static_cast<Gdiplus::REAL>(vFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-        Gdiplus::SolidBrush vBrush(Gdiplus::Color(255, 150, 197, 247)); // 科技藍 (#96C5F7)
-        Gdiplus::RectF vRect(static_cast<float>(ix), static_cast<float>(iy + (isNarrow ? 26 : 34)), static_cast<float>(iw), 28.0f);
+        Gdiplus::SolidBrush vBrush(Gdiplus::Color(255, 150, 197, 247)); // 科技藍
+        Gdiplus::RectF vRect(static_cast<float>(ix), static_cast<float>(iy + (isNarrow ? 24 : 30)), static_cast<float>(iw), 28.0f);
         g.DrawString(val, -1, &vFont, vRect, &centerFormat, &vBrush);
     };
 
     if (!isNarrow) {
-        // 寬螢幕：1x4 橫向網格
-        int gridY = cardY + cardH + 14;
-        int gap = 12;
-        int itemW = (cardW - gap * 3) / 4;
-        int itemH = std::clamp(h - gridY - 80, 80, 105);
+        // 寬螢幕：1x5 橫向網格（新增趨勢分欄）
+        int gridY = cardY + cardH + 22; // 多留 8px 給在場標籤
+        int gap = 8;
+        int itemW = (cardW - gap * 4) / 5;
+        int itemH = std::clamp(h - gridY - 80, 70, 100);
 
         drawMetricCard(cardX + 0 * (itemW + gap), gridY, itemW, itemH, L"雙眼 EAR", b1);
-        drawMetricCard(cardX + 1 * (itemW + gap), gridY, itemW, itemH, L"PERCLOS 閉眼比", b2);
-        drawMetricCard(cardX + 2 * (itemW + gap), gridY, itemW, itemH, L"複雜度 (MSE)", b3);
-        drawMetricCard(cardX + 3 * (itemW + gap), gridY, itemW, itemH, L"綜合疲勞分數", b4);
+        drawMetricCard(cardX + 1 * (itemW + gap), gridY, itemW, itemH, L"PERCLOS", b2);
+        drawMetricCard(cardX + 2 * (itemW + gap), gridY, itemW, itemH, L"MSE 複雜度", b3);
+        drawMetricCard(cardX + 3 * (itemW + gap), gridY, itemW, itemH, L"即時疲勞分", b4);
+        drawMetricCard(cardX + 4 * (itemW + gap), gridY, itemW, itemH, L"趨勢分 (60s)", b5);
     } else {
-        // 手機/窄螢幕：2x2 彈性網格
-        int gridY = cardY + cardH + 10;
+        // 手機/窄螢幕：2x2 彈性網格（趨勢分取代 EAR）
+        int gridY = cardY + cardH + 18;
         int gapX = 10;
         int gapY = 8;
         int itemW = (cardW - gapX) / 2;
         int itemH = std::clamp((h - gridY - 70) / 2, 50, 70);
 
-        drawMetricCard(cardX, gridY, itemW, itemH, L"雙眼 EAR", b1);
-        drawMetricCard(cardX + itemW + gapX, gridY, itemW, itemH, L"PERCLOS 閉眼比", b2);
-        drawMetricCard(cardX, gridY + itemH + gapY, itemW, itemH, L"複雜度 (MSE)", b3);
-        drawMetricCard(cardX + itemW + gapX, gridY + itemH + gapY, itemW, itemH, L"綜合疲勞分數", b4);
+        drawMetricCard(cardX, gridY, itemW, itemH, L"PERCLOS", b2);
+        drawMetricCard(cardX + itemW + gapX, gridY, itemW, itemH, L"MSE 複雜度", b3);
+        drawMetricCard(cardX, gridY + itemH + gapY, itemW, itemH, L"即時疲勞分", b4);
+        drawMetricCard(cardX + itemW + gapX, gridY + itemH + gapY, itemW, itemH, L"趨勢分 (60s)", b5);
     }
 
     // 5. 底部控制按鈕：進入設定介面 與 關閉系統介面 (粗體字體、20px 圓角邊框)
