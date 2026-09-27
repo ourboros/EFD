@@ -4,6 +4,7 @@
 #include "engine/AsyncPipelineEngine.hpp"
 #include "platform/windows/SystemTrayManager.hpp"
 #include "ui/FatigueFloatingIndicator.hpp"
+#include "vision/CameraService.hpp"
 #include <string>
 #include <memory>
 #include <vector>
@@ -113,6 +114,9 @@ private:
     RECT m_toggleSoundBtnRect{};
     RECT m_toggleCamModeBtnRect{};
     RECT m_sensitivityBtnRect{};
+    RECT m_cameraPrevBtnRect{};   // 相機切換 ← 按鈕
+    RECT m_cameraNextBtnRect{};   // 相機切換 → 按鈕
+    RECT m_cameraRefreshBtnRect{}; // 重新掃描相機按鈕
 
     bool m_isHoveringStartBtn = false;
     bool m_isHoveringReadyBtn = false;
@@ -134,6 +138,15 @@ private:
     bool m_isHoveringToggleSoundBtn = false;
     bool m_isHoveringToggleCamModeBtn = false;
     bool m_isHoveringSensitivityBtn = false;
+    bool m_isHoveringCameraPrevBtn = false;
+    bool m_isHoveringCameraNextBtn = false;
+    bool m_isHoveringCameraRefreshBtn = false;
+
+    // 相機設備清單與選擇狀態
+    std::vector<CameraDeviceInfo> m_cameraDevices;
+    int m_selectedCameraIndex = 0;     // 當前選中的設備在 m_cameraDevices 中的索引
+    std::string m_cameraErrorMsg;      // 切換相機時的錯誤訊息
+    bool m_cameraListLoaded = false;   // 是否已掃描過設備清單
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void onPaint(HWND hwnd);

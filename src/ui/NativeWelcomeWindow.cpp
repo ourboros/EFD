@@ -313,6 +313,49 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_recalibFromSettingsBtnRect, pt)) {
             setStage(UIStage::CalibrationInstruction);
+        } else if (PtInRect(&m_cameraPrevBtnRect, pt)) {
+            // 切換至上一個相機設備
+            if (!m_cameraDevices.empty()) {
+                int newIdx = ((m_selectedCameraIndex - 1) + static_cast<int>(m_cameraDevices.size()))
+                             % static_cast<int>(m_cameraDevices.size());
+                m_selectedCameraIndex = newIdx;
+                m_cameraErrorMsg.clear();
+                // 重新啟動相機並處理錯誤
+                m_engine.getCameraService().stop();
+                bool ok = m_engine.getCameraService().start(
+                    m_cameraDevices[newIdx].id, m_cameraDevices[newIdx].facing);
+                if (!ok) {
+                    m_cameraErrorMsg = "無法開啟所選相機，已自動切換模擬模式";
+                }
+                if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+            }
+        } else if (PtInRect(&m_cameraNextBtnRect, pt)) {
+            // 切換至下一個相機設備
+            if (!m_cameraDevices.empty()) {
+                int newIdx = (m_selectedCameraIndex + 1) % static_cast<int>(m_cameraDevices.size());
+                m_selectedCameraIndex = newIdx;
+                m_cameraErrorMsg.clear();
+                m_engine.getCameraService().stop();
+                bool ok = m_engine.getCameraService().start(
+                    m_cameraDevices[newIdx].id, m_cameraDevices[newIdx].facing);
+                if (!ok) {
+                    m_cameraErrorMsg = "無法開啟所選相機，已自動切換模擬模式";
+                }
+                if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+            }
+        } else if (PtInRect(&m_cameraRefreshBtnRect, pt)) {
+            // 重新掃描可用相機設備
+            m_cameraErrorMsg.clear();
+            m_cameraDevices = m_engine.getCameraService().enumerateDevices();
+            m_cameraListLoaded = true;
+            if (m_cameraDevices.empty()) {
+                m_cameraErrorMsg = "未偵測到可用相機，系統將使用模擬模式";
+            } else {
+                if (m_selectedCameraIndex >= static_cast<int>(m_cameraDevices.size())) {
+                    m_selectedCameraIndex = 0;
+                }
+            }
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_saveSettingsBtnRect, pt)) {
             setStage(UIStage::MainDashboard);
         }
@@ -458,6 +501,9 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         bool inSensitivity = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_sensitivityBtnRect, pt) != FALSE);
         bool inRecalibFromSet = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_recalibFromSettingsBtnRect, pt) != FALSE);
         bool inSaveSet = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_saveSettingsBtnRect, pt) != FALSE);
+        bool inCamPrev = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_cameraPrevBtnRect, pt) != FALSE);
+        bool inCamNext = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_cameraNextBtnRect, pt) != FALSE);
+        bool inCamRefresh = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_cameraRefreshBtnRect, pt) != FALSE);
         bool inFillQ = (pThis->m_currentStage == UIStage::StudyCompletedGate) && (PtInRect(&pThis->m_fillQuestionnaireBtnRect, pt) != FALSE);
         bool inReturnDash = ((pThis->m_currentStage == UIStage::StudyCompletedGate || pThis->m_currentStage == UIStage::QuestionnaireSubmitted)) && (PtInRect(&pThis->m_returnDashboardBtnRect, pt) != FALSE);
         bool inExitApp = (pThis->m_currentStage == UIStage::QuestionnaireSubmitted) && (PtInRect(&pThis->m_exitAppBtnRect, pt) != FALSE);
@@ -475,6 +521,9 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
                           inSensitivity != pThis->m_isHoveringSensitivityBtn ||
                           inRecalibFromSet != pThis->m_isHoveringRecalibFromSettingsBtn ||
                           inSaveSet != pThis->m_isHoveringSaveSettingsBtn ||
+                          inCamPrev != pThis->m_isHoveringCameraPrevBtn ||
+                          inCamNext != pThis->m_isHoveringCameraNextBtn ||
+                          inCamRefresh != pThis->m_isHoveringCameraRefreshBtn ||
                           inFillQ != pThis->m_isHoveringFillQuestionnaireBtn ||
                           inReturnDash != pThis->m_isHoveringReturnDashboardBtn ||
                           inExitApp != pThis->m_isHoveringExitAppBtn);
@@ -493,11 +542,14 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
             pThis->m_isHoveringSensitivityBtn = inSensitivity;
             pThis->m_isHoveringRecalibFromSettingsBtn = inRecalibFromSet;
             pThis->m_isHoveringSaveSettingsBtn = inSaveSet;
+            pThis->m_isHoveringCameraPrevBtn = inCamPrev;
+            pThis->m_isHoveringCameraNextBtn = inCamNext;
+            pThis->m_isHoveringCameraRefreshBtn = inCamRefresh;
             pThis->m_isHoveringFillQuestionnaireBtn = inFillQ;
             pThis->m_isHoveringReturnDashboardBtn = inReturnDash;
             pThis->m_isHoveringExitAppBtn = inExitApp;
 
-            bool isAnyHovered = (hoveredTab != -1 || inStart || inReady || inBackWelcome || inSkipCalib || inProceedDash || inRestartCalib || inSettings || inMinimizeTray || inSensitivity || inRecalibFromSet || inSaveSet || inFillQ || inReturnDash || inExitApp);
+            bool isAnyHovered = (hoveredTab != -1 || inStart || inReady || inBackWelcome || inSkipCalib || inProceedDash || inRestartCalib || inSettings || inMinimizeTray || inSensitivity || inRecalibFromSet || inSaveSet || inCamPrev || inCamNext || inCamRefresh || inFillQ || inReturnDash || inExitApp);
             SetCursor(LoadCursor(NULL, isAnyHovered ? IDC_HAND : IDC_ARROW));
             InvalidateRect(hwnd, NULL, FALSE);
         }
@@ -1415,10 +1467,100 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF item2VRect(static_cast<float>(cardX + cardW / 2), static_cast<float>(item2Y), static_cast<float>(cardW / 2 - 20), static_cast<float>(itemH));
     g.DrawString(L"重新校準眼動基準 (點擊執行)", -1, &itemValFont, item2VRect, &rightFormat, &mintText);
 
+    // 設定項目 3: 相機選擇 (動態列舉 + 左右切換 + 重新掃描)
+    int item3Y = item2Y + itemH + gap;
+    int camCardH = isNarrow ? 70 : 76;
+
+    // 若尚未掃描，首次進入設定介面時自動載入設備清單
+    if (!m_cameraListLoaded) {
+        const_cast<NativeWelcomeWindow*>(this)->m_cameraDevices =
+            const_cast<NativeWelcomeWindow*>(this)->m_engine.getCameraService().enumerateDevices();
+        const_cast<NativeWelcomeWindow*>(this)->m_cameraListLoaded = true;
+    }
+
+    // 相機卡片背景
+    Gdiplus::SolidBrush camCardBg(Gdiplus::Color(255, 38, 44, 30));
+    Gdiplus::Pen camCardBorder(Gdiplus::Color(200, 247, 200, 100), 1.5f);
+    drawRoundedButton(g, cardX, item3Y, cardW, camCardH, 20, &camCardBg, &camCardBorder);
+
+    // 相機選擇標題
+    Gdiplus::RectF camTitleRect(static_cast<float>(cardX + 20), static_cast<float>(item3Y), static_cast<float>(cardW / 3), static_cast<float>(camCardH));
+    Gdiplus::SolidBrush camYellow(Gdiplus::Color(255, 247, 200, 100));
+    g.DrawString(L"攝影機選擇", -1, &itemTitleFont, camTitleRect, &leftFormat, &camYellow);
+
+    // 當前相機名稱顯示
+    std::wstring camName;
+    bool isSynth = m_engine.getCameraService().isUsingSyntheticFallback();
+    if (m_cameraDevices.empty()) {
+        camName = isSynth ? L"模擬模式 (無實體相機)" : L"偵測中...";
+    } else {
+        int clampedIdx = std::clamp(m_selectedCameraIndex, 0, static_cast<int>(m_cameraDevices.size()) - 1);
+        const std::string& rawName = m_cameraDevices[clampedIdx].name;
+        camName = std::wstring(rawName.begin(), rawName.end());
+        if (isSynth) camName += L" [模擬模式]";
+        std::wstring idxStr = L" (" + std::to_wstring(clampedIdx + 1) + L"/" + std::to_wstring(m_cameraDevices.size()) + L")";
+        camName += idxStr;
+    }
+
+    if (camName.size() > 30) camName = camName.substr(0, 28) + L"...";
+
+    // 名稱顯示區（中央）
+    int arrowW = isNarrow ? 36 : 44;
+    int nameAreaX = cardX + arrowW + 10;
+    int nameAreaW = cardW - arrowW * 3 - 30;
+    Gdiplus::Font camNameFont(&fontFamily, static_cast<Gdiplus::REAL>(isNarrow ? 11 : 12), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::RectF camNameRect(static_cast<float>(nameAreaX), static_cast<float>(item3Y + camCardH / 2 - 10), static_cast<float>(nameAreaW), 22.0f);
+    g.DrawString(camName.c_str(), -1, &camNameFont, camNameRect, &centerFormat, &whiteBrush);
+
+    // 箭頭按鈕 ← 
+    int arrowY = item3Y + (camCardH - arrowW) / 2;
+    bool hasMul = m_cameraDevices.size() > 1;
+    Gdiplus::SolidBrush arrowBg(m_isHoveringCameraPrevBtn && hasMul
+        ? Gdiplus::Color(255, 80, 90, 65) : Gdiplus::Color(255, 50, 56, 38));
+    Gdiplus::Pen arrowBorder(Gdiplus::Color(180, 150, 197, 247), 1.2f);
+    drawRoundedButton(g, cardX + 6, arrowY, arrowW, arrowW, 12, &arrowBg, &arrowBorder);
+    Gdiplus::Font arrowFont(&fontFamily, 16.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::RectF prevRect(static_cast<float>(cardX + 6), static_cast<float>(arrowY), static_cast<float>(arrowW), static_cast<float>(arrowW));
+    Gdiplus::SolidBrush arrowColor(hasMul ? Gdiplus::Color(255, 150, 197, 247) : Gdiplus::Color(255, 80, 80, 80));
+    g.DrawString(L"←", -1, &arrowFont, prevRect, &centerFormat, &arrowColor);
+    m_cameraPrevBtnRect = { cardX + 6, arrowY, cardX + 6 + arrowW, arrowY + arrowW };
+
+    // 箭頭按鈕 →
+    int nextBtnX = nameAreaX + nameAreaW + 10;
+    Gdiplus::SolidBrush arrowBg2(m_isHoveringCameraNextBtn && hasMul
+        ? Gdiplus::Color(255, 80, 90, 65) : Gdiplus::Color(255, 50, 56, 38));
+    drawRoundedButton(g, nextBtnX, arrowY, arrowW, arrowW, 12, &arrowBg2, &arrowBorder);
+    Gdiplus::RectF nextRect(static_cast<float>(nextBtnX), static_cast<float>(arrowY), static_cast<float>(arrowW), static_cast<float>(arrowW));
+    g.DrawString(L"→", -1, &arrowFont, nextRect, &centerFormat, &arrowColor);
+    m_cameraNextBtnRect = { nextBtnX, arrowY, nextBtnX + arrowW, arrowY + arrowW };
+
+    // 重新掃描按鈕（右側）
+    int refreshBtnX = cardX + cardW - arrowW - 6;
+    Gdiplus::SolidBrush refreshBg(m_isHoveringCameraRefreshBtn
+        ? Gdiplus::Color(255, 40, 100, 80) : Gdiplus::Color(255, 25, 70, 55));
+    Gdiplus::Pen refreshBorder(Gdiplus::Color(180, 30, 177, 138), 1.2f);
+    drawRoundedButton(g, refreshBtnX, arrowY, arrowW, arrowW, 12, &refreshBg, &refreshBorder);
+    Gdiplus::Font refreshFont(&fontFamily, 11.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::RectF refreshRect(static_cast<float>(refreshBtnX), static_cast<float>(arrowY), static_cast<float>(arrowW), static_cast<float>(arrowW));
+    Gdiplus::SolidBrush mintRefresh(Gdiplus::Color(255, 120, 230, 195));
+    g.DrawString(L"掃描", -1, &refreshFont, refreshRect, &centerFormat, &mintRefresh);
+    m_cameraRefreshBtnRect = { refreshBtnX, arrowY, refreshBtnX + arrowW, arrowY + arrowW };
+
+    // 錯誤訊息顯示（若切換失敗）
+    if (!m_cameraErrorMsg.empty()) {
+        std::wstring errW(m_cameraErrorMsg.begin(), m_cameraErrorMsg.end());
+        Gdiplus::Font errFont(&fontFamily, 11.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush errBrush(Gdiplus::Color(255, 235, 100, 100));
+        Gdiplus::RectF errRect(static_cast<float>(cardX), static_cast<float>(item3Y + camCardH + 4),
+                               static_cast<float>(cardW), 18.0f);
+        g.DrawString(errW.c_str(), -1, &errFont, errRect, &centerFormat, &errBrush);
+    }
+
     // 3. 底部動作按鈕：返回監控中心 (粗體, 20px 圓角邊框)
+    int errOffset = m_cameraErrorMsg.empty() ? 0 : 22;
     int btnH = isNarrow ? 44 : 48;
     int btnW = isNarrow ? std::min(w - 40, 280) : 280;
-    int returnBtnY = item2Y + itemH + (isNarrow ? 24 : 36);
+    int returnBtnY = item3Y + camCardH + (isNarrow ? 20 : 28) + errOffset;
     int returnBtnX = (w - btnW) / 2;
 
     m_saveSettingsBtnRect = { returnBtnX, returnBtnY, returnBtnX + btnW, returnBtnY + btnH };

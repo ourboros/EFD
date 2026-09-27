@@ -53,6 +53,30 @@ inline void bgraToRgb888(const uint8_t* bgra, uint8_t* rgb, int numPixels) {
     }
 }
 
+// 快速 NV12 轉 RGB888 色彩空間轉換器
+inline void nv12ToRgb888(const uint8_t* nv12, uint8_t* rgb, int width, int height) {
+    const uint8_t* yPlane = nv12;
+    const uint8_t* uvPlane = nv12 + (width * height);
+    for (int j = 0; j < height; ++j) {
+        for (int i = 0; i < width; ++i) {
+            int yIdx = j * width + i;
+            int uvIdx = (j / 2) * width + (i & ~1);
+            int y = yPlane[yIdx];
+            int u = uvPlane[uvIdx] - 128;
+            int v = uvPlane[uvIdx + 1] - 128;
+
+            int r = std::clamp(y + ((359 * v) >> 8), 0, 255);
+            int g = std::clamp(y - ((88 * u + 183 * v) >> 8), 0, 255);
+            int b = std::clamp(y + ((454 * u) >> 8), 0, 255);
+
+            int outIdx = yIdx * 3;
+            rgb[outIdx] = static_cast<uint8_t>(r);
+            rgb[outIdx + 1] = static_cast<uint8_t>(g);
+            rgb[outIdx + 2] = static_cast<uint8_t>(b);
+        }
+    }
+}
+
 } // anonymous namespace
 
 std::string WindowsMfCameraDriver::wcharToString(const wchar_t* wstr) {
@@ -210,10 +234,10 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         return false;
     }
 
-    // 4. 設定輸出格式：優先嘗試 RGB24，若失敗則嘗試 RGB32
+    // 4. 設定輸出格式：多層次自適應協商 (RGB24 -> RGB32 -> YUY2 -> NV12 -> 原生)
     bool formatConfigured = false;
     
-    // 嘗試 RGB24
+    // 優先嘗試 RGB24 (指定解析度)
     {
         IMFMediaType* pMediaType = nullptr;
         if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
@@ -229,7 +253,7 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         }
     }
 
-    // 若 RGB24 失敗，嘗試 RGB32
+    // 若失敗，嘗試 RGB32 (指定解析度)
     if (!formatConfigured) {
         IMFMediaType* pMediaType = nullptr;
         if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
@@ -243,6 +267,35 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
             }
             pMediaType->Release();
         }
+    }
+
+    // 若失敗，嘗試 YUY2 (原生相機常用格式)
+    if (!formatConfigured) {
+        IMFMediaType* pMediaType = nullptr;
+        if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
+            pMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+            pMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2);
+
+            if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
+                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
+                formatConfigured = true;
+            }
+            pMediaType->Release();
+        }
+    }
+
+    // 5. 查詢實際生效的解析度與格式 (動態自適應)
+    IMFMediaType* pActualType = nullptr;
+    if (SUCCEEDED(m_pSourceReader->GetCurrentMediaType(
+        static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), &pActualType))) {
+        UINT32 actW = 0, actH = 0;
+        if (SUCCEEDED(MFGetAttributeSize(pActualType, MF_MT_FRAME_SIZE, &actW, &actH))) {
+            if (actW > 0 && actH > 0) {
+                m_config.width = static_cast<int>(actW);
+                m_config.height = static_cast<int>(actH);
+            }
+        }
+        pActualType->Release();
     }
 
     m_isRunning.store(true);
@@ -328,7 +381,7 @@ void WindowsMfCameraDriver::captureLoop() {
                     frame.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
 
-                    // 依據緩衝區大小自動適配格式
+                    // 依據緩衝區長度與像素數自動適配格式
                     if (currentLength == static_cast<DWORD>(numPixels * 3)) {
                         // 標準 RGB24
                         frame.data.assign(pData, pData + currentLength);
@@ -340,8 +393,12 @@ void WindowsMfCameraDriver::captureLoop() {
                         // YUY2 轉 RGB888
                         yuy2ToRgb888(pData, rgbBuffer.data(), numPixels);
                         frame.data = rgbBuffer;
+                    } else if (currentLength == static_cast<DWORD>(numPixels * 3 / 2)) {
+                        // NV12 轉 RGB888
+                        nv12ToRgb888(pData, rgbBuffer.data(), targetW, targetH);
+                        frame.data = rgbBuffer;
                     } else {
-                        // 其他尺寸直接複製
+                        // 異常長度，安全複製
                         frame.data.assign(pData, pData + currentLength);
                     }
 

@@ -66,7 +66,7 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
         return startSynthetic();
     }
 
-    // 1. 優先嘗試建立並啟動平台原生攝影機 (前置鏡頭優先)
+    // 1. 優先嘗試建立並啟動平台原生攝影機 (優先使用指定或前置鏡頭)
     bool opened = false;
     {
         std::lock_guard<std::mutex> lock(m_driverMutex);
@@ -78,22 +78,44 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
         auto devices = m_driver->enumerateDevices();
         if (!devices.empty()) {
             int chosenIndex = deviceIndex;
-            for (const auto& dev : devices) {
-                if (dev.facing == targetFacing) {
-                    chosenIndex = dev.id;
-                    break;
+            // 若未指定或超出範圍，依照 targetFacing 尋找最佳設備
+            if (deviceIndex < 0 || deviceIndex >= static_cast<int>(devices.size())) {
+                chosenIndex = 0;
+                for (const auto& dev : devices) {
+                    if (dev.facing == targetFacing) {
+                        chosenIndex = dev.id;
+                        break;
+                    }
                 }
+            } else {
+                chosenIndex = devices[deviceIndex].id;
             }
+
             m_config.deviceIndex = chosenIndex;
             opened = m_driver->open(m_config);
+
+            // 自動相機容錯尋找：若所選相機開啟失敗，嘗試自動尋找並開啟其他可用的實體鏡頭
+            if (!opened && devices.size() > 1) {
+                std::cout << "[CameraService] 所選攝影機 (ID: " << chosenIndex << ") 開啟失敗，正在自動搜尋其他可用實體相機...\n";
+                for (const auto& dev : devices) {
+                    if (dev.id != chosenIndex) {
+                        m_config.deviceIndex = dev.id;
+                        opened = m_driver->open(m_config);
+                        if (opened) {
+                            std::cout << "[CameraService] 成功自動切換至備用相機: " << dev.name << " (ID: " << dev.id << ")\n";
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
 
     if (opened) {
         m_isSyntheticFallback = false;
         std::cout << "[CameraService] 成功啟動實體攝影機驅動: " << m_driver->getDriverName() 
-                  << " (Index: " << m_config.deviceIndex << ")\n";
-        // 啟動看門狗: 若 1.0 秒內實體相機無任何畫面送出，自動切換至模擬驅動
+                  << " (Device ID: " << m_config.deviceIndex << ")\n";
+        // 啟動看門狗: 若 2.5 秒內實體相機無任何畫面送出，自動切換至模擬驅動
         startWatchdog();
         return true;
     }
@@ -127,15 +149,15 @@ void CameraService::startWatchdog() {
     stopWatchdog();
     m_watchdogRunning.store(true);
     m_watchdogThread = std::thread([this]() {
-        // 漸進式等待 1000 毫秒，避免緊密阻塞
-        for (int i = 0; i < 20; ++i) {
+        // 漸進式等待 2500 毫秒，避免緊密阻塞並容納緩慢初始化的相機
+        for (int i = 0; i < 50; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             if (!m_watchdogRunning.load()) return;
         }
 
-        // 若 1 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
+        // 若 2.5 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
         if (m_totalFramesDelivered.load() == 0 && !m_isSyntheticFallback) {
-            std::cout << "[CameraService 看門狗] 偵測到實體攝影機無訊號輸出，自動無縫熱切換至 Synthetic 模擬驅動...\n";
+            std::cout << "[CameraService 看門狗] 偵測到實體攝影機 2.5 秒內無訊號輸出，自動無縫熱切換至 Synthetic 模擬驅動...\n";
             this->startSynthetic();
         }
     });
