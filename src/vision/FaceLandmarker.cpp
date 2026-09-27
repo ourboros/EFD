@@ -88,92 +88,73 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         return result;
     }
 
-    bool faceDetected = true;
-    float confidence = 0.95f;
+    result.hasFace = true;
+    result.faceConfidence = 0.96f;
 
-    // 實體影像人臉與朝向偵測 (Person Present -> Facing Camera -> Face Detected)
+    // 1. 偵測使用者是否在鏡頭畫面中 (Presence Detection) & 2. 確認臉部是否正對鏡頭 (Orientation Detection)
     if (pixelData && width >= 64 && height >= 64) {
-        int step = std::max(2, width / 80); // 快速取樣步長
-        int skinPixels = 0;
-        int totalSampled = 0;
-        int minX = width, maxX = 0, minY = height, maxY = 0;
-        uint64_t skinSumX = 0, skinSumY = 0;
+        int cx = width / 2;
+        int cy = height / 2;
+        int sampleBox = std::min(width, height) / 3;
+        
+        uint64_t sumLuma = 0;
+        uint64_t sumSqLuma = 0;
+        uint64_t leftLuma = 0;
+        uint64_t rightLuma = 0;
+        int samples = 0;
+        int halfSamples = 0;
 
-        // 偵測中央與上半部人臉區域 (X: 15%~85%, Y: 10%~90%)
-        int startX = width * 15 / 100;
-        int endX = width * 85 / 100;
-        int startY = height * 10 / 100;
-        int endY = height * 90 / 100;
+        for (int y = cy - sampleBox; y < cy + sampleBox; y += 6) {
+            for (int x = cx - sampleBox; x < cx + sampleBox; x += 6) {
+                int idx = (y * width + x) * 3;
+                uint8_t r = pixelData[idx];
+                uint8_t g = pixelData[idx + 1];
+                uint8_t b = pixelData[idx + 2];
+                uint32_t luma = (r * 299 + g * 587 + b * 114) / 1000;
+                
+                sumLuma += luma;
+                sumSqLuma += luma * luma;
+                samples++;
 
-        for (int y = startY; y < endY; y += step) {
-            const uint8_t* row = pixelData + (y * width * 3);
-            for (int x = startX; x < endX; x += step) {
-                int idx = x * 3;
-                uint8_t r = row[idx];
-                uint8_t g = row[idx + 1];
-                uint8_t b = row[idx + 2];
-                totalSampled++;
-
-                // YCbCr 膚色檢測公式
-                int yVal = (299 * r + 587 * g + 114 * b) / 1000;
-                int cbVal = (-169 * r - 331 * g + 500 * b) / 1000 + 128;
-                int crVal = (500 * r - 419 * g - 81 * b) / 1000 + 128;
-
-                // 標準人體膚色色彩學區間：Y > 35, 75 <= Cb <= 130, 130 <= Cr <= 178 且 R > G > B
-                bool isSkin = (yVal >= 35 && yVal <= 235) &&
-                              (cbVal >= 75 && cbVal <= 130) &&
-                              (crVal >= 130 && crVal <= 178) &&
-                              (r > g) && (g >= b - 15);
-
-                if (isSkin) {
-                    skinPixels++;
-                    skinSumX += x;
-                    skinSumY += y;
-                    minX = std::min(minX, x);
-                    maxX = std::max(maxX, x);
-                    minY = std::min(minY, y);
-                    maxY = std::max(maxY, y);
+                if (x < cx) {
+                    leftLuma += luma;
+                    halfSamples++;
+                } else if (x > cx) {
+                    rightLuma += luma;
                 }
             }
         }
 
-        float skinRatio = (totalSampled > 0) ? (static_cast<float>(skinPixels) / totalSampled) : 0.0f;
+        if (samples > 0) {
+            float meanLuma = static_cast<float>(sumLuma) / samples;
+            float variance = static_cast<float>(sumSqLuma) / samples - (meanLuma * meanLuma);
+            float stdDev = (variance > 0.0f) ? std::sqrt(variance) : 0.0f;
 
-        // 階段 1：判定畫面中是否有活體人臉 (膚色比例需達到至少 3.0% 且像素點足夠)
-        if (skinRatio < 0.030f || skinPixels < 25) {
-            faceDetected = false;
-            confidence = 0.0f;
-        } else {
-            // 階段 2：確認臉部是否正對攝影機 (朝向判定)
-            float centroidX = static_cast<float>(skinSumX) / skinPixels / width;
-            float centroidY = static_cast<float>(skinSumY) / skinPixels / height;
-            int faceBoxW = maxX - minX;
-            int faceBoxH = maxY - minY;
-            float boxAspect = (faceBoxH > 0) ? (static_cast<float>(faceBoxW) / faceBoxH) : 0.0f;
+            // (A) 畫面亮度過低 (遮擋/全黑) 或過曝
+            bool isLightingValid = (meanLuma >= 8.0f && meanLuma <= 250.0f);
+            
+            // (B) 畫面紋理/對比度 (人臉與五官存在時必有邊緣與灰度起伏，離座時通常為平坦純色背景)
+            bool isContrastValid = (stdDev >= 6.0f);
 
-            // 條件 A: 重心必須在畫面中段 (X 落在 20%~80%, Y 落在 15%~85%)
-            bool isCentered = (centroidX >= 0.20f && centroidX <= 0.80f) &&
-                              (centroidY >= 0.15f && centroidY <= 0.85f);
+            // (C) 臉部左右對稱性 (正對鏡頭時，左右臉區域平均照度與邊緣分佈均衡)
+            bool isOrientationValid = true;
+            if (halfSamples > 0) {
+                float meanLeft = static_cast<float>(leftLuma) / halfSamples;
+                float meanRight = static_cast<float>(rightLuma) / halfSamples;
+                float diffRatio = std::abs(meanLeft - meanRight) / std::max(meanLuma, 1.0f);
+                if (diffRatio > 0.55f) {
+                    isOrientationValid = false; // 側臉超過 45 度或未正對鏡頭
+                }
+            }
 
-            // 條件 B: 臉部長寬比符合人臉幾何 (寬高比 0.40 ~ 1.70)
-            bool isFaceGeometry = (boxAspect >= 0.40f && boxAspect <= 1.70f);
-
-            if (isCentered && isFaceGeometry) {
-                faceDetected = true;
-                confidence = std::clamp(skinRatio * 8.0f, 0.75f, 0.98f);
-            } else {
-                // 偏離中心或側臉轉向過大 (未正對鏡頭)
-                faceDetected = false;
-                confidence = 0.15f;
+            if (!isLightingValid || !isContrastValid || !isOrientationValid) {
+                result.hasFace = false;
+                result.faceConfidence = 0.0f;
             }
         }
     }
 
-    result.hasFace = faceDetected;
-    result.faceConfidence = confidence;
-
-    // 若未偵測到人臉或未正對鏡頭，清空特徵點並直接返回
-    if (!faceDetected) {
+    if (!result.hasFace) {
         result.landmarks.clear();
         auto endTime = std::chrono::steady_clock::now();
         result.inferenceTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();

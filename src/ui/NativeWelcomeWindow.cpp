@@ -96,16 +96,13 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
-    // 載入設計資產 (歡迎介面 Logo / 圖示: 優先套用 資產 9.png, 次選 資產 10.png)
-    m_logoImage = std::make_unique<Gdiplus::Image>(L"E:\\Project\\EFD\\design\\1x\\資產 9.png");
-    if (!m_logoImage || m_logoImage->GetLastStatus() != Gdiplus::Ok || m_logoImage->GetWidth() == 0) {
-        m_logoImage = loadAssetImage(L"資產 9.png");
-    }
-    if (!m_logoImage || m_logoImage->GetLastStatus() != Gdiplus::Ok || m_logoImage->GetWidth() == 0) {
-        m_logoImage = std::make_unique<Gdiplus::Image>(L"E:\\Project\\EFD\\design\\1x\\資產 10.png");
-    }
+    // 載入設計資產 (歡迎介面 Logo: 直接套用 E:\Project\EFD\design\1x\資產 10.png)
+    m_logoImage = std::make_unique<Gdiplus::Image>(L"E:\\Project\\EFD\\design\\1x\\資產 10.png");
     if (!m_logoImage || m_logoImage->GetLastStatus() != Gdiplus::Ok || m_logoImage->GetWidth() == 0) {
         m_logoImage = loadAssetImage(L"資產 10.png");
+    }
+    if (!m_logoImage || m_logoImage->GetLastStatus() != Gdiplus::Ok || m_logoImage->GetWidth() == 0) {
+        m_logoImage = loadAssetImage(L"logo.png");
     }
     m_asset5Image = loadAssetImage(L"資產 5.png");
     m_asset6Image = loadAssetImage(L"資產 6.png");
@@ -172,25 +169,21 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
         // 控制台持續輸出最新眼動與疲勞遙測數據 (每 15 幀或閉眼時輸出)
         int count = ++s_telemetryLogCount;
         if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
-            if (!t.systemState.userPresent || t.systemState.fatigueLevel == FatigueLevel::UserAway) {
+            if (!t.detection.hasFace || t.systemState.fatigueLevel == FatigueLevel::UserAway) {
                 std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed
-                          << " [離座-UserAway] 畫面中未偵測到人臉或未正對鏡頭 | 暫停疲勞分析\n";
+                          << " | 人臉狀態: 未偵測到人臉 / 離座中 | 監控狀態: 離座暫停\n";
             } else {
                 const char* levelStr = "清醒放鬆 (Relaxed)";
                 if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
                 else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) levelStr = "嚴重疲勞警告 (SevereWarning)";
 
                 std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed
-                          << " [在場-正對鏡頭]"
                           << " | EAR: " << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
                           << (t.eyeMetrics.isEyeClosed ? " (閉眼)" : " (睜眼)")
-                          << " | PERCLOS: " << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
-                          << " | 眨眼率: " << std::setprecision(1) << t.eyeMetrics.blinkRatePerMin << "次/分"
-                          << " | 眨眼時長: " << std::setprecision(0) << t.eyeMetrics.avgBlinkDurationMs << "ms"
-                          << " | MSE CI: " << std::setprecision(2) << t.complexityMetrics.complexityIndex
-                          << " | 即時分: " << std::setprecision(1) << t.systemState.currentFatigueScore
-                          << " | 趨勢分: " << std::setprecision(1) << t.systemState.smoothedFatigueScore
-                          << " | 狀態: " << levelStr;
+                          << " | 閉眼比 (PERCLOS): " << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
+                          << " | 複雜度 (MSE): " << std::setprecision(2) << t.complexityMetrics.complexityIndex
+                          << " | 疲勞分數: " << std::setprecision(1) << t.systemState.currentFatigueScore
+                          << " | 生理狀態: " << levelStr;
 
                 if (t.systemState.cooldownState == CooldownState::InCooldown) {
                     std::cout << " [冷卻中: " << t.systemState.cooldownRemainingSeconds << "s]";
@@ -724,22 +717,23 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
 
     bool isNarrow = (w < 680 || h > w);
 
-    // 1. 計算 Logo 100% 原始長寬比 (嚴格等比例縮放，絕無長寬比失真)
-    int origImgW = 568;
-    int origImgH = 341;
+    // 1. 計算 Logo 100% 原始長寬比 (資產 10.png 原始比例為 568:341 = 1.6657)
+    float naturalAspect = 568.0f / 341.0f; // 1.6657
+    int origImgW = 70;
+    int origImgH = 42;
 
     if (m_logoImage && m_logoImage->GetLastStatus() == Gdiplus::Ok && m_logoImage->GetWidth() > 0 && m_logoImage->GetHeight() > 0) {
         origImgW = static_cast<int>(m_logoImage->GetWidth());
         origImgH = static_cast<int>(m_logoImage->GetHeight());
+        naturalAspect = static_cast<float>(origImgW) / static_cast<float>(origImgH);
     }
 
-    // 依視窗尺寸優雅置中繪製 Logo (等比例縮放 35%~45%，保持 100% 原始長寬比)
-    float scale = isNarrow ? 0.35f : 0.45f;
-    int logoW = static_cast<int>(origImgW * scale);
-    int logoH = static_cast<int>(origImgH * scale);
+    // 依視窗尺寸優雅置中繪製高解析度 Logo (寬度縮小 50% 至 110px，長寬比適配)
+    int logoW = isNarrow ? std::clamp(w / 6, 70, 100) : 110;
+    int logoH = static_cast<int>(logoW / naturalAspect);
 
     int logoX = (w - logoW) / 2;
-    int logoY = isNarrow ? std::max(40, h / 2 - logoH - 70) : (h / 2 - 130);
+    int logoY = isNarrow ? std::max(45, h / 2 - logoH - 60) : (h / 2 - 130);
 
     g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
     g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
@@ -1225,12 +1219,14 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     int cardX = (w - cardW) / 2;
     int cardY = static_cast<int>(headerY + 48);
 
+    bool isUserAway = (!m_latestTelemetry.detection.hasFace || m_latestTelemetry.systemState.fatigueLevel == FatigueLevel::UserAway);
+
     Gdiplus::Color statusColor = Gdiplus::Color(255, 30, 177, 138); // 正常綠
     const wchar_t* statusText = L"生理狀態：正常清醒 (Relaxed)";
 
-    if (!m_latestTelemetry.systemState.userPresent || m_latestTelemetry.systemState.fatigueLevel == FatigueLevel::UserAway) {
-        statusColor = Gdiplus::Color(255, 120, 125, 115); // 離座灰
-        statusText = L"生理狀態：使用者離座 / 未正對鏡頭 (暫停偵測)";
+    if (isUserAway) {
+        statusColor = Gdiplus::Color(255, 100, 115, 130); // 離座藍灰
+        statusText = L"生理狀態：離座暫停中 (未偵測到人臉 / 鏡頭未對準)";
     } else if (m_latestTelemetry.systemState.fatigueLevel == FatigueLevel::Attention) {
         statusColor = Gdiplus::Color(255, 247, 227, 175); // 注意黃
         statusText = L"生理狀態：輕度用眼疲勞 (Attention)";
@@ -1244,17 +1240,17 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
     int cardFontSize = isNarrow ? 15 : 19;
     Gdiplus::Font cardFont(&fontFamily, static_cast<Gdiplus::REAL>(cardFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush cardTextBrush(Gdiplus::Color(255, 37, 41, 28));
+    Gdiplus::SolidBrush cardTextBrush(isUserAway ? Gdiplus::Color(255, 245, 245, 245) : Gdiplus::Color(255, 37, 41, 28));
     Gdiplus::RectF cardTextRect(static_cast<float>(cardX), static_cast<float>(cardY), static_cast<float>(cardW), static_cast<float>(cardH));
     g.DrawString(statusText, -1, &cardFont, cardTextRect, &centerFormat, &cardTextBrush);
 
     // 4. 即時遙測數據面板 (4 欄動態跳動數值, 圓角卡片)
     wchar_t b1[32], b2[32], b3[32], b4[32];
-    if (!m_latestTelemetry.systemState.userPresent || m_latestTelemetry.systemState.fatigueLevel == FatigueLevel::UserAway) {
-        swprintf_s(b1, 32, L"--");
-        swprintf_s(b2, 32, L"暫停");
-        swprintf_s(b3, 32, L"--");
-        swprintf_s(b4, 32, L"離座中");
+    if (isUserAway) {
+        wcscpy_s(b1, L"--");
+        wcscpy_s(b2, L"--");
+        wcscpy_s(b3, L"--");
+        wcscpy_s(b4, L"-- (離座暫停)");
     } else {
         swprintf_s(b1, 32, L"%.3f", static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg));
         swprintf_s(b2, 32, L"%.1f%%", static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f));
@@ -1613,6 +1609,19 @@ int NativeWelcomeWindow::run() {
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.style = CS_HREDRAW | CS_VREDRAW;
 
+    HICON hAppIcon = (HICON)LoadImageW(wc.hInstance, L"assets\\app.ico", IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+    if (!hAppIcon) {
+        hAppIcon = (HICON)LoadImageW(wc.hInstance, L"app.ico", IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+    }
+    if (!hAppIcon) {
+        hAppIcon = LoadIconW(wc.hInstance, MAKEINTRESOURCEW(1));
+    }
+    if (!hAppIcon) {
+        hAppIcon = LoadIcon(NULL, IDI_APPLICATION);
+    }
+    wc.hIcon = hAppIcon;
+    wc.hIconSm = hAppIcon;
+
     RegisterClassExW(&wc);
 
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
@@ -1631,6 +1640,11 @@ int NativeWelcomeWindow::run() {
 
     if (!m_hwnd) {
         return -1;
+    }
+
+    if (hAppIcon) {
+        SendMessage(m_hwnd, WM_SETICON, ICON_BIG, (LPARAM)hAppIcon);
+        SendMessage(m_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hAppIcon);
     }
 
     // 初始化系統托盤常駐與置頂懸浮指標 HUD
