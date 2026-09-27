@@ -66,7 +66,7 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
         return startSynthetic();
     }
 
-    // 1. 優先嘗試建立並啟動平台原生攝影機 (前置鏡頭優先，或依使用者指定的索引)
+    // 1. 優先嘗試建立並啟動平台原生攝影機 (前置鏡頭優先)
     bool opened = false;
     {
         std::lock_guard<std::mutex> lock(m_driverMutex);
@@ -77,54 +77,35 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
 
         auto devices = m_driver->enumerateDevices();
         if (!devices.empty()) {
-            int chosenIndex = -1;
-            // 若使用者指定有效索引，優先採用
-            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(devices.size())) {
-                chosenIndex = devices[deviceIndex].id;
-            } else {
-                for (const auto& dev : devices) {
-                    if (dev.facing == targetFacing) {
-                        chosenIndex = dev.id;
-                        break;
-                    }
-                }
-                if (chosenIndex < 0 && !devices.empty()) {
-                    chosenIndex = devices[0].id;
+            int chosenIndex = deviceIndex;
+            for (const auto& dev : devices) {
+                if (dev.facing == targetFacing) {
+                    chosenIndex = dev.id;
+                    break;
                 }
             }
-
             m_config.deviceIndex = chosenIndex;
             opened = m_driver->open(m_config);
-
-            // 若選擇的設備開啟失敗，依序嘗試其餘可用實體相機
-            if (!opened) {
-                for (const auto& dev : devices) {
-                    if (dev.id != chosenIndex) {
-                        m_config.deviceIndex = dev.id;
-                        if (m_driver->open(m_config)) {
-                            opened = true;
-                            break;
-                        }
-                    }
-                }
-            }
         }
     }
 
     if (opened) {
         m_isSyntheticFallback = false;
-        std::cout << "[CameraService] 成功啟動實體攝影機: " << m_driver->getDriverName() 
-                  << " (Device ID: " << m_config.deviceIndex << ")\n";
+        std::cout << "[CameraService] 成功啟動實體攝影機驅動: " << m_driver->getDriverName() 
+                  << " (Index: " << m_config.deviceIndex << ")\n";
+        // 啟動看門狗: 若 1.0 秒內實體相機無任何畫面送出，自動切換至模擬驅動
+        startWatchdog();
         return true;
     }
 
-    // 2. 若無實體鏡頭或開啟失敗，自動回退至 Synthetic 模擬測試驅動
-    std::cout << "[CameraService] 未偵測到可用的實體攝影機或開啟失敗，自動啟用 Synthetic 模擬測試驅動...\n";
+    // 2. 若無法開啟實體鏡頭（無硬體或權限受限），無縫回退至 Synthetic 模擬驅動
+    std::cout << "[CameraService] 未偵測到可用的實體攝影機或開啟失敗，自動回退至 Synthetic 模擬測試驅動...\n";
     return startSynthetic();
 }
 
 bool CameraService::startSynthetic() {
     stopWatchdog();
+    m_forceSynthetic = true;
     
     std::lock_guard<std::mutex> lock(m_driverMutex);
     if (m_driver) {
@@ -138,16 +119,40 @@ bool CameraService::startSynthetic() {
     
     m_isSyntheticFallback = true;
     bool ok = m_driver->open(m_config);
-    std::cout << "[CameraService] 啟用 Synthetic 模擬測試攝影機 (30 FPS 串流運作中)\n";
+    std::cout << "[CameraService] 啟用 Synthetic 模擬測試攝影機驅動 (30 FPS 影像串流運作中)\n";
     return ok;
 }
 
 void CameraService::startWatchdog() {
-    // 保留介面供擴展
+    stopWatchdog();
+    m_watchdogRunning.store(true);
+    m_watchdogThread = std::thread([this]() {
+        // 漸進式等待 1000 毫秒，避免緊密阻塞
+        for (int i = 0; i < 20; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (!m_watchdogRunning.load()) return;
+        }
+
+        // 若 1 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
+        if (m_totalFramesDelivered.load() == 0 && !m_isSyntheticFallback) {
+            std::cout << "[CameraService 看門狗] 偵測到實體攝影機無訊號輸出，自動無縫熱切換至 Synthetic 模擬驅動...\n";
+            this->startSynthetic();
+        }
+    });
 }
 
 void CameraService::stopWatchdog() {
-    // 保留介面供擴展
+    if (m_watchdogRunning.load()) {
+        m_watchdogRunning.store(false);
+        if (m_watchdogThread.joinable()) {
+            // 防止執行緒自我 join 死鎖
+            if (m_watchdogThread.get_id() != std::this_thread::get_id()) {
+                m_watchdogThread.join();
+            } else {
+                m_watchdogThread.detach();
+            }
+        }
+    }
 }
 
 void CameraService::stop() {

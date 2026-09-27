@@ -42,6 +42,8 @@ private:
     float m_screeningTimer = 0.0f;
     float m_awayTimer = 0.0f;
     float m_lastScore = 0.0f;
+    float m_lastSmoothedScore = 0.0f;
+    bool  m_userPresent = true;
 
     int   m_studyDay = 1;
     bool  m_isStudyLocked = false;

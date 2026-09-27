@@ -116,10 +116,10 @@ enum class MacUIStage : uint8_t {
         _sensitivityLevel = 1; // 標準靈敏度
         _hoveredNavTab = -1;
 
-        // 載入資產 10 Logo
-        _logoImage = [self loadAssetImage:@"資產 10.png"];
+        // 載入資產 9 Logo
+        _logoImage = [self loadAssetImage:@"資產 9.png"];
         if (!_logoImage) {
-            _logoImage = [self loadAssetImage:@"logo10.png"];
+            _logoImage = [self loadAssetImage:@"logo9.png"];
         }
         if (!_logoImage) {
             _logoImage = [self loadAssetImage:@"logo.png"];
@@ -693,33 +693,33 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
 
     drawRoundedButton(NSMakeRect(cardX, cardY, cardW, cardH), 16.0, [NSColor colorWithCalibratedRed:52/255.0 green:58/255.0 blue:38/255.0 alpha:1.0]);
 
-    float curEar = _hasTelemetry ? _latestTelemetry.eyeMetrics.earAvg : 0.312f;
-    float curPerclos = _hasTelemetry ? (_latestTelemetry.eyeMetrics.perclos * 100.0f) : 4.2f;
-    float curMse = _hasTelemetry ? _latestTelemetry.complexityMetrics.complexityIndex : 4.50f;
-    float curScore = _hasTelemetry ? _latestTelemetry.systemState.currentFatigueScore : 12.5f;
+    BOOL hasFace = _hasTelemetry && _latestTelemetry.detection.hasFace && _latestTelemetry.systemState.userPresent && (_latestTelemetry.systemState.fatigueLevel != efd::FatigueLevel::UserAway);
 
-    BOOL isUserAway = (!_hasTelemetry || !_latestTelemetry.detection.hasFace || _latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::UserAway);
+    float curEar = hasFace ? _latestTelemetry.eyeMetrics.earAvg : 0.0f;
+    float curPerclos = hasFace ? (_latestTelemetry.eyeMetrics.perclos * 100.0f) : 0.0f;
+    float curMse = hasFace ? _latestTelemetry.complexityMetrics.complexityIndex : 0.0f;
+    float curScore = hasFace ? _latestTelemetry.systemState.currentFatigueScore : 0.0f;
 
-    NSString* statusText = @"生理狀態：清醒專注 (Normal)";
+    NSString* statusText = @"生理狀態：正常清醒 (Relaxed)";
     NSColor* statusColor = [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0];
-    if (isUserAway) {
-        statusText = @"生理狀態：離座暫停中 (未偵測到人臉 / 鏡頭未對準)";
-        statusColor = [NSColor colorWithCalibratedRed:180/255.0 green:190/255.0 blue:200/255.0 alpha:1.0];
+    if (!hasFace) {
+        statusText = @"生理狀態：未偵測到人臉 / 使用者離座 (暫停疲勞計算)";
+        statusColor = [NSColor colorWithCalibratedRed:110/255.0 green:120/255.0 blue:105/255.0 alpha:1.0];
     } else if (_hasTelemetry) {
         if (_latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::SevereWarning) {
             statusText = [NSString stringWithFormat:@"生理狀態：你的眼睛處於疲勞狀態，請適當休息 (分數 %.1f)", curScore];
             statusColor = [NSColor colorWithCalibratedRed:235/255.0 green:87/255.0 blue:87/255.0 alpha:1.0];
         } else if (_latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::Attention) {
-            statusText = [NSString stringWithFormat:@"生理狀態：輕度用眼疲勞 (Attention - 分數 %.1f)", curScore];
+            statusText = [NSString stringWithFormat:@"生理狀態：注意力提醒 (Attention - 分數 %.1f)", curScore];
             statusColor = [NSColor colorWithCalibratedRed:247/255.0 green:190/255.0 blue:70/255.0 alpha:1.0];
         } else {
-            statusText = [NSString stringWithFormat:@"生理狀態：正常專注 (Normal - 分數 %.1f)", curScore];
+            statusText = [NSString stringWithFormat:@"生理狀態：正常清醒 (Relaxed - 分數 %.1f)", curScore];
             statusColor = [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0];
         }
     }
     drawCenteredText(statusText, NSMakeRect(cardX, cardY + 12.0, cardW, 24.0), [NSFont boldSystemFontOfSize:17], statusColor);
 
-    drawCenteredText(@"相機串流: 前置攝影機運作中 (30 FPS) | 離線特徵提取模式", NSMakeRect(cardX, cardY + 44.0, cardW, 20.0), [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedWhite:0.75 alpha:1.0]);
+    drawCenteredText(@"相機串流: 運作中 (30 FPS) | 眼睛特徵提取與即時疲勞監測", NSMakeRect(cardX, cardY + 44.0, cardW, 20.0), [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedWhite:0.75 alpha:1.0]);
 
     // 4 大指標卡片 (橫向 1x4 網格)
     CGFloat gridY = cardY + cardH + 16.0;
@@ -733,14 +733,14 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
         drawRoundedButton(r, 14.0, [NSColor colorWithCalibratedRed:52/255.0 green:58/255.0 blue:38/255.0 alpha:1.0]);
 
         drawCenteredText(lbl, NSMakeRect(ix, gridY + 10.0, itemW, 20.0), [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedWhite:0.8 alpha:1.0]);
-        drawCenteredText(val, NSMakeRect(ix, gridY + 36.0, itemW, 30.0), [NSFont boldSystemFontOfSize:20], [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0]);
+        drawCenteredText(val, NSMakeRect(ix, gridY + 36.0, itemW, 30.0), [NSFont boldSystemFontOfSize:22], [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0]);
     };
 
-    if (isUserAway) {
+    if (!hasFace) {
         drawMetricCard(0, @"雙眼 EAR", @"--");
         drawMetricCard(1, @"PERCLOS 閉眼比", @"--");
         drawMetricCard(2, @"複雜度 (MSE)", @"--");
-        drawMetricCard(3, @"綜合疲勞分數", @"-- (離座暫停)");
+        drawMetricCard(3, @"綜合疲勞分數", @"暫停中");
     } else {
         drawMetricCard(0, @"雙眼 EAR", [NSString stringWithFormat:@"%.3f", curEar]);
         drawMetricCard(1, @"PERCLOS 閉眼比", [NSString stringWithFormat:@"%.1f%%", curPerclos]);
