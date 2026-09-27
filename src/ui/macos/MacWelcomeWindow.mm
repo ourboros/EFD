@@ -435,9 +435,19 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     [[NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0] setFill];
     NSRectFill(self.bounds);
 
-    // 1. Logo (縮小 50%：寬度 110px，長寬比適配 568:341 = 1.6657，高度 66px)
-    CGFloat logoW = 110.0;
-    CGFloat logoH = 66.0;
+    // 1. Logo (依圖檔原始長寬比縮放，絕不拉伸變形)
+    CGFloat origW = 568.0;
+    CGFloat origH = 341.0;
+    if (_logoImage) {
+        NSSize sz = [_logoImage size];
+        if (sz.width > 0 && sz.height > 0) {
+            origW = sz.width;
+            origH = sz.height;
+        }
+    }
+    CGFloat scale = (w < 680 || h > w) ? 0.35 : 0.45;
+    CGFloat logoW = origW * scale;
+    CGFloat logoH = origH * scale;
     CGFloat logoX = (w - logoW) / 2.0;
     CGFloat logoY = (h / 2.0 - 130.0);
 
@@ -700,8 +710,12 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
 
     NSString* statusText = @"生理狀態：清醒專注 (Normal)";
     NSColor* statusColor = [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0];
+    BOOL isAway = !_hasTelemetry || !_latestTelemetry.systemState.userPresent || _latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::UserAway;
     if (_hasTelemetry) {
-        if (_latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::SevereWarning) {
+        if (isAway) {
+            statusText = @"生理狀態：使用者離座 / 未正對鏡頭 (暫停偵測)";
+            statusColor = [NSColor colorWithCalibratedRed:140/255.0 green:145/255.0 blue:135/255.0 alpha:1.0];
+        } else if (_latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::SevereWarning) {
             statusText = [NSString stringWithFormat:@"生理狀態：嚴重疲勞警告 (SevereWarning - 分數 %.1f)", curScore];
             statusColor = [NSColor colorWithCalibratedRed:235/255.0 green:87/255.0 blue:87/255.0 alpha:1.0];
         } else if (_latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::Attention) {
@@ -731,10 +745,17 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
         drawCenteredText(val, NSMakeRect(ix, gridY + 36.0, itemW, 30.0), [NSFont boldSystemFontOfSize:22], [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0]);
     };
 
-    drawMetricCard(0, @"雙眼 EAR", [NSString stringWithFormat:@"%.3f", curEar]);
-    drawMetricCard(1, @"PERCLOS 閉眼比", [NSString stringWithFormat:@"%.1f%%", curPerclos]);
-    drawMetricCard(2, @"複雜度 (MSE)", [NSString stringWithFormat:@"%.2f", curMse]);
-    drawMetricCard(3, @"綜合疲勞分數", [NSString stringWithFormat:@"%.1f", curScore]);
+    if (isAway) {
+        drawMetricCard(0, @"雙眼 EAR", @"--");
+        drawMetricCard(1, @"PERCLOS 閉眼比", @"暫停");
+        drawMetricCard(2, @"複雜度 (MSE)", @"--");
+        drawMetricCard(3, @"綜合疲勞分數", @"離座中");
+    } else {
+        drawMetricCard(0, @"雙眼 EAR", [NSString stringWithFormat:@"%.3f", curEar]);
+        drawMetricCard(1, @"PERCLOS 閉眼比", [NSString stringWithFormat:@"%.1f%%", curPerclos]);
+        drawMetricCard(2, @"複雜度 (MSE)", [NSString stringWithFormat:@"%.2f", curMse]);
+        drawMetricCard(3, @"綜合疲勞分數", [NSString stringWithFormat:@"%.1f", curScore]);
+    }
 
     // 底部控制按鈕：進入設定介面 與 關閉系統介面 (20px 圓角邊框, 粗體)
     CGFloat btnW = 210.0;

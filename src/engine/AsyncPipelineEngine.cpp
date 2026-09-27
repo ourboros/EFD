@@ -211,25 +211,37 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             m_inferenceQueue.pop();
         }
 
-        // 1. 計算幾何特徵 (EAR / PERCLOS / 眨眼率)
-        EyeMetrics eyeMetrics = m_extractor.processFrame(package.detection.landmarks, m_camera->getFps());
-
-        // 2. 動態滑動窗口基準自適應更新 (改良點 1: 選擇性更新，閉眼不污染清醒基準)
-        float currentThreshold = m_baseline.update(eyeMetrics.earAvg, eyeMetrics.isEyeClosed);
-        m_extractor.setEyeClosedThreshold(currentThreshold);
-
-        // 3. 非線性複雜度分析 (EMD / MSE / CI)
-        int64_t count = ++m_processedFrameCount;
-        if (count >= 30 && count % 15 == 0) {
-            std::vector<float> earHistory = m_extractor.getEarHistory();
-            m_cachedComplexity = m_mseCalculator.calculateComplexity(earHistory);
-        } else if (count < 30) {
-            // 冷啟動前 30 幀給予平滑清醒先驗值，避免 CI=0 造成疲勞分數突波跳變
-            m_cachedComplexity.complexityIndex = 4.5f;
-            m_cachedComplexity.imfCount = 2;
+        // 1. 若未偵測到人臉 (離座/未正對鏡頭)，安全歸零眼動指標，暫停疲勞計算
+        EyeMetrics eyeMetrics;
+        float currentThreshold = m_baseline.getCurrentThreshold();
+        if (package.detection.hasFace && !package.detection.landmarks.empty()) {
+            eyeMetrics = m_extractor.processFrame(package.detection.landmarks, m_camera->getFps());
+            currentThreshold = m_baseline.update(eyeMetrics.earAvg, eyeMetrics.isEyeClosed);
+            m_extractor.setEyeClosedThreshold(currentThreshold);
+        } else {
+            eyeMetrics.isEyeClosed = false;
+            eyeMetrics.earAvg = 0.0f;
+            eyeMetrics.earLeft = 0.0f;
+            eyeMetrics.earRight = 0.0f;
+            eyeMetrics.perclos = 0.0f;
+            eyeMetrics.blinkRatePerMin = 0.0f;
+            eyeMetrics.avgBlinkDurationMs = 0.0f;
         }
 
-        // 4. 20/5/5 防打擾狀態機推進
+        // 2. 非線性複雜度分析 (EMD / MSE / CI)
+        int64_t count = ++m_processedFrameCount;
+        if (package.detection.hasFace) {
+            if (count >= 30 && count % 15 == 0) {
+                std::vector<float> earHistory = m_extractor.getEarHistory();
+                m_cachedComplexity = m_mseCalculator.calculateComplexity(earHistory);
+            } else if (count < 30) {
+                // 冷啟動前 30 幀給予平滑清醒先驗值，避免 CI=0 造成疲勞分數突波跳變
+                m_cachedComplexity.complexityIndex = 4.5f;
+                m_cachedComplexity.imfCount = 2;
+            }
+        }
+
+        // 3. 20/5/5 防打擾狀態機推進 (未偵測到人臉時自動切換至 UserAway 離座暫停)
         float deltaSec = 1.0f / m_camera->getFps();
         SystemState state = m_stateMachine.update(
             package.detection.hasFace,
@@ -239,9 +251,8 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             deltaSec
         );
 
-        // 5. 分發遙測至 UI Thread
-        // 5. 定期落盤至本地結構化資料庫 (每 1 秒 30 幀記錄一筆)
-        if (count % 30 == 0) {
+        // 4. 定期落盤至本地結構化資料庫 (每 1 秒 30 幀記錄一筆，僅在人臉偵測成功時記錄)
+        if (count % 30 == 0 && package.detection.hasFace) {
             FatigueRecord record;
             record.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
