@@ -51,9 +51,6 @@ enum class MacUIStage : uint8_t {
     BOOL _isHoveringSensitivityBtn;
     BOOL _isHoveringRecalibFromSettingsBtn;
     BOOL _isHoveringSaveSettingsBtn;
-    BOOL _isHoveringCameraPrevBtn;
-    BOOL _isHoveringCameraNextBtn;
-    BOOL _isHoveringCameraRefreshBtn;
     BOOL _isHoveringFillQuestionnaireBtn;
     BOOL _isHoveringReturnDashboardBtn;
     BOOL _isHoveringExitAppBtn;
@@ -70,20 +67,11 @@ enum class MacUIStage : uint8_t {
     NSRect _minimizeTrayBtnRect;
     NSRect _sensitivityBtnRect;
     NSRect _recalibFromSettingsBtnRect;
-    NSRect _cameraPrevBtnRect;
-    NSRect _cameraNextBtnRect;
-    NSRect _cameraRefreshBtnRect;
     NSRect _saveSettingsBtnRect;
     NSRect _fillQuestionnaireBtnRect;
     NSRect _returnDashboardBtnRect;
     NSRect _exitAppBtnRect;
     std::vector<NSRect> _navTabRects;
-
-    // 相機設備清單與選擇
-    std::vector<efd::CameraDeviceInfo> _cameraDevices;
-    int _selectedCameraIndex;
-    NSString* _cameraErrorMsg;
-    BOOL _cameraListLoaded;
 
     NSImage* _logoImage;
     NSTrackingArea* _trackingArea;
@@ -802,67 +790,10 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     drawLeftText(@"重設眼動監測", NSMakeRect(cardX + 20.0, item2Y, cardW / 2.0, itemH), [NSFont boldSystemFontOfSize:15], [NSColor whiteColor]);
     drawRightText(@"重新校準眼動基準 (點擊執行)", NSMakeRect(cardX + cardW / 2.0, item2Y, cardW / 2.0 - 20.0, itemH), [NSFont boldSystemFontOfSize:13], [NSColor colorWithCalibratedRed:120/255.0 green:230/255.0 blue:195/255.0 alpha:1.0]);
 
-    // 項目 3: 攝影機選擇 (動態列舉 + 左右切換 + 重新掃描)
-    CGFloat item3Y = item2Y + itemH + gap;
-    CGFloat camCardH = 74.0;
-    NSRect camRect = NSMakeRect(cardX, item3Y, cardW, camCardH);
-
-    if (!_cameraListLoaded && _engine) {
-        _cameraDevices = _engine->getCameraService().enumerateDevices();
-        _cameraListLoaded = YES;
-    }
-
-    NSColor* camBg = [NSColor colorWithCalibratedRed:38/255.0 green:44/255.0 blue:30/255.0 alpha:1.0];
-    drawRoundedButton(camRect, 20.0, camBg, [NSColor colorWithCalibratedRed:247/255.0 green:200/255.0 blue:100/255.0 alpha:0.8]);
-
-    drawLeftText(@"攝影機選擇", NSMakeRect(cardX + 20.0, item3Y, cardW / 3.0, camCardH), [NSFont boldSystemFontOfSize:15], [NSColor colorWithCalibratedRed:247/255.0 green:200/255.0 blue:100/255.0 alpha:1.0]);
-
-    NSString* camName = @"偵測中...";
-    BOOL isSynth = _engine ? _engine->getCameraService().isUsingSyntheticFallback() : NO;
-    if (_cameraDevices.empty()) {
-        camName = isSynth ? @"模擬模式 (無實體相機)" : @"偵測中...";
-    } else {
-        int cIdx = std::clamp(_selectedCameraIndex, 0, static_cast<int>(_cameraDevices.size()) - 1);
-        camName = [NSString stringWithUTF8String:_cameraDevices[cIdx].name.c_str()];
-        if (isSynth) camName = [camName stringByAppendingString:@" [模擬模式]"];
-        camName = [camName stringByAppendingFormat:@" (%d/%lu)", cIdx + 1, _cameraDevices.size()];
-    }
-
-    CGFloat arrowW = 44.0;
-    CGFloat arrowY = item3Y + (camCardH - arrowW) / 2.0;
-    CGFloat nameX = cardX + arrowW + 10.0;
-    CGFloat nameW = cardW - arrowW * 3.0 - 30.0;
-    drawCenteredText(camName, NSMakeRect(nameX, item3Y + (camCardH - 22.0) / 2.0, nameW, 22.0), [NSFont boldSystemFontOfSize:13], [NSColor whiteColor]);
-
-    // 箭頭 ← 
-    _cameraPrevBtnRect = NSMakeRect(cardX + 8.0, arrowY, arrowW, arrowW);
-    NSColor* arrPrevBg = _isHoveringCameraPrevBtn ? [NSColor colorWithCalibratedRed:80/255.0 green:90/255.0 blue:65/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:50/255.0 green:56/255.0 blue:38/255.0 alpha:1.0];
-    drawRoundedButton(_cameraPrevBtnRect, 12.0, arrPrevBg, [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:0.7]);
-    drawCenteredText(@"←", _cameraPrevBtnRect, [NSFont boldSystemFontOfSize:16], [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0]);
-
-    // 箭頭 →
-    CGFloat nextX = nameX + nameW + 10.0;
-    _cameraNextBtnRect = NSMakeRect(nextX, arrowY, arrowW, arrowW);
-    NSColor* arrNextBg = _isHoveringCameraNextBtn ? [NSColor colorWithCalibratedRed:80/255.0 green:90/255.0 blue:65/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:50/255.0 green:56/255.0 blue:38/255.0 alpha:1.0];
-    drawRoundedButton(_cameraNextBtnRect, 12.0, arrNextBg, [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:0.7]);
-    drawCenteredText(@"→", _cameraNextBtnRect, [NSFont boldSystemFontOfSize:16], [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0]);
-
-    // 重新掃描
-    CGFloat refX = cardX + cardW - arrowW - 8.0;
-    _cameraRefreshBtnRect = NSMakeRect(refX, arrowY, arrowW, arrowW);
-    NSColor* refBg = _isHoveringCameraRefreshBtn ? [NSColor colorWithCalibratedRed:40/255.0 green:100/255.0 blue:80/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:25/255.0 green:70/255.0 blue:55/255.0 alpha:1.0];
-    drawRoundedButton(_cameraRefreshBtnRect, 12.0, refBg, [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:0.7]);
-    drawCenteredText(@"掃描", _cameraRefreshBtnRect, [NSFont boldSystemFontOfSize:11], [NSColor colorWithCalibratedRed:120/255.0 green:230/255.0 blue:195/255.0 alpha:1.0]);
-
-    // 錯誤訊息
-    if (_cameraErrorMsg) {
-        drawCenteredText(_cameraErrorMsg, NSMakeRect(cardX, item3Y + camCardH + 4.0, cardW, 18.0), [NSFont boldSystemFontOfSize:11], [NSColor colorWithCalibratedRed:235/255.0 green:100/255.0 blue:100/255.0 alpha:1.0]);
-    }
-
     // 3. 底部動作按鈕：返回監控中心 (粗體, 20px 圓角邊框)
     CGFloat retW = 280.0;
     CGFloat retH = 48.0;
-    CGFloat retY = item3Y + camCardH + 28.0 + (_cameraErrorMsg ? 20.0 : 0.0);
+    CGFloat retY = item2Y + itemH + 32.0;
     _saveSettingsBtnRect = NSMakeRect((w - retW) / 2.0, retY, retW, retH);
 
     NSColor* retBg = _isHoveringSaveSettingsBtn ? [NSColor colorWithCalibratedRed:170/255.0 green:215/255.0 blue:255/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0];
@@ -1010,42 +941,6 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
                 [self setNeedsDisplay:YES];
             } else if (NSPointInRect(loc, _recalibFromSettingsBtnRect)) {
                 [self setStage:efd::MacUIStage::CalibrationInstruction];
-            } else if (NSPointInRect(loc, _cameraPrevBtnRect)) {
-                if (!_cameraDevices.empty() && _engine) {
-                    int newIdx = ((_selectedCameraIndex - 1) + static_cast<int>(_cameraDevices.size())) % static_cast<int>(_cameraDevices.size());
-                    _selectedCameraIndex = newIdx;
-                    _cameraErrorMsg = nil;
-                    _engine->getCameraService().stop();
-                    bool ok = _engine->getCameraService().start(_cameraDevices[newIdx].id, _cameraDevices[newIdx].facing);
-                    if (!ok) {
-                        _cameraErrorMsg = @"無法開啟所選相機，已自動切換模擬模式";
-                    }
-                    [self setNeedsDisplay:YES];
-                }
-            } else if (NSPointInRect(loc, _cameraNextBtnRect)) {
-                if (!_cameraDevices.empty() && _engine) {
-                    int newIdx = (_selectedCameraIndex + 1) % static_cast<int>(_cameraDevices.size());
-                    _selectedCameraIndex = newIdx;
-                    _cameraErrorMsg = nil;
-                    _engine->getCameraService().stop();
-                    bool ok = _engine->getCameraService().start(_cameraDevices[newIdx].id, _cameraDevices[newIdx].facing);
-                    if (!ok) {
-                        _cameraErrorMsg = @"無法開啟所選相機，已自動切換模擬模式";
-                    }
-                    [self setNeedsDisplay:YES];
-                }
-            } else if (NSPointInRect(loc, _cameraRefreshBtnRect)) {
-                if (_engine) {
-                    _cameraErrorMsg = nil;
-                    _cameraDevices = _engine->getCameraService().enumerateDevices();
-                    _cameraListLoaded = YES;
-                    if (_cameraDevices.empty()) {
-                        _cameraErrorMsg = @"未偵測到可用相機，系統將使用模擬模式";
-                    } else if (_selectedCameraIndex >= static_cast<int>(_cameraDevices.size())) {
-                        _selectedCameraIndex = 0;
-                    }
-                    [self setNeedsDisplay:YES];
-                }
             } else if (NSPointInRect(loc, _saveSettingsBtnRect)) {
                 [self setStage:efd::MacUIStage::MainDashboard];
             }
@@ -1094,9 +989,6 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     BOOL inSensitivity = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _sensitivityBtnRect);
     BOOL inRecalibFromSet = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _recalibFromSettingsBtnRect);
     BOOL inSaveSet = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _saveSettingsBtnRect);
-    BOOL inCamPrev = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _cameraPrevBtnRect);
-    BOOL inCamNext = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _cameraNextBtnRect);
-    BOOL inCamRefresh = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _cameraRefreshBtnRect);
     BOOL inFillQ = (_currentStage == efd::MacUIStage::StudyCompletedGate) && NSPointInRect(loc, _fillQuestionnaireBtnRect);
     BOOL inReturnDash = (_currentStage == efd::MacUIStage::StudyCompletedGate || _currentStage == efd::MacUIStage::QuestionnaireSubmitted) && NSPointInRect(loc, _returnDashboardBtnRect);
     BOOL inExitApp = (_currentStage == efd::MacUIStage::QuestionnaireSubmitted) && NSPointInRect(loc, _exitAppBtnRect);
@@ -1113,9 +1005,6 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
                       inSensitivity != _isHoveringSensitivityBtn ||
                       inRecalibFromSet != _isHoveringRecalibFromSettingsBtn ||
                       inSaveSet != _isHoveringSaveSettingsBtn ||
-                      inCamPrev != _isHoveringCameraPrevBtn ||
-                      inCamNext != _isHoveringCameraNextBtn ||
-                      inCamRefresh != _isHoveringCameraRefreshBtn ||
                       inFillQ != _isHoveringFillQuestionnaireBtn ||
                       inReturnDash != _isHoveringReturnDashboardBtn ||
                       inExitApp != _isHoveringExitAppBtn);
@@ -1133,14 +1022,11 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
         _isHoveringSensitivityBtn = inSensitivity;
         _isHoveringRecalibFromSettingsBtn = inRecalibFromSet;
         _isHoveringSaveSettingsBtn = inSaveSet;
-        _isHoveringCameraPrevBtn = inCamPrev;
-        _isHoveringCameraNextBtn = inCamNext;
-        _isHoveringCameraRefreshBtn = inCamRefresh;
         _isHoveringFillQuestionnaireBtn = inFillQ;
         _isHoveringReturnDashboardBtn = inReturnDash;
         _isHoveringExitAppBtn = inExitApp;
 
-        BOOL isAnyHovered = (hoveredTab != -1 || inStart || inReady || inBackWelcome || inProceedDash || inCloseBgResult || inRestartCalib || inSettings || inMinimizeTray || inSensitivity || inRecalibFromSet || inSaveSet || inCamPrev || inCamNext || inCamRefresh || inFillQ || inReturnDash || inExitApp);
+        BOOL isAnyHovered = (hoveredTab != -1 || inStart || inReady || inBackWelcome || inProceedDash || inCloseBgResult || inRestartCalib || inSettings || inMinimizeTray || inSensitivity || inRecalibFromSet || inSaveSet || inFillQ || inReturnDash || inExitApp);
         if (isAnyHovered) {
             [[NSCursor pointingHandCursor] set];
         } else {

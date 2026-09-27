@@ -54,6 +54,7 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
 }
 
 SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds) {
+    m_userPresent = faceDetected;
     if (!faceDetected) {
         m_awayTimer += deltaSeconds;
         if (m_awayTimer >= static_cast<float>(m_awayResetThreshold)) {
@@ -76,6 +77,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
     m_awayTimer = 0.0f;
 
     m_lastScore = computeFatigueScore(perclos, blinkRate, complexityIndex);
+    m_lastSmoothedScore = (m_lastSmoothedScore == 0.0f) ? m_lastScore : (0.85f * m_lastSmoothedScore + 0.15f * m_lastScore);
 
     // 20/5/5 狀態機推進 (使用者要求：放寬嚴重疲勞範圍，降低至 65.0 分)
     switch (m_cooldownState) {
@@ -162,10 +164,13 @@ SystemState FatigueStateMachine::getState() const {
     state.fatigueLevel = m_currentLevel;
     state.cooldownState = m_cooldownState;
     state.currentFatigueScore = m_lastScore;
+    state.smoothedFatigueScore = m_lastSmoothedScore;
     state.cooldownRemainingSeconds = std::max(0, static_cast<int>(m_cooldownTimer));
+    state.cooldownRemainingSec = state.cooldownRemainingSeconds;
     state.awaySeconds = static_cast<int>(m_awayTimer);
     state.studyDay = m_studyDay;
     state.isStudyLocked = m_isStudyLocked;
+    state.userPresent = m_userPresent;
     state.timestamp = std::chrono::system_clock::now();
     return state;
 }

@@ -49,10 +49,11 @@ struct ComplexityMetrics {
 
 // 疲勞分級
 enum class FatigueLevel : uint8_t {
-    Relaxed = 0,       // 正常 / 清醒
-    Attention = 1,     // 輕度疲勞 / 提醒
+    Relaxed       = 0, // 正常 / 清醒放鬆
+    Normal        = 0, // 相容別名 (等同 Relaxed)
+    Attention     = 1, // 輕度疲勞 / 提醒
     SevereWarning = 2, // 重度疲勞 / 警報升級
-    UserAway = 3       // 使用者離座
+    UserAway      = 3  // 使用者離座
 };
 
 // 20/5/5 防打擾狀態機之運行狀態
@@ -70,6 +71,7 @@ struct SystemState {
     float         currentFatigueScore      = 0.0f; // 即時疲勞分數 0.0 ~ 100.0
     float         smoothedFatigueScore     = 0.0f; // 60 秒 EWMA 趨勢分數
     int           cooldownRemainingSeconds = 0;
+    int           cooldownRemainingSec     = 0;    // 相容別名
     int           awaySeconds              = 0;
     int           studyDay                 = 1;    // 1 ~ 14
     bool          isStudyLocked            = false;// 14 天實驗期滿鎖定

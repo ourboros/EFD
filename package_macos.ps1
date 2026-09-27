@@ -4,9 +4,9 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
-$DistDir = Join-Path $ProjectRoot "build\package_macos\EFD-v2.0.0-macOS"
-$ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.0.0-macOS.zip"
-$ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.0.0-macOS.zip"
+$DistDir = Join-Path $ProjectRoot "build\package_macos\EFD-v1.0.0-macOS"
+$ZipRootOutput = Join-Path $ProjectRoot "EFD-v1.0.0-macOS.zip"
+$ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v1.0.0-macOS.zip"
 
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "  [EFD] 開始打包 macOS 分發套件..." -ForegroundColor Cyan
