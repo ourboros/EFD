@@ -67,13 +67,13 @@ enum class CooldownState : uint8_t {
 struct SystemState {
     FatigueLevel fatigueLevel = FatigueLevel::Relaxed;
     CooldownState cooldownState = CooldownState::NormalTracking;
-    float currentFatigueScore = 0.0f; // 0.0 ~ 100.0
+    float currentFatigueScore = 0.0f;      // 即時疲勞分數 0.0 ~ 100.0
+    float smoothedFatigueScore = 0.0f;     // 60 秒 EWMA 趨勢分數
     int cooldownRemainingSeconds = 0;
     int awaySeconds = 0;
-    int studyDay = 1;                 // 1 ~ 14
-    bool isStudyLocked = false;       // 14 天實驗期滿鎖定
-    bool userPresent = true;          // 使用者是否在螢幕前（人臉偵測）
-    float smoothedFatigueScore = 0.0f; // 1 分鐘滑動平均疲勞分數 (趨勢穩定值)
+    int studyDay = 1;                      // 1 ~ 14
+    bool isStudyLocked = false;            // 14 天實驗期滿鎖定
+    bool userPresent = true;               // 使用者是否在螢幕前（人臉偵測）
     std::chrono::system_clock::time_point timestamp;
 };
 
