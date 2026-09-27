@@ -94,8 +94,10 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
     bool facingCamera = false;
 
     if (pixelData && width >= 64 && height >= 64) {
-        // 1. 影像採樣分析人體膚色特徵與分佈 (Peer/Kovac 經典色彩空間模型)
-        int step = (width > 640) ? 8 : 4;
+        // ---------------------------------------------------------------------
+        // 階段一：偵測畫面中有無人在攝影機中 (Person Presence Detection)
+        // ---------------------------------------------------------------------
+        int step = (width > 640) ? 6 : 4;
         int totalSamples = 0;
         int skinPixels = 0;
         uint64_t skinSumX = 0;
@@ -111,10 +113,18 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 uint8_t g = pixelData[idx + 1];
                 uint8_t b = pixelData[idx + 2];
 
-                // 膚色色度判斷條件
-                bool isSkin = (r > 70 && g > 35 && b > 20 &&
-                               (r - g) >= 10 && (r > b) &&
-                               (std::max({r, g, b}) - std::min({r, g, b})) >= 15);
+                double gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                // YCbCr 嚴謹人類膚色空間分佈
+                // Y: 35 ~ 245, Cb: 75 ~ 128, Cr: 132 ~ 175
+                double cb = -0.168736 * r - 0.331264 * g + 0.500000 * b + 128.0;
+                double cr =  0.500000 * r - 0.418688 * g - 0.081312 * b + 128.0;
+
+                bool isSkin = (gray >= 35.0 && gray <= 245.0 &&
+                               cb >= 75.0 && cb <= 128.0 &&
+                               cr >= 132.0 && cr <= 175.0 &&
+                               cr > (cb + 5.0) &&
+                               r > g && (r - g) >= 8 && (r - b) >= 15);
 
                 if (isSkin) {
                     skinPixels++;
@@ -129,25 +139,52 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         }
 
         float skinRatio = (totalSamples > 0) ? (static_cast<float>(skinPixels) / totalSamples) : 0.0f;
+        int skinBoxW = std::max(0, maxSkinX - minSkinX);
+        int skinBoxH = std::max(0, maxSkinY - minSkinY);
 
-        // 2. 階段一：判斷畫面中有無人體/面部 (Person Presence)
-        // 若膚色佔比低於 3.5%，判定無人在鏡頭前 (空景/牆壁/離座)
-        if (skinRatio >= 0.035f && skinPixels >= 30) {
+        // 空間緊湊度 (Density) = 膚色像素數 / 候選外接框採樣點數
+        float boxSamples = (skinBoxW > 0 && skinBoxH > 0)
+            ? (static_cast<float>(skinBoxW) / step) * (static_cast<float>(skinBoxH) / step)
+            : 0.0f;
+        float spatialDensity = (boxSamples > 0.0f) ? (static_cast<float>(skinPixels) / boxSamples) : 0.0f;
+        float boxAspect = (skinBoxW > 0) ? (static_cast<float>(skinBoxH) / static_cast<float>(skinBoxW)) : 0.0f;
+
+        // 判斷條件：
+        // 1. 膚色佔比介於合理人臉範圍 (3.5% ~ 65%)
+        // 2. 外接框尺寸符合正常人臉尺度 (寬度 >= 10% 螢幕, 高度 >= 12% 螢幕)
+        // 3. 外接框長寬比符合人臉比例 (0.70 ~ 2.25)
+        // 4. 空間集中度密度 (>= 0.18)，排除散落全螢幕的白牆/木質背景
+        if (skinRatio >= 0.035f && skinRatio <= 0.65f && skinPixels >= 35 &&
+            skinBoxW >= static_cast<int>(width * 0.10f) && skinBoxW <= static_cast<int>(width * 0.85f) &&
+            skinBoxH >= static_cast<int>(height * 0.12f) && skinBoxH <= static_cast<int>(height * 0.90f) &&
+            boxAspect >= 0.70f && boxAspect <= 2.25f &&
+            spatialDensity >= 0.18f) {
+            
             personInFrame = true;
             detectedFaceCx = static_cast<float>(skinSumX) / skinPixels;
             detectedFaceCy = static_cast<float>(skinSumY) / skinPixels;
-
-            int skinBoxW = std::max(20, maxSkinX - minSkinX);
-            int skinBoxH = std::max(20, maxSkinY - minSkinY);
-            detectedFaceScale = std::clamp(static_cast<float>(std::max(skinBoxW, skinBoxH)) * 0.85f, 
+            detectedFaceScale = std::clamp(static_cast<float>(std::max(skinBoxW, skinBoxH)) * 0.85f,
                                            static_cast<float>(std::min(width, height)) * 0.20f,
                                            static_cast<float>(std::min(width, height)) * 0.75f);
 
-            // 3. 階段二：確認臉部是否朝向攝影機 (Face Facing Camera / Frontal Orientation)
-            // 檢查膚色區域雙側對稱性 (Bilateral Symmetry) 與左右分佈平衡
+            // -----------------------------------------------------------------
+            // 階段二：確認臉部是否朝向攝影機 (Facing Camera / Frontal Orientation)
+            // -----------------------------------------------------------------
+            // 1. 雙側左右對稱性檢驗 (Bilateral Symmetry)
             int leftSkin = 0;
             int rightSkin = 0;
             int midX = static_cast<int>(detectedFaceCx);
+
+            // 2. 雙眼暗槽與對比度特徵檢驗 (Eye-Pair Feature Troughs)
+            int eyeZoneTop = minSkinY + static_cast<int>(skinBoxH * 0.18f);
+            int eyeZoneBottom = minSkinY + static_cast<int>(skinBoxH * 0.50f);
+            int leftEyeLeft = std::max(0, static_cast<int>(detectedFaceCx - skinBoxW * 0.40f));
+            int leftEyeRight = std::max(0, static_cast<int>(detectedFaceCx - skinBoxW * 0.08f));
+            int rightEyeLeft = std::min(width - 1, static_cast<int>(detectedFaceCx + skinBoxW * 0.08f));
+            int rightEyeRight = std::min(width - 1, static_cast<int>(detectedFaceCx + skinBoxW * 0.40f));
+
+            double leftEyeSum = 0.0, rightEyeSum = 0.0, foreheadSum = 0.0;
+            int leftEyeCnt = 0, rightEyeCnt = 0, foreheadCnt = 0;
 
             for (int y = std::max(0, minSkinY); y <= std::min(height - 1, maxSkinY); y += step) {
                 for (int x = std::max(0, minSkinX); x <= std::min(width - 1, maxSkinX); x += step) {
@@ -155,10 +192,26 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                     uint8_t r = pixelData[idx];
                     uint8_t g = pixelData[idx + 1];
                     uint8_t b = pixelData[idx + 2];
-                    bool isSkin = (r > 70 && g > 35 && b > 20 && (r - g) >= 10 && (r > b));
+                    double gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                    bool isSkin = (r > g && (r - g) >= 8 && (r - b) >= 15);
                     if (isSkin) {
                         if (x < midX) leftSkin++;
                         else rightSkin++;
+                    }
+
+                    // 取眼區與額頭亮度
+                    if (y >= eyeZoneTop && y <= eyeZoneBottom) {
+                        if (x >= leftEyeLeft && x <= leftEyeRight) {
+                            leftEyeSum += gray;
+                            leftEyeCnt++;
+                        } else if (x >= rightEyeLeft && x <= rightEyeRight) {
+                            rightEyeSum += gray;
+                            rightEyeCnt++;
+                        }
+                    } else if (y >= minSkinY && y < eyeZoneTop) {
+                        foreheadSum += gray;
+                        foreheadCnt++;
                     }
                 }
             }
@@ -167,18 +220,36 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             int maxSide = std::max(leftSkin, rightSkin);
             float symmetryRatio = (maxSide > 0) ? (static_cast<float>(minSide) / maxSide) : 0.0f;
 
-            // 若對稱性良好 (>= 0.40) 且臉部質心位於畫面可見合理範圍內，判定正對鏡頭
-            if (symmetryRatio >= 0.40f && detectedFaceCx > width * 0.12f && detectedFaceCx < width * 0.88f) {
+            // 雙眼亮度特徵判定 (正面臉的雙眼與眉毛區域具備特徵對比)
+            bool eyeContrastValid = true;
+            if (foreheadCnt > 5 && leftEyeCnt > 2 && rightEyeCnt > 2) {
+                double avgLeftEye = leftEyeSum / leftEyeCnt;
+                double avgRightEye = rightEyeSum / rightEyeCnt;
+                double eyeDiff = std::abs(avgLeftEye - avgRightEye);
+                if (eyeDiff > 45.0) {
+                    eyeContrastValid = false;
+                }
+            }
+
+            // 正對鏡頭條件：
+            // - 對稱比 >= 0.42
+            // - 質心在螢幕合理範圍 (10% ~ 90%)
+            // - 雙眼區域對稱未嚴重偏轉
+            if (symmetryRatio >= 0.42f &&
+                detectedFaceCx > width * 0.10f && detectedFaceCx < width * 0.90f &&
+                eyeContrastValid) {
                 facingCamera = true;
             }
         }
     } else {
-        // Synthetic 模擬驅動模式 (僅在無實體相機且設定為模擬時運作)
+        // 無像素串流模式 (僅在測試模擬時依賴 simulatedOpenness)
         personInFrame = (m_simulatedOpenness >= 0.0f);
         facingCamera = personInFrame;
     }
 
-    // 4. 階段三：確認偵測到正對鏡頭人臉 -> 階段四：確認疲勞狀態
+    // -------------------------------------------------------------------------
+    // 階段三：確認偵測到正對鏡頭人臉 -> 階段四：確認與計算疲勞狀態
+    // -------------------------------------------------------------------------
     if (personInFrame && facingCamera) {
         result.hasFace = true;
         result.faceConfidence = 0.95f;

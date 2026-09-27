@@ -31,7 +31,7 @@ if [ -d "${PROJECT_ROOT}/design" ]; then
     cp -r "${PROJECT_ROOT}/design" "${APP_BUNDLE}/Contents/Resources/"
 fi
 LOGO_SRC=""
-for candidate in "${PROJECT_ROOT}/design/1x/資產 10.png" "${PROJECT_ROOT}/design/1x/logo10.png" "${PROJECT_ROOT}/assets/logo.png"; do
+for candidate in "${PROJECT_ROOT}/design/1x/資產 9.png" "${PROJECT_ROOT}/design/1x/logo9.png" "${PROJECT_ROOT}/assets/資產 9.png" "${PROJECT_ROOT}/assets/logo.png"; do
     if [ -f "${candidate}" ]; then
         LOGO_SRC="${candidate}"
         break
@@ -39,29 +39,32 @@ for candidate in "${PROJECT_ROOT}/design/1x/資產 10.png" "${PROJECT_ROOT}/desi
 done
 
 if [ -n "${LOGO_SRC}" ]; then
-    cp "${LOGO_SRC}" "${APP_BUNDLE}/Contents/Resources/資產 10.png" 2>/dev/null || true
-    cp "${LOGO_SRC}" "${APP_BUNDLE}/Contents/Resources/logo10.png" 2>/dev/null || true
+    cp "${LOGO_SRC}" "${APP_BUNDLE}/Contents/Resources/資產 9.png" 2>/dev/null || true
+    cp "${LOGO_SRC}" "${APP_BUNDLE}/Contents/Resources/logo9.png" 2>/dev/null || true
     cp "${LOGO_SRC}" "${APP_BUNDLE}/Contents/Resources/logo.png" 2>/dev/null || true
 fi
 
-# 4. 生成 macOS 原生 AppIcon.icns
+# 4. 生成 macOS 原生 AppIcon.icns (保持 100% 原始比例並加上透明邊框生成方形圖示)
 if [ -n "${LOGO_SRC}" ] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
     echo " -> 正在生成 Retina 高解析度應用程式圖示 (AppIcon.icns)..."
     ICONSET_DIR="${BUILD_DIR}/AppIcon.iconset"
     rm -rf "${ICONSET_DIR}"
     mkdir -p "${ICONSET_DIR}"
-    sips -z 16 16     "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_16x16.png" >/dev/null 2>&1 || true
-    sips -z 32 32     "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_16x16@2x.png" >/dev/null 2>&1 || true
-    sips -z 32 32     "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_32x32.png" >/dev/null 2>&1 || true
-    sips -z 64 64     "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_32x32@2x.png" >/dev/null 2>&1 || true
-    sips -z 128 128   "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_128x128.png" >/dev/null 2>&1 || true
-    sips -z 256 256   "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_128x128@2x.png" >/dev/null 2>&1 || true
-    sips -z 256 256   "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_256x256.png" >/dev/null 2>&1 || true
-    sips -z 512 512   "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_256x256@2x.png" >/dev/null 2>&1 || true
-    sips -z 512 512   "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_512x512.png" >/dev/null 2>&1 || true
-    sips -z 1024 1024 "${LOGO_SRC}" --out "${ICONSET_DIR}/icon_512x512@2x.png" >/dev/null 2>&1 || true
+    # 先以 padToHeightWidth 保持 100% 原圖長寬比
+    sips -p 568 568 "${LOGO_SRC}" --out "${BUILD_DIR}/logo_square.png" >/dev/null 2>&1 || cp "${LOGO_SRC}" "${BUILD_DIR}/logo_square.png"
+    SQ_SRC="${BUILD_DIR}/logo_square.png"
+    sips -z 16 16     "${SQ_SRC}" --out "${ICONSET_DIR}/icon_16x16.png" >/dev/null 2>&1 || true
+    sips -z 32 32     "${SQ_SRC}" --out "${ICONSET_DIR}/icon_16x16@2x.png" >/dev/null 2>&1 || true
+    sips -z 32 32     "${SQ_SRC}" --out "${ICONSET_DIR}/icon_32x32.png" >/dev/null 2>&1 || true
+    sips -z 64 64     "${SQ_SRC}" --out "${ICONSET_DIR}/icon_32x32@2x.png" >/dev/null 2>&1 || true
+    sips -z 128 128   "${SQ_SRC}" --out "${ICONSET_DIR}/icon_128x128.png" >/dev/null 2>&1 || true
+    sips -z 256 256   "${SQ_SRC}" --out "${ICONSET_DIR}/icon_128x128@2x.png" >/dev/null 2>&1 || true
+    sips -z 256 256   "${SQ_SRC}" --out "${ICONSET_DIR}/icon_256x256.png" >/dev/null 2>&1 || true
+    sips -z 512 512   "${SQ_SRC}" --out "${ICONSET_DIR}/icon_256x256@2x.png" >/dev/null 2>&1 || true
+    sips -z 512 512   "${SQ_SRC}" --out "${ICONSET_DIR}/icon_512x512.png" >/dev/null 2>&1 || true
+    sips -z 1024 1024 "${SQ_SRC}" --out "${ICONSET_DIR}/icon_512x512@2x.png" >/dev/null 2>&1 || true
     iconutil -c icns "${ICONSET_DIR}" -o "${APP_BUNDLE}/Contents/Resources/AppIcon.icns" >/dev/null 2>&1 || true
-    rm -rf "${ICONSET_DIR}"
+    rm -rf "${ICONSET_DIR}" "${SQ_SRC}"
 fi
 
 # 5. 編譯二進制檔案

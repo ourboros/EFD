@@ -54,23 +54,20 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
 }
 
 SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds) {
-    m_userPresent = faceDetected;
     if (!faceDetected) {
         m_awayTimer += deltaSeconds;
-        m_currentLevel = FatigueLevel::UserAway;
-        m_lastScore = 0.0f;
-        m_lastSmoothedScore = 0.0f;
         if (m_awayTimer >= static_cast<float>(m_awayResetThreshold)) {
             // 離座超過 5 分鐘，重置 20 分鐘冷卻狀態機
             m_cooldownState = CooldownState::AwayPaused;
+            m_currentLevel = FatigueLevel::UserAway;
             m_cooldownTimer = 0.0f;
             m_screeningTimer = 0.0f;
         }
         return getState();
     }
 
-    // 使用者在座且正對鏡頭 (人臉偵測成功)
-    if (m_cooldownState == CooldownState::AwayPaused || m_currentLevel == FatigueLevel::UserAway) {
+    // 使用者在座 (人臉偵測成功)
+    if (m_cooldownState == CooldownState::AwayPaused) {
         // 使用者回座，重啟正常追蹤
         m_cooldownState = CooldownState::NormalTracking;
         m_currentLevel = FatigueLevel::Relaxed;
@@ -79,7 +76,6 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
     m_awayTimer = 0.0f;
 
     m_lastScore = computeFatigueScore(perclos, blinkRate, complexityIndex);
-    m_lastSmoothedScore = (m_lastSmoothedScore == 0.0f) ? m_lastScore : (0.85f * m_lastSmoothedScore + 0.15f * m_lastScore);
 
     // 20/5/5 狀態機推進 (使用者要求：放寬嚴重疲勞範圍，降低至 65.0 分)
     switch (m_cooldownState) {

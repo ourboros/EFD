@@ -67,13 +67,63 @@ void SyntheticCameraDriver::captureLoop() {
         auto frameStart = std::chrono::steady_clock::now();
 
         frameCount++;
-        uint8_t tint = static_cast<uint8_t>((frameCount * 3) % 255);
+        
+        // 1. 深色背景底色
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
                 size_t idx = (y * width + x) * 3;
-                frameBuffer[idx]     = static_cast<uint8_t>((x * 255) / width);
-                frameBuffer[idx + 1] = static_cast<uint8_t>((y * 255) / height);
-                frameBuffer[idx + 2] = tint;
+                frameBuffer[idx]     = 25;
+                frameBuffer[idx + 1] = 30;
+                frameBuffer[idx + 2] = 40;
+            }
+        }
+
+        // 2. 繪製模擬人臉橢圓 (若模擬睜眼度 >= 0)
+        float openVal = m_simulatedOpenness.load();
+        if (openVal >= 0.0f) {
+            float cx = width * 0.5f;
+            float cy = height * 0.5f;
+            float rx = width * 0.22f;
+            float ry = height * 0.32f;
+
+            for (int y = static_cast<int>(cy - ry); y <= static_cast<int>(cy + ry); ++y) {
+                if (y < 0 || y >= height) continue;
+                float dy = (y - cy) / ry;
+                float maxDx = std::sqrt(std::max(0.0f, 1.0f - dy * dy)) * rx;
+                int minX = std::max(0, static_cast<int>(cx - maxDx));
+                int maxX = std::min(width - 1, static_cast<int>(cx + maxDx));
+
+                for (int x = minX; x <= maxX; ++x) {
+                    size_t idx = (y * width + x) * 3;
+                    // 標準膚色 (R=220, G=165, B=130)
+                    frameBuffer[idx]     = 220;
+                    frameBuffer[idx + 1] = 165;
+                    frameBuffer[idx + 2] = 130;
+                }
+            }
+
+            // 左右眼部暗槽與眼眉特徵 (Eye Troughs)
+            int eyeY = static_cast<int>(cy - ry * 0.22f);
+            int leftEyeX = static_cast<int>(cx - rx * 0.45f);
+            int rightEyeX = static_cast<int>(cx + rx * 0.45f);
+            int eyeRadius = std::max(3, static_cast<int>(rx * 0.16f));
+
+            for (int ey = eyeY - eyeRadius; ey <= eyeY + eyeRadius; ++ey) {
+                if (ey < 0 || ey >= height) continue;
+                for (int ex = leftEyeX - eyeRadius; ex <= leftEyeX + eyeRadius; ++ex) {
+                    if (ex < 0 || ex >= width) continue;
+                    size_t idx = (ey * width + ex) * 3;
+                    frameBuffer[idx] = 40;
+                    frameBuffer[idx + 1] = 30;
+                    frameBuffer[idx + 2] = 30;
+                }
+                for (int ex = rightEyeX - eyeRadius; ex <= rightEyeX + eyeRadius; ++ex) {
+                    if (ex < 0 || ex >= width) continue;
+                    size_t idx = (ey * width + ex) * 3;
+                    frameBuffer[idx] = 40;
+                    frameBuffer[idx + 1] = 30;
+                    frameBuffer[idx + 2] = 30;
+                }
             }
         }
 
