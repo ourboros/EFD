@@ -3,7 +3,6 @@
 #include <chrono>
 #include <vector>
 #include <algorithm>
-#include <iomanip>
 
 #ifdef _WIN32
 #pragma comment(lib, "mf.lib")
@@ -43,17 +42,6 @@ inline void yuy2ToRgb888(const uint8_t* yuy2, uint8_t* rgb, int numPixels) {
     }
 }
 
-// 快速 BGR24 轉 RGB888 色彩空間轉換器
-inline void bgr24ToRgb888(const uint8_t* bgr, uint8_t* rgb, int numPixels) {
-    for (int i = 0; i < numPixels; ++i) {
-        rgb[0] = bgr[2]; // R
-        rgb[1] = bgr[1]; // G
-        rgb[2] = bgr[0]; // B
-        bgr += 3;
-        rgb += 3;
-    }
-}
-
 // 快速 BGRA/BGRX 轉 RGB888 色彩空間轉換器
 inline void bgraToRgb888(const uint8_t* bgra, uint8_t* rgb, int numPixels) {
     for (int i = 0; i < numPixels; ++i) {
@@ -77,14 +65,9 @@ std::string WindowsMfCameraDriver::wcharToString(const wchar_t* wstr) {
 }
 
 WindowsMfCameraDriver::WindowsMfCameraDriver() {
-    HRESULT hrCo = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    (void)hrCo;
-    HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    HRESULT hr = MFStartup(MF_VERSION);
     m_isMfInitialized = SUCCEEDED(hr);
-    if (!m_isMfInitialized) {
-        std::cerr << "[WindowsMfCameraDriver] 警告: MFStartup 失敗 (HRESULT: 0x" 
-                  << std::hex << hr << std::dec << ")\n";
-    }
 }
 
 WindowsMfCameraDriver::~WindowsMfCameraDriver() {
@@ -97,24 +80,11 @@ WindowsMfCameraDriver::~WindowsMfCameraDriver() {
 
 std::vector<CameraDeviceInfo> WindowsMfCameraDriver::enumerateDevices() {
     std::vector<CameraDeviceInfo> devices;
-
-    HRESULT hrCo = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    (void)hrCo;
-    if (!m_isMfInitialized) {
-        HRESULT hrMf = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
-        m_isMfInitialized = SUCCEEDED(hrMf);
-    }
-    if (!m_isMfInitialized) {
-        std::cerr << "[WindowsMfCameraDriver] Media Foundation 未能正確初始化，無法枚舉裝置。\n";
-        return devices;
-    }
+    if (!m_isMfInitialized) return devices;
 
     IMFAttributes* pAttributes = nullptr;
     HRESULT hr = MFCreateAttributes(&pAttributes, 1);
-    if (FAILED(hr)) {
-        std::cerr << "[WindowsMfCameraDriver] MFCreateAttributes 失敗 (0x" << std::hex << hr << std::dec << ")\n";
-        return devices;
-    }
+    if (FAILED(hr)) return devices;
 
     hr = pAttributes->SetGUID(
         MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
@@ -127,7 +97,6 @@ std::vector<CameraDeviceInfo> WindowsMfCameraDriver::enumerateDevices() {
         hr = MFEnumDeviceSources(pAttributes, &ppDevices, &count);
 
         if (SUCCEEDED(hr) && count > 0) {
-            std::cout << "[WindowsMfCameraDriver] 成功偵測到 " << count << " 個實體視訊輸入裝置:\n";
             for (UINT32 i = 0; i < count; ++i) {
                 CameraDeviceInfo dev;
                 dev.id = static_cast<int>(i);
@@ -163,20 +132,10 @@ std::vector<CameraDeviceInfo> WindowsMfCameraDriver::enumerateDevices() {
                     dev.facing = CameraFacing::Back;
                 }
 
-                std::cout << "  [" << i << "] 名稱: \"" << dev.name << "\" | 朝向: " 
-                          << (dev.facing == CameraFacing::Front ? "前置鏡頭" : "後置鏡頭") << "\n";
-
                 devices.push_back(dev);
                 ppDevices[i]->Release();
             }
             CoTaskMemFree(ppDevices);
-        } else {
-            std::cout << "[WindowsMfCameraDriver] MFEnumDeviceSources 回傳 0 個裝置 (hr = 0x" 
-                      << std::hex << hr << std::dec << ")\n";
-            std::cout << "  [診斷說明] 若電腦已連接相機但無法讀取，請檢查：\n"
-                      << "  1. Windows「設定 -> 隱私權與安全性 -> 相機」中「允許應用程式存取您的相機」與「允許桌面應用程式存取您的相機」已開啟。\n"
-                      << "  2. 實體鏡頭開關/防窺蓋或鍵盤快捷鍵 (如 Fn + F8/F10) 是否開啟。\n"
-                      << "  3. 是否有其他應用程式 (如 Zoom/Teams/Browser) 正在獨佔相機。\n";
         }
     }
 
@@ -189,17 +148,11 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         close();
     }
 
-    HRESULT hrCo = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    (void)hrCo;
-    if (!m_isMfInitialized) {
-        HRESULT hrMf = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
-        m_isMfInitialized = SUCCEEDED(hrMf);
-    }
     if (!m_isMfInitialized) return false;
 
     m_config = config;
 
-    // 1. 列舉可用視訊裝置
+    // 1. 列舉設備
     IMFAttributes* pAttributes = nullptr;
     HRESULT hr = MFCreateAttributes(&pAttributes, 1);
     if (FAILED(hr)) return false;
@@ -220,72 +173,44 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
     pAttributes->Release();
 
     if (FAILED(hr) || count == 0) {
-        std::cerr << "[WindowsMfCameraDriver] 無法開啟攝影機: 系統未枚舉到任何可用設備。\n";
         return false;
     }
 
-    // 2. 依序嘗試開啟設備 (優先使用指定 Index，若失敗自動嘗試其他設備)
-    bool activated = false;
-    UINT32 chosenDeviceIndex = 0;
-    std::vector<UINT32> tryOrder;
-    UINT32 initialTarget = static_cast<UINT32>(std::clamp(config.deviceIndex, 0, static_cast<int>(count - 1)));
-    tryOrder.push_back(initialTarget);
-    for (UINT32 i = 0; i < count; ++i) {
-        if (i != initialTarget) tryOrder.push_back(i);
-    }
+    UINT32 targetIndex = static_cast<UINT32>(config.deviceIndex);
+    if (targetIndex >= count) targetIndex = 0;
 
-    for (UINT32 candidateIdx : tryOrder) {
-        WCHAR* nameBuf = nullptr;
-        UINT32 nameLen = 0;
-        std::string devName = "Camera " + std::to_string(candidateIdx);
-        if (SUCCEEDED(ppDevices[candidateIdx]->GetAllocatedString(
-            MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &nameBuf, &nameLen))) {
-            devName = wcharToString(nameBuf);
-            CoTaskMemFree(nameBuf);
-        }
-
-        std::cout << "[WindowsMfCameraDriver] 正在嘗試啟用攝影機 [" << candidateIdx << "]: \"" << devName << "\"...\n";
-        hr = ppDevices[candidateIdx]->ActivateObject(IID_PPV_ARGS(&m_pMediaSource));
-        if (SUCCEEDED(hr) && m_pMediaSource) {
-            activated = true;
-            chosenDeviceIndex = candidateIdx;
-            std::cout << "  -> 成功啟用 MediaSource 裝置: \"" << devName << "\"\n";
-            break;
-        } else {
-            std::cerr << "  -> 啟用 MediaSource 失敗! HRESULT = 0x" << std::hex << hr << std::dec << "\n";
-            if (hr == 0x80070005) {
-                std::cerr << "     [錯誤原因 0x80070005: 存取被拒] 請開啟 Windows 隱私權設定中的相機權限！\n";
-            } else if (hr == 0x80070020) {
-                std::cerr << "     [錯誤原因 0x80070020: 裝置佔用] 該相機已被其他程式獨佔使用。\n";
-            }
-        }
-    }
-
+    // 2. 啟動 MediaSource
+    hr = ppDevices[targetIndex]->ActivateObject(IID_PPV_ARGS(&m_pMediaSource));
     for (UINT32 i = 0; i < count; ++i) {
         ppDevices[i]->Release();
     }
     CoTaskMemFree(ppDevices);
 
-    if (!activated || !m_pMediaSource) {
-        std::cerr << "[WindowsMfCameraDriver] 所有實體相機裝置啟用均失敗。\n";
+    if (FAILED(hr) || !m_pMediaSource) {
         return false;
     }
 
-    // 3. 建立 SourceReader (啟用硬體色彩處理與影像轉換)
+    // 3. 建立 SourceReader (優先啟用標準 Video Processing，若失敗回退至標準模式)
     IMFAttributes* pReaderAttributes = nullptr;
-    MFCreateAttributes(&pReaderAttributes, 4);
-    if (pReaderAttributes) {
+    if (SUCCEEDED(MFCreateAttributes(&pReaderAttributes, 2))) {
         pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
-        pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE);
         pReaderAttributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE);
-        pReaderAttributes->SetUINT32(MF_LOW_LATENCY, TRUE);
     }
 
     hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, pReaderAttributes, &m_pSourceReader);
-    if (pReaderAttributes) pReaderAttributes->Release();
+    if (pReaderAttributes) {
+        pReaderAttributes->Release();
+        pReaderAttributes = nullptr;
+    }
+
+    // 若帶屬性建立失敗，自動回退至 NULL 屬性建立
+    if (FAILED(hr) || !m_pSourceReader) {
+        std::cout << "  -> 帶屬性建立 SourceReader (0x" << std::hex << hr << std::dec << ")，自動回退為標準 SourceReader 模式...\n";
+        hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, NULL, &m_pSourceReader);
+    }
 
     if (FAILED(hr) || !m_pSourceReader) {
-        std::cerr << "[WindowsMfCameraDriver] 建立 SourceReader 失敗! HRESULT = 0x" << std::hex << hr << std::dec << "\n";
+        std::cerr << "  -> 建立 SourceReader 失敗! HRESULT = 0x" << std::hex << hr << std::dec << "\n";
         if (m_pMediaSource) {
             m_pMediaSource->Release();
             m_pMediaSource = nullptr;
@@ -293,7 +218,7 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         return false;
     }
 
-    // 4. 枚舉相機支援的原始格式清單
+    // 4. 枚舉相機支援的原生格式清單
     std::cout << "[WindowsMfCameraDriver] 相機原生支援格式清單 (Native Media Types):\n";
     DWORD typeIndex = 0;
     IMFMediaType* pNativeType = nullptr;
@@ -456,20 +381,20 @@ void WindowsMfCameraDriver::captureLoop() {
                     frame.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
 
-                    // 依據緩衝區大小與格式自動轉換為標準 RGB888
-                    if (currentLength >= static_cast<DWORD>(numPixels * 3) && currentLength < static_cast<DWORD>(numPixels * 4)) {
-                        // 標準 BGR24 轉 RGB888
-                        bgr24ToRgb888(pData, rgbBuffer.data(), numPixels);
-                        frame.data = rgbBuffer;
-                    } else if (currentLength >= static_cast<DWORD>(numPixels * 4)) {
+                    // 依據緩衝區大小自動適配格式
+                    if (currentLength == static_cast<DWORD>(numPixels * 3)) {
+                        // 標準 RGB24
+                        frame.data.assign(pData, pData + currentLength);
+                    } else if (currentLength == static_cast<DWORD>(numPixels * 4)) {
                         // BGRA32 轉 RGB888
                         bgraToRgb888(pData, rgbBuffer.data(), numPixels);
                         frame.data = rgbBuffer;
-                    } else if (currentLength >= static_cast<DWORD>(numPixels * 2)) {
+                    } else if (currentLength == static_cast<DWORD>(numPixels * 2)) {
                         // YUY2 轉 RGB888
                         yuy2ToRgb888(pData, rgbBuffer.data(), numPixels);
                         frame.data = rgbBuffer;
                     } else {
+                        // 其他尺寸直接複製
                         frame.data.assign(pData, pData + currentLength);
                     }
 
@@ -483,6 +408,7 @@ void WindowsMfCameraDriver::captureLoop() {
             }
             pSample->Release();
         } else {
+            // 稍作休眠以避免緊密迴圈佔用 CPU
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 

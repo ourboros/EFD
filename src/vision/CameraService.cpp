@@ -86,17 +86,14 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
             }
             m_config.deviceIndex = chosenIndex;
             opened = m_driver->open(m_config);
-        } else {
-            // 若列舉為空，仍進行直接開啟嘗試
-            opened = m_driver->open(m_config);
         }
     }
 
     if (opened) {
         m_isSyntheticFallback = false;
         std::cout << "[CameraService] 成功啟動實體攝影機驅動: " << m_driver->getDriverName() 
-                  << " (Device Index: " << m_config.deviceIndex << ")\n";
-        // 啟動看門狗: 給予實體鏡頭 2.5 秒硬體握手暖機時間，若超時無任何畫面送出才切換至模擬驅動
+                  << " (Index: " << m_config.deviceIndex << ")\n";
+        // 啟動看門狗: 若 1.0 秒內實體相機無任何畫面送出，自動切換至模擬驅動
         startWatchdog();
         return true;
     }
@@ -130,15 +127,15 @@ void CameraService::startWatchdog() {
     stopWatchdog();
     m_watchdogRunning.store(true);
     m_watchdogThread = std::thread([this]() {
-        // 給予 2500 毫秒硬體暖機等待期 (避免 USB / 筆電內建鏡頭冷啟動延遲被誤判)
-        for (int i = 0; i < 50; ++i) {
+        // 漸進式等待 1000 毫秒，避免緊密阻塞
+        for (int i = 0; i < 20; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             if (!m_watchdogRunning.load()) return;
         }
 
-        // 若 2.5 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
+        // 若 1 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
         if (m_totalFramesDelivered.load() == 0 && !m_isSyntheticFallback) {
-            std::cout << "[CameraService 看門狗] 偵測到實體攝影機 2.5 秒無訊號輸出，自動無縫熱切換至 Synthetic 模擬驅動...\n";
+            std::cout << "[CameraService 看門狗] 偵測到實體攝影機無訊號輸出，自動無縫熱切換至 Synthetic 模擬驅動...\n";
             this->startSynthetic();
         }
     });
