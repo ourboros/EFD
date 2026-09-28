@@ -204,8 +204,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
 
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
-        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 70.0) 跳出提醒
-        if (level == FatigueLevel::SevereWarning || score >= 70.0f) {
+        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 55.0) 跳出提醒
+        if (level == FatigueLevel::SevereWarning || score >= 55.0f) {
             std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
                       << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 <<<\n\n";
 

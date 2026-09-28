@@ -26,10 +26,11 @@ private:
     std::string m_modelPath;
 
     int m_consecutiveFaceFrames = 0;
-    int m_consecutiveMissingFrames = 10;
-    float m_lastKnownCx = 320.0f;
-    float m_lastKnownCy = 240.0f;
-    float m_lastKnownScale = 160.0f;
+    int m_consecutiveMissingFrames = 0;
+    float m_lastKnownCx = 0.0f;
+    float m_lastKnownCy = 0.0f;
+    float m_lastKnownScale = 0.0f;
+    bool m_isFaceConfirmed = false;
 
     std::vector<Point3D> generateCanonicalFaceMesh(int frameWidth, int frameHeight, float openness, float customCx = 0.0f, float customCy = 0.0f, float customScale = 0.0f) const;
 };

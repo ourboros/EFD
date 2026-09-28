@@ -9,7 +9,7 @@ AdaptiveBaseline::AdaptiveBaseline(float initialBaseline, float alpha, float k, 
     : m_baselineEar(initialBaseline),
       m_alpha(alpha),
       m_k(k),
-      m_currentThreshold(initialBaseline * 0.70f),
+      m_currentThreshold(initialBaseline * 0.78f),
       m_isCalibrated(false),
       m_windowSize(windowSize) {
 }
@@ -28,8 +28,8 @@ void AdaptiveBaseline::calibrate(const std::vector<float>& awakeEarSamples) {
     float stdDev = std::sqrt(sumSq / static_cast<float>(awakeEarSamples.size()));
 
     m_currentThreshold = m_baselineEar - (m_k * stdDev);
-    if (m_currentThreshold < 0.15f) {
-        m_currentThreshold = 0.15f;
+    if (m_currentThreshold < 0.18f) {
+        m_currentThreshold = 0.18f;
     }
     m_isCalibrated = true;
 
@@ -55,9 +55,9 @@ void AdaptiveBaseline::fastRecalibrate(const std::vector<float>& resumeSamples) 
         m_slidingWindow.push_back(val);
     }
 
-    m_currentThreshold = m_baselineEar * 0.70f;
-    if (m_currentThreshold < 0.15f) {
-        m_currentThreshold = 0.15f;
+    m_currentThreshold = m_baselineEar * 0.78f;
+    if (m_currentThreshold < 0.18f) {
+        m_currentThreshold = 0.18f;
     }
 }
 
@@ -89,8 +89,8 @@ float AdaptiveBaseline::update(float currentEar, bool isEyeClosed) {
         // 動態自適應公式: EAR_th(t) = alpha * Baseline + (1 - alpha) * mean - k * stdDev
         float dynamicTarget = (m_alpha * m_baselineEar) + ((1.0f - m_alpha) * mean) - (m_k * stdDev);
 
-        // 安全邊界限制 (保持在合理區間，防止崩塌)
-        m_currentThreshold = std::clamp(dynamicTarget, 0.15f, m_baselineEar * 0.85f);
+        // 安全邊界限制 (保持在合理區間，敏銳捕捉眼瞼下垂)
+        m_currentThreshold = std::clamp(dynamicTarget, 0.18f, m_baselineEar * 0.88f);
     }
 
     return m_currentThreshold;
@@ -111,7 +111,7 @@ CalibrationData AdaptiveBaseline::getCalibrationData() const {
 void AdaptiveBaseline::reset() {
     m_slidingWindow.clear();
     m_isCalibrated = false;
-    m_currentThreshold = m_baselineEar * 0.70f;
+    m_currentThreshold = m_baselineEar * 0.78f;
 }
 
 } // namespace efd
