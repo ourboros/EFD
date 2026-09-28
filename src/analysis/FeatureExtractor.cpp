@@ -72,8 +72,8 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         m_currentClosedFrames++;
     } else {
         if (m_wasClosed) {
-            // 一次眨眼完成 (涵蓋 1~30 幀快速輕眨至遲緩眨眼)
-            if (m_currentClosedFrames >= 1 && m_currentClosedFrames <= 30) {
+            // 一次眨眼完成 (需超過 1 幀以避免雜訊，通常 2~15 幀)
+            if (m_currentClosedFrames >= 2 && m_currentClosedFrames <= 25) {
                 m_totalBlinks++;
                 m_totalBlinkDurationMs += (m_currentClosedFrames * frameDurationMs);
             }

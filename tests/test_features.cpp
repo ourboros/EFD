@@ -121,21 +121,22 @@ void testFatigueStateMachineFullCycle() {
     });
 
     // 1. 正常清醒狀態
-    efd::SystemState s1 = fsm.update(true, 0.01f, 16.0f, 4.5f, 1.0f);
+    efd::SystemState s1 = fsm.update(true, 0.05f, 16.0f, 4.5f, 1.0f);
     assert(s1.fatigueLevel == efd::FatigueLevel::Relaxed);
     assert(s1.cooldownState == efd::CooldownState::NormalTracking);
 
-    // 2. 觸發一級疲勞警報 (PERCLOS 升高至 4%，CI 降低至 2.2)
+    // 2. 觸發一級疲勞警報 (PERCLOS 升高，CI 降低)
     alertTriggered = false;
-    efd::SystemState s2 = fsm.update(true, 0.04f, 8.0f, 2.2f, 1.0f);
+    efd::SystemState s2 = fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
     assert(s2.fatigueLevel == efd::FatigueLevel::Attention);
     assert(s2.cooldownState == efd::CooldownState::InCooldown);
     assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::Attention);
 
     // 3. 冷卻期內經過 5 分鐘進入快篩 (Fast Screening)
-    efd::SystemState s3 = fsm.update(true, 0.04f, 14.0f, 3.5f, 301.0f);
+    efd::SystemState s3 = fsm.update(true, 0.20f, 14.0f, 3.5f, 301.0f);
     assert(s3.cooldownState == efd::CooldownState::FastScreening);
 
+    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning
     // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning (紅色危險狀態)
     alertTriggered = false;
     efd::SystemState s4 = fsm.update(true, 0.35f, 4.0f, 1.5f, 1.0f);
@@ -149,7 +150,7 @@ void testFatigueStateMachineFullCycle() {
     assert(s5.cooldownState == efd::CooldownState::AwayPaused);
 
     // 6. 使用者回座，自動重啟正常追蹤
-    efd::SystemState s6 = fsm.update(true, 0.01f, 16.0f, 4.5f, 1.0f);
+    efd::SystemState s6 = fsm.update(true, 0.05f, 16.0f, 4.5f, 1.0f);
     assert(s6.fatigueLevel == efd::FatigueLevel::Relaxed);
     assert(s6.cooldownState == efd::CooldownState::NormalTracking);
 

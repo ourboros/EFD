@@ -66,7 +66,7 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
         return startSynthetic();
     }
 
-    // 1. 優先嘗試建立並啟動平台原生攝影機 (前置鏡頭優先)
+    // 1. 優先嘗試建立並啟動平台原生攝影機 (前置鏡頭優先，若失敗自動嘗試其他可用設備)
     bool opened = false;
     {
         std::lock_guard<std::mutex> lock(m_driverMutex);
@@ -77,14 +77,30 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
 
         auto devices = m_driver->enumerateDevices();
         if (!devices.empty()) {
-            int chosenIndex = deviceIndex;
+            std::vector<int> tryIndices;
+            int preferredIndex = deviceIndex;
             for (const auto& dev : devices) {
                 if (dev.facing == targetFacing) {
-                    chosenIndex = dev.id;
+                    preferredIndex = dev.id;
                     break;
                 }
             }
-            m_config.deviceIndex = chosenIndex;
+            tryIndices.push_back(preferredIndex);
+            for (const auto& dev : devices) {
+                if (dev.id != preferredIndex) {
+                    tryIndices.push_back(dev.id);
+                }
+            }
+
+            for (int idx : tryIndices) {
+                m_config.deviceIndex = idx;
+                if (m_driver->open(m_config)) {
+                    opened = true;
+                    break;
+                }
+            }
+        } else {
+            // 無列舉設備時直接嘗試 open (依賴底層驅動內部列舉與容錯)
             opened = m_driver->open(m_config);
         }
     }
@@ -93,7 +109,7 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
         m_isSyntheticFallback = false;
         std::cout << "[CameraService] 成功啟動實體攝影機驅動: " << m_driver->getDriverName() 
                   << " (Index: " << m_config.deviceIndex << ")\n";
-        // 啟動看門狗: 若 1.0 秒內實體相機無任何畫面送出，自動切換至模擬驅動
+        // 啟動看門狗: 若 2.0 秒內實體相機無任何畫面送出，自動切換至模擬驅動
         startWatchdog();
         return true;
     }
@@ -105,7 +121,6 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
 
 bool CameraService::startSynthetic() {
     stopWatchdog();
-    m_forceSynthetic = true;
     
     std::lock_guard<std::mutex> lock(m_driverMutex);
     if (m_driver) {
