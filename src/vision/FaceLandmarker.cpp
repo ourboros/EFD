@@ -116,7 +116,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
     bool facingCamera = false;
     float symmetryRatio = 0.0f;
 
-    if (pixelData && width >= 64 && height >= 64) {
+    if (pixelData && width >= 64 && height >= 64 && !m_useSyntheticEngine) {
         // ---------------------------------------------------------------------
         // 階段一：判斷畫面中有無人體/面部 (Person Presence Verification)
         // 採用超寬容特徵採樣，杜絕因微小晃動、戴眼鏡或光線調節造成誤判

@@ -1,10 +1,10 @@
-# ==============================================================================
+﻿# ==============================================================================
 # EFD Windows 原生發行版自動化打包腳本
 # ==============================================================================
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
-$BuildDir = Join-Path $ProjectRoot "build\vs-x64\Release"
+$BuildDir = if (Test-Path (Join-Path $ProjectRoot "build\Release\efd_gui.exe")) { Join-Path $ProjectRoot "build\Release" } else { Join-Path $ProjectRoot "build\vs-x64\Release" }
 $DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v2.0.0-Windows"
 $ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.0.0-Windows.zip"
 $ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.0.0-Windows.zip"
