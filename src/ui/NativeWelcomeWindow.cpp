@@ -107,16 +107,14 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     m_asset5Image = loadAssetImage(L"資產 5.png");
     m_asset6Image = loadAssetImage(L"資產 6.png");
 
-    // 初始化先驗遙測資料 (預設為離座等待狀態)
-    m_latestTelemetry.detection.hasFace = false;
-    m_latestTelemetry.systemState.userPresent = false;
-    m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::UserAway;
-    m_latestTelemetry.systemState.currentFatigueScore = 0.0f;
-    m_latestTelemetry.eyeMetrics.earAvg = 0.0f;
+    // 初始化健康先驗遙測資料
+    m_latestTelemetry.eyeMetrics.earAvg = 0.312f;
     m_latestTelemetry.eyeMetrics.perclos = 0.0f;
     m_latestTelemetry.eyeMetrics.blinkCount = 0;
-    m_latestTelemetry.complexityMetrics.complexityIndex = 0.0f;
-    m_latestTelemetry.lifecycleSummary = "相機狀態: 正在連接攝影機 (30 FPS)...";
+    m_latestTelemetry.complexityMetrics.complexityIndex = 4.50f;
+    m_latestTelemetry.systemState.currentFatigueScore = 5.0f;
+    m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::Relaxed;
+    m_latestTelemetry.lifecycleSummary = "相機狀態: 正在連接前置攝影機 (30 FPS)...";
     m_latestTelemetry.currentStudyDay = m_engine.getStudyTracker().getCurrentDay();
     m_latestTelemetry.subjectUuid = m_engine.getStudyTracker().getSubjectUuid();
     m_latestTelemetry.studyStatus = m_engine.getStudyTracker().getStatus();
@@ -722,10 +720,10 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
 
     bool isNarrow = (w < 680 || h > w);
 
-    // 1. 計算 Logo 100% 原始長寬比 (資產 9.png 原始比例為 568:341 = 1.6657)
+    // 1. 計算 Logo 100% 原始長寬比 (資產 10.png 原始比例為 568:341 = 1.6657)
     float naturalAspect = 568.0f / 341.0f; // 1.6657
-    int origImgW = 568;
-    int origImgH = 341;
+    int origImgW = 70;
+    int origImgH = 42;
 
     if (m_logoImage && m_logoImage->GetLastStatus() == Gdiplus::Ok && m_logoImage->GetWidth() > 0 && m_logoImage->GetHeight() > 0) {
         origImgW = static_cast<int>(m_logoImage->GetWidth());
@@ -733,7 +731,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
         naturalAspect = static_cast<float>(origImgW) / static_cast<float>(origImgH);
     }
 
-    // 依視窗尺寸優雅置中繪製高解析度 Logo (嚴格保持 100% 原始比例)
+    // 依視窗尺寸優雅置中繪製高解析度 Logo (寬度縮小 50% 至 110px，長寬比適配)
     int logoW = isNarrow ? std::clamp(w / 6, 70, 100) : 110;
     int logoH = static_cast<int>(logoW / naturalAspect);
 

@@ -39,6 +39,9 @@ private:
     bool m_isMfInitialized = false;
     IMFSourceReader* m_pSourceReader = nullptr;
     IMFMediaSource* m_pMediaSource = nullptr;
+    int m_actualWidth = 640;
+    int m_actualHeight = 480;
+    GUID m_actualSubtype = { 0 };
 
     void captureLoop();
     static std::string wcharToString(const wchar_t* wstr);
