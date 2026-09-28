@@ -105,10 +105,9 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
 
 bool CameraService::startSynthetic() {
     stopWatchdog();
-    // NOTE: do NOT set m_forceSynthetic = true here — that would permanently
-    // lock out the real camera. Fallback is allowed, but re-trying physical
-    // camera on next start() call must remain possible.
-
+    // 注意：不設定 m_forceSynthetic = true，避免永久鎖定在 Synthetic 模式
+    // 下次呼叫 start() 時仍可嘗試實體相機
+    
     std::lock_guard<std::mutex> lock(m_driverMutex);
     if (m_driver) {
         m_driver->close();
@@ -129,13 +128,13 @@ void CameraService::startWatchdog() {
     stopWatchdog();
     m_watchdogRunning.store(true);
     m_watchdogThread = std::thread([this]() {
-        // 漸進式等待 1000 毫秒，避免緊密阻塞
-        for (int i = 0; i < 20; ++i) {
+        // 漸進式等待 3000 毫秒，給相機足夠時間初始化並送出第一帧
+        for (int i = 0; i < 60; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             if (!m_watchdogRunning.load()) return;
         }
 
-        // 若 1 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
+        // 若 3 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
         if (m_totalFramesDelivered.load() == 0 && !m_isSyntheticFallback) {
             std::cout << "[CameraService 看門狗] 偵測到實體攝影機無訊號輸出，自動無縫熱切換至 Synthetic 模擬驅動...\n";
             this->startSynthetic();

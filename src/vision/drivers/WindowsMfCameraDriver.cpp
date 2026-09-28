@@ -201,19 +201,26 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         return false;
     }
 
-    // 3. 建立 SourceReader (啟用色彩轉換與硬體加速)
+    // 3. 建立 SourceReader (僅啟用基本色彩轉換；ADVANCED_VIDEO_PROCESSING 會導致 0x80070057)
     IMFAttributes* pReaderAttributes = nullptr;
-    MFCreateAttributes(&pReaderAttributes, 3);
+    MFCreateAttributes(&pReaderAttributes, 1);
     if (pReaderAttributes) {
         pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
-        pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE);
-        pReaderAttributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE);
     }
 
     hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, pReaderAttributes, &m_pSourceReader);
     if (pReaderAttributes) pReaderAttributes->Release();
 
+    // 若帶屬性失敗，嘗試以 NULL 屬性（原始模式）建立 SourceReader
     if (FAILED(hr) || !m_pSourceReader) {
+        std::cout << "[WindowsMfCameraDriver] SourceReader 帶屬性建立失敗 (HRESULT=0x"
+                  << std::hex << hr << std::dec << ")，回退 NULL 屬性模式...\n";
+        hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, nullptr, &m_pSourceReader);
+    }
+
+    if (FAILED(hr) || !m_pSourceReader) {
+        std::cout << "[WindowsMfCameraDriver] 建立 SourceReader 失敗! HRESULT = 0x"
+                  << std::hex << hr << std::dec << "\n";
         if (m_pMediaSource) {
             m_pMediaSource->Release();
             m_pMediaSource = nullptr;
