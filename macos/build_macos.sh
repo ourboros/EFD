@@ -50,7 +50,6 @@ if [ -n "${LOGO_SRC}" ] && command -v sips >/dev/null 2>&1 && command -v iconuti
     ICONSET_DIR="${BUILD_DIR}/AppIcon.iconset"
     rm -rf "${ICONSET_DIR}"
     mkdir -p "${ICONSET_DIR}"
-    # 先以 padToHeightWidth 保持 100% 原圖長寬比
     sips -p 568 568 "${LOGO_SRC}" --out "${BUILD_DIR}/logo_square.png" >/dev/null 2>&1 || cp "${LOGO_SRC}" "${BUILD_DIR}/logo_square.png"
     SQ_SRC="${BUILD_DIR}/logo_square.png"
     sips -z 16 16     "${SQ_SRC}" --out "${ICONSET_DIR}/icon_16x16.png" >/dev/null 2>&1 || true

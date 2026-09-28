@@ -56,18 +56,19 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
 SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds) {
     if (!faceDetected) {
         m_awayTimer += deltaSeconds;
+        m_currentLevel = FatigueLevel::UserAway;
+        m_lastScore = 0.0f;
         if (m_awayTimer >= static_cast<float>(m_awayResetThreshold)) {
             // 離座超過 5 分鐘，重置 20 分鐘冷卻狀態機
             m_cooldownState = CooldownState::AwayPaused;
-            m_currentLevel = FatigueLevel::UserAway;
             m_cooldownTimer = 0.0f;
             m_screeningTimer = 0.0f;
         }
         return getState();
     }
 
-    // 使用者在座 (人臉偵測成功)
-    if (m_cooldownState == CooldownState::AwayPaused) {
+    // 使用者在座 (人臉與正視偵測成功)
+    if (m_currentLevel == FatigueLevel::UserAway || m_cooldownState == CooldownState::AwayPaused) {
         // 使用者回座，重啟正常追蹤
         m_cooldownState = CooldownState::NormalTracking;
         m_currentLevel = FatigueLevel::Relaxed;
@@ -161,11 +162,14 @@ SystemState FatigueStateMachine::getState() const {
     SystemState state;
     state.fatigueLevel = m_currentLevel;
     state.cooldownState = m_cooldownState;
-    state.currentFatigueScore = m_lastScore;
+    state.currentFatigueScore = (m_currentLevel == FatigueLevel::UserAway) ? 0.0f : m_lastScore;
+    state.smoothedFatigueScore = state.currentFatigueScore;
     state.cooldownRemainingSeconds = std::max(0, static_cast<int>(m_cooldownTimer));
+    state.cooldownRemainingSec = state.cooldownRemainingSeconds;
     state.awaySeconds = static_cast<int>(m_awayTimer);
     state.studyDay = m_studyDay;
     state.isStudyLocked = m_isStudyLocked;
+    state.userPresent = (m_currentLevel != FatigueLevel::UserAway);
     state.timestamp = std::chrono::system_clock::now();
     return state;
 }

@@ -25,7 +25,7 @@ private:
     float m_simulatedOpenness = 1.0f;
     std::string m_modelPath;
 
-    std::vector<Point3D> generateCanonicalFaceMesh(int frameWidth, int frameHeight, float openness, float customCx = -1.0f, float customCy = -1.0f, float customScale = -1.0f) const;
+    std::vector<Point3D> generateCanonicalFaceMesh(int frameWidth, int frameHeight, float openness, float customCx = 0.0f, float customCy = 0.0f, float customScale = 0.0f) const;
 };
 
 } // namespace efd

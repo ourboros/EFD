@@ -42,6 +42,17 @@ inline void yuy2ToRgb888(const uint8_t* yuy2, uint8_t* rgb, int numPixels) {
     }
 }
 
+// 快速 BGR24 轉 RGB888 色彩空間轉換器
+inline void bgr24ToRgb888(const uint8_t* bgr, uint8_t* rgb, int numPixels) {
+    for (int i = 0; i < numPixels; ++i) {
+        rgb[0] = bgr[2]; // R
+        rgb[1] = bgr[1]; // G
+        rgb[2] = bgr[0]; // B
+        bgr += 3;
+        rgb += 3;
+    }
+}
+
 // 快速 BGRA/BGRX 轉 RGB888 色彩空間轉換器
 inline void bgraToRgb888(const uint8_t* bgra, uint8_t* rgb, int numPixels) {
     for (int i = 0; i < numPixels; ++i) {
@@ -330,8 +341,9 @@ void WindowsMfCameraDriver::captureLoop() {
 
                     // 依據緩衝區大小自動適配格式
                     if (currentLength == static_cast<DWORD>(numPixels * 3)) {
-                        // 標準 RGB24
-                        frame.data.assign(pData, pData + currentLength);
+                        // 標準 BGR24 轉 RGB888
+                        bgr24ToRgb888(pData, rgbBuffer.data(), numPixels);
+                        frame.data = rgbBuffer;
                     } else if (currentLength == static_cast<DWORD>(numPixels * 4)) {
                         // BGRA32 轉 RGB888
                         bgraToRgb888(pData, rgbBuffer.data(), numPixels);

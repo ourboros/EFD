@@ -435,7 +435,7 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     [[NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0] setFill];
     NSRectFill(self.bounds);
 
-    // 1. Logo (縮小 50%：寬度 110px，100% 原圖長寬比適配 568:341 = 1.6657)
+    // 1. Logo (保持 100% 原始比例：長寬比 568:341 = 1.6657)
     CGFloat naturalAspect = 568.0 / 341.0;
     if (_logoImage && _logoImage.size.width > 0 && _logoImage.size.height > 0) {
         naturalAspect = _logoImage.size.width / _logoImage.size.height;
@@ -1173,18 +1173,14 @@ int MacWelcomeWindow::run() {
             }
         });
 
-        // 設定應用程式 Dock 圖示為「資產 9」
+        // 設定應用程式 Dock 圖示為「資產 10」
         NSImage* appIcon = nil;
         NSString* iconPath = [[NSBundle mainBundle] pathForResource:@"AppIcon" ofType:@"icns"];
         if (iconPath) {
             appIcon = [[NSImage alloc] initWithContentsOfFile:iconPath];
         }
         if (!appIcon) {
-            iconPath = [[NSBundle mainBundle] pathForResource:@"資產 9" ofType:@"png" inDirectory:@"design/1x"];
-            if (iconPath) appIcon = [[NSImage alloc] initWithContentsOfFile:iconPath];
-        }
-        if (!appIcon) {
-            iconPath = [[NSBundle mainBundle] pathForResource:@"logo" ofType:@"png"];
+            iconPath = [[NSBundle mainBundle] pathForResource:@"資產 10" ofType:@"png" inDirectory:@"design/1x"];
             if (iconPath) appIcon = [[NSImage alloc] initWithContentsOfFile:iconPath];
         }
         if (appIcon) {
