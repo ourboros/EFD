@@ -68,24 +68,20 @@ std::vector<Point3D> FaceLandmarker::generateCanonicalFaceMesh(int frameWidth, i
 
 namespace {
 
-// 判斷單一通道順序是否符合膚色模型 (相容 RGB、YCbCr 與暗光/黃光環境)
+// 判斷單一色序是否符合膚色模型
 inline bool checkRgbSkin(uint8_t r, uint8_t g, uint8_t b) {
-    if (r < 25 && g < 20 && b < 15) return false;
+    if (r <= 35 || g <= 20 || b <= 10) return false;
+    if (r < g - 5 || r < b - 5) return false;
 
-    // 1. YCbCr 橢圓色度模型 (對室內光源變化具有極高適應力)
+    // YCbCr 經典膚色色度模型 (放寬邊界以適應各種室內光線與相機)
     float y  =  0.299f * r + 0.587f * g + 0.114f * b;
     float cb = -0.1687f * r - 0.3313f * g + 0.500f * b + 128.0f;
     float cr =  0.500f * r - 0.4187f * g - 0.0813f * b + 128.0f;
 
-    bool ycbcrMatch = (y >= 15.0f && y <= 250.0f && cb >= 65.0f && cb <= 145.0f && cr >= 115.0f && cr <= 190.0f);
-    
-    // 2. 寬鬆暖色偏向條件
-    bool rgbMatch = (r >= g - 8) && (r >= b - 8) && (r >= 30);
-
-    return ycbcrMatch || rgbMatch;
+    return (y >= 20.0f && y <= 250.0f && cb >= 68.0f && cb <= 145.0f && cr >= 118.0f && cr <= 188.0f);
 }
 
-// 多色彩空間膚色判斷 (同時支援 RGB 與 BGR 雙向排列，徹底杜絕色序顛倒問題)
+// 多色彩空間膚色判斷 (同時校驗 RGB 與 BGR 兩種相機驅動可能輸出的排列順序)
 inline bool isSkinPixel(uint8_t c0, uint8_t c1, uint8_t c2) {
     return checkRgbSkin(c0, c1, c2) || checkRgbSkin(c2, c1, c0);
 }
@@ -160,22 +156,22 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         float aspectRatio = (boxW > 0) ? (static_cast<float>(boxH) / static_cast<float>(boxW)) : 0.0f;
 
         // 在場驗證條件（低敏感度設定，大幅提升對坐姿與環境的包容度）：
-        // 1. 採樣膚色點數充足 (>= 6 點)
+        // 1. 採樣膚色點數充足 (>= 8 點)
         // 2. 邊框尺寸合理 (佔畫面寬度 >= 3%，佔高度 >= 3%)
-        // 3. 頭部幾何比例放寬 (長寬比 0.30 ~ 4.50)
-        // 4. 區域緊湊度 (內部填充率 >= 0.03)
-        if (skinPixels >= 6 &&
+        // 3. 頭部幾何比例放寬 (長寬比 0.35 ~ 4.00)
+        // 4. 區域緊湊度 (內部填充率 >= 0.04)
+        if (skinPixels >= 8 &&
             boxW >= static_cast<int>(width * 0.03f) && boxW <= static_cast<int>(width * 0.98f) &&
             boxH >= static_cast<int>(height * 0.03f) && boxH <= static_cast<int>(height * 0.98f) &&
-            aspectRatio >= 0.30f && aspectRatio <= 4.50f &&
-            fillDensity >= 0.03f) {
+            aspectRatio >= 0.35f && aspectRatio <= 4.00f &&
+            fillDensity >= 0.04f) {
 
             detectedFaceCx = static_cast<float>(skinSumX) / skinPixels;
             detectedFaceCy = static_cast<float>(skinSumY) / skinPixels;
 
             // 質心位於畫面合理視野範圍內
-            if (detectedFaceCx > width * 0.02f && detectedFaceCx < width * 0.98f &&
-                detectedFaceCy > height * 0.02f && detectedFaceCy < height * 0.98f) {
+            if (detectedFaceCx > width * 0.04f && detectedFaceCx < width * 0.96f &&
+                detectedFaceCy > height * 0.04f && detectedFaceCy < height * 0.96f) {
                 personInFrame = true;
                 detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, boxH)) * 0.85f,
                                                static_cast<float>(std::min(width, height)) * 0.15f,
@@ -212,8 +208,8 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             float midBoxX = static_cast<float>(minSkinX + maxSkinX) * 0.5f;
             bool centerAligned = std::abs(detectedFaceCx - midBoxX) < (static_cast<float>(boxW) * 0.65f);
 
-            // 正對鏡頭判定：允許單側光與微側臉 (symmetryRatio >= 0.10)
-            if (symmetryRatio >= 0.10f && centerAligned) {
+            // 正對鏡頭判定：允許單側光與微側臉 (symmetryRatio >= 0.15)
+            if (symmetryRatio >= 0.15f && centerAligned) {
                 facingCamera = true;
             }
         }
@@ -283,5 +279,4 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 }
 
 } // namespace efd
-
 

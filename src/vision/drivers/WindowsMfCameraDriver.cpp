@@ -15,17 +15,6 @@ namespace efd {
 
 namespace {
 
-// 快速 BGR24 轉 RGB888 色彩空間轉換器 (Windows Media Foundation 預設為 BGR 排列)
-inline void bgr24ToRgb888(const uint8_t* bgr, uint8_t* rgb, int numPixels) {
-    for (int i = 0; i < numPixels; ++i) {
-        rgb[0] = bgr[2]; // R
-        rgb[1] = bgr[1]; // G
-        rgb[2] = bgr[0]; // B
-        bgr += 3;
-        rgb += 3;
-    }
-}
-
 // 快速 YUY2 轉 RGB888 色彩空間轉換器
 inline void yuy2ToRgb888(const uint8_t* yuy2, uint8_t* rgb, int numPixels) {
     for (int i = 0; i < numPixels; i += 2) {
@@ -50,6 +39,17 @@ inline void yuy2ToRgb888(const uint8_t* yuy2, uint8_t* rgb, int numPixels) {
         rgb[4] = static_cast<uint8_t>(g1);
         rgb[5] = static_cast<uint8_t>(b1);
         rgb += 6;
+    }
+}
+
+// 快速 BGR24 轉 RGB888 色彩空間轉換器 (Windows MF RGB24 記憶體排列為 BGR)
+inline void bgr24ToRgb888(const uint8_t* bgr, uint8_t* rgb, int numPixels) {
+    for (int i = 0; i < numPixels; ++i) {
+        rgb[0] = bgr[2]; // R
+        rgb[1] = bgr[1]; // G
+        rgb[2] = bgr[0]; // B
+        bgr += 3;
+        rgb += 3;
     }
 }
 
@@ -341,7 +341,7 @@ void WindowsMfCameraDriver::captureLoop() {
 
                     // 依據緩衝區大小自動適配格式
                     if (currentLength == static_cast<DWORD>(numPixels * 3)) {
-                        // 標準 BGR24 轉 RGB888
+                        // BGR24 轉 RGB888
                         bgr24ToRgb888(pData, rgbBuffer.data(), numPixels);
                         frame.data = rgbBuffer;
                     } else if (currentLength == static_cast<DWORD>(numPixels * 4)) {
