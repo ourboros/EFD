@@ -105,8 +105,10 @@ bool CameraService::start(int deviceIndex, CameraFacing targetFacing) {
 
 bool CameraService::startSynthetic() {
     stopWatchdog();
-    m_forceSynthetic = true;
-    
+    // NOTE: do NOT set m_forceSynthetic = true here — that would permanently
+    // lock out the real camera. Fallback is allowed, but re-trying physical
+    // camera on next start() call must remain possible.
+
     std::lock_guard<std::mutex> lock(m_driverMutex);
     if (m_driver) {
         m_driver->close();
