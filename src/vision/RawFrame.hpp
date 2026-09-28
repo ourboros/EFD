@@ -21,6 +21,7 @@ struct RawFrame {
     PixelFormat format = PixelFormat::RGB888;
     std::vector<uint8_t> data;
     int64_t timestampMs = 0;
+    bool isSynthetic = false;
 
     bool isValid() const {
         return width > 0 && height > 0 && !data.empty() && 

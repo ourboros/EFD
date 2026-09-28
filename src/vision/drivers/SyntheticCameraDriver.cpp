@@ -83,6 +83,7 @@ void SyntheticCameraDriver::captureLoop() {
         frame.channels = 3;
         frame.format = PixelFormat::RGB888;
         frame.data = frameBuffer;
+        frame.isSynthetic = true;
         frame.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
 

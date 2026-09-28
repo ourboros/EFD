@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
-$BuildDir = if (Test-Path (Join-Path $ProjectRoot "build\Release\efd_gui.exe")) { Join-Path $ProjectRoot "build\Release" } else { Join-Path $ProjectRoot "build\vs-x64\Release" }
+$BuildDir = Join-Path $ProjectRoot "build\vs-x64\Release"
 $DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v2.0.0-Windows"
 $ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.0.0-Windows.zip"
 $ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.0.0-Windows.zip"
@@ -13,13 +13,37 @@ Write-Host "==================================================================" 
 Write-Host "  [EFD] 開始打包 Windows 桌面端分發套件..." -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
 
-# 1. 確保 Release 二進制檔案存在
-$ExeSource = Join-Path $BuildDir "efd_gui.exe"
-if (-not (Test-Path $ExeSource)) {
-    Write-Host " [編譯] 找不到 Release efd_gui.exe，正在使用 CMake 執行 Release 建置..." -ForegroundColor Yellow
-    $cmakePath = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-    & $cmakePath --build (Join-Path $ProjectRoot "build\vs-x64") --config Release --target efd_gui
+# 1. 確保最新編譯之 Release 二進制檔案存在 (優先抓取最新產物)
+$CandidateExes = @(
+    (Join-Path $ProjectRoot "build\Release\efd_gui.exe"),
+    (Join-Path $ProjectRoot "build\vs-x64\Release\efd_gui.exe")
+)
+
+$ExeSource = $null
+foreach ($cand in $CandidateExes) {
+    if (Test-Path $cand) {
+        if ($null -eq $ExeSource -or (Get-Item $cand).LastWriteTime -gt (Get-Item $ExeSource).LastWriteTime) {
+            $ExeSource = $cand
+        }
+    }
 }
+
+if ($null -eq $ExeSource) {
+    Write-Host " [編譯] 找不到 Release efd_gui.exe，正在執行 Release 建置..." -ForegroundColor Yellow
+    $msbuildPath = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe"
+    if (Test-Path (Join-Path $ProjectRoot "build\efd_gui.vcxproj")) {
+        & $msbuildPath (Join-Path $ProjectRoot "build\efd_gui.vcxproj") /p:Configuration=Release /p:Platform=x64 /m
+        $ExeSource = Join-Path $ProjectRoot "build\Release\efd_gui.exe"
+    } else {
+        $cmakePath = "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+        & $cmakePath --build (Join-Path $ProjectRoot "build\vs-x64") --config Release --target efd_gui
+        $ExeSource = Join-Path $ProjectRoot "build\vs-x64\Release\efd_gui.exe"
+    }
+}
+
+$exeItem = Get-Item $ExeSource
+Write-Host " [來源] 選定封裝執行檔: $($exeItem.FullName)" -ForegroundColor Cyan
+Write-Host "        更新時間: $($exeItem.LastWriteTime), 大小: $($exeItem.Length) 位元組" -ForegroundColor Cyan
 
 # 2. 清理並建立分發目錄
 if (Test-Path $DistDir) {

@@ -107,13 +107,15 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     m_asset5Image = loadAssetImage(L"資產 5.png");
     m_asset6Image = loadAssetImage(L"資產 6.png");
 
-    // 初始化健康先驗遙測資料
-    m_latestTelemetry.eyeMetrics.earAvg = 0.312f;
+    // 初始化先驗遙測資料 (預設為等待偵測狀態，杜絕假疲勞數據)
+    m_latestTelemetry.detection.hasFace = false;
+    m_latestTelemetry.systemState.userPresent = false;
+    m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::UserAway;
+    m_latestTelemetry.systemState.currentFatigueScore = 0.0f;
+    m_latestTelemetry.eyeMetrics.earAvg = 0.0f;
     m_latestTelemetry.eyeMetrics.perclos = 0.0f;
     m_latestTelemetry.eyeMetrics.blinkCount = 0;
-    m_latestTelemetry.complexityMetrics.complexityIndex = 4.50f;
-    m_latestTelemetry.systemState.currentFatigueScore = 5.0f;
-    m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::Relaxed;
+    m_latestTelemetry.complexityMetrics.complexityIndex = 0.0f;
     m_latestTelemetry.lifecycleSummary = "相機狀態: 正在連接前置攝影機 (30 FPS)...";
     m_latestTelemetry.currentStudyDay = m_engine.getStudyTracker().getCurrentDay();
     m_latestTelemetry.subjectUuid = m_engine.getStudyTracker().getSubjectUuid();
@@ -204,8 +206,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
 
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
-        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 65.0) 跳出提醒
-        if (level == FatigueLevel::SevereWarning || score >= 65.0f) {
+        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 70.0) 跳出提醒
+        if (level == FatigueLevel::SevereWarning || score >= 70.0f) {
             std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
                       << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 <<<\n\n";
 
@@ -720,10 +722,10 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
 
     bool isNarrow = (w < 680 || h > w);
 
-    // 1. 計算 Logo 100% 原始長寬比 (資產 10.png 原始比例為 568:341 = 1.6657)
+    // 1. 計算 Logo 100% 原始長寬比 (資產 9.png 原始尺寸為 568x341，比例為 568:341 = 1.6657)
     float naturalAspect = 568.0f / 341.0f; // 1.6657
-    int origImgW = 70;
-    int origImgH = 42;
+    int origImgW = 568;
+    int origImgH = 341;
 
     if (m_logoImage && m_logoImage->GetLastStatus() == Gdiplus::Ok && m_logoImage->GetWidth() > 0 && m_logoImage->GetHeight() > 0) {
         origImgW = static_cast<int>(m_logoImage->GetWidth());
@@ -731,9 +733,9 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
         naturalAspect = static_cast<float>(origImgW) / static_cast<float>(origImgH);
     }
 
-    // 依視窗尺寸優雅置中繪製高解析度 Logo (寬度縮小 50% 至 110px，長寬比適配)
-    int logoW = isNarrow ? std::clamp(w / 6, 70, 100) : 110;
-    int logoH = static_cast<int>(logoW / naturalAspect);
+    // 依視窗尺寸優雅置中繪製高解析度 Logo (寬度適配，高度嚴格按照 100% 原始比例換算，不壓縮不拉伸)
+    int logoW = isNarrow ? std::clamp(w / 6, 80, 110) : 120;
+    int logoH = static_cast<int>(std::round(static_cast<float>(logoW) / naturalAspect));
 
     int logoX = (w - logoW) / 2;
     int logoY = isNarrow ? std::max(45, h / 2 - logoH - 60) : (h / 2 - 130);
@@ -742,7 +744,8 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
     if (m_logoImage && m_logoImage->GetLastStatus() == Gdiplus::Ok && m_logoImage->GetWidth() > 0) {
-        g.DrawImage(m_logoImage.get(), logoX, logoY, logoW, logoH);
+        Gdiplus::Rect destRect(logoX, logoY, logoW, logoH);
+        g.DrawImage(m_logoImage.get(), destRect, 0, 0, origImgW, origImgH, Gdiplus::UnitPixel);
     }
 
     // 2. 標題文字: "感謝協助測試EFD" (純白 #FFFFFF, 響應式字體大小, 純文字無前綴符號)

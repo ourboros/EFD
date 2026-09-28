@@ -15,13 +15,13 @@ public:
 
     bool initialize(const std::string& modelPath = "");
     LandmarkDetectionResult detect(const RawFrame& frame);
-    LandmarkDetectionResult detect(const uint8_t* pixelData, int width, int height, PixelFormat format = PixelFormat::RGB888);
+    LandmarkDetectionResult detect(const uint8_t* pixelData, int width, int height, PixelFormat format = PixelFormat::RGB888, bool isSynthetic = false);
     bool isReady() const;
     void setSimulatedEyeOpenness(float openness);
 
 private:
     bool m_isInitialized = false;
-    bool m_useSyntheticEngine = true;
+    bool m_useSyntheticEngine = false;
     float m_simulatedOpenness = 1.0f;
     std::string m_modelPath;
 

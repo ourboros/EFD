@@ -54,6 +54,7 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
 }
 
 SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds) {
+    m_userPresent = faceDetected;
     if (!faceDetected) {
         m_awayTimer += deltaSeconds;
         if (m_awayTimer >= static_cast<float>(m_awayResetThreshold)) {
@@ -63,7 +64,10 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_cooldownTimer = 0.0f;
             m_screeningTimer = 0.0f;
         }
-        return getState();
+        SystemState state = getState();
+        state.userPresent = false;
+        state.currentFatigueScore = 0.0f;
+        return state;
     }
 
     // 使用者在座 (人臉偵測成功)
@@ -161,11 +165,12 @@ SystemState FatigueStateMachine::getState() const {
     SystemState state;
     state.fatigueLevel = m_currentLevel;
     state.cooldownState = m_cooldownState;
-    state.currentFatigueScore = m_lastScore;
+    state.currentFatigueScore = m_userPresent ? m_lastScore : 0.0f;
     state.cooldownRemainingSeconds = std::max(0, static_cast<int>(m_cooldownTimer));
     state.awaySeconds = static_cast<int>(m_awayTimer);
     state.studyDay = m_studyDay;
     state.isStudyLocked = m_isStudyLocked;
+    state.userPresent = m_userPresent;
     state.timestamp = std::chrono::system_clock::now();
     return state;
 }
@@ -177,6 +182,7 @@ void FatigueStateMachine::reset() {
     m_screeningTimer = 0.0f;
     m_awayTimer = 0.0f;
     m_lastScore = 0.0f;
+    m_userPresent = false;
 }
 
 void FatigueStateMachine::setStudyProgress(int currentDay, bool isLocked) {
