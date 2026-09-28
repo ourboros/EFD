@@ -190,27 +190,19 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         return false;
     }
 
-    // 3. 建立 SourceReader (優先啟用標準 Video Processing，若失敗回退至標準模式)
+    // 3. 建立 SourceReader (啟用色彩轉換與硬體加速)
     IMFAttributes* pReaderAttributes = nullptr;
-    if (SUCCEEDED(MFCreateAttributes(&pReaderAttributes, 2))) {
+    MFCreateAttributes(&pReaderAttributes, 3);
+    if (pReaderAttributes) {
         pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
+        pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE);
         pReaderAttributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE);
     }
 
     hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, pReaderAttributes, &m_pSourceReader);
-    if (pReaderAttributes) {
-        pReaderAttributes->Release();
-        pReaderAttributes = nullptr;
-    }
-
-    // 若帶屬性建立失敗，自動回退至 NULL 屬性建立
-    if (FAILED(hr) || !m_pSourceReader) {
-        std::cout << "  -> 帶屬性建立 SourceReader (0x" << std::hex << hr << std::dec << ")，自動回退為標準 SourceReader 模式...\n";
-        hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, NULL, &m_pSourceReader);
-    }
+    if (pReaderAttributes) pReaderAttributes->Release();
 
     if (FAILED(hr) || !m_pSourceReader) {
-        std::cerr << "  -> 建立 SourceReader 失敗! HRESULT = 0x" << std::hex << hr << std::dec << "\n";
         if (m_pMediaSource) {
             m_pMediaSource->Release();
             m_pMediaSource = nullptr;
@@ -218,61 +210,17 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         return false;
     }
 
-    // 4. 枚舉相機支援的原生格式清單
-    std::cout << "[WindowsMfCameraDriver] 相機原生支援格式清單 (Native Media Types):\n";
-    DWORD typeIndex = 0;
-    IMFMediaType* pNativeType = nullptr;
-    while (SUCCEEDED(m_pSourceReader->GetNativeMediaType(
-        static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), typeIndex, &pNativeType))) {
-        UINT32 nw = 0, nh = 0;
-        MFGetAttributeSize(pNativeType, MF_MT_FRAME_SIZE, &nw, &nh);
-        GUID subtype = { 0 };
-        pNativeType->GetGUID(MF_MT_SUBTYPE, &subtype);
-
-        std::string subName = "Other";
-        if (subtype == MFVideoFormat_YUY2) subName = "YUY2";
-        else if (subtype == MFVideoFormat_NV12) subName = "NV12";
-        else if (subtype == MFVideoFormat_MJPG) subName = "MJPG";
-        else if (subtype == MFVideoFormat_RGB24) subName = "RGB24";
-        else if (subtype == MFVideoFormat_RGB32) subName = "RGB32";
-
-        if (typeIndex < 8) {
-            std::cout << "  [" << typeIndex << "] " << nw << "x" << nh << " (" << subName << ")\n";
-        }
-        pNativeType->Release();
-        pNativeType = nullptr;
-        typeIndex++;
-    }
-
-    // 5. 自動協商輸出格式：優先要求 RGB24，若失敗嘗試 RGB32 / YUY2
+    // 4. 設定輸出格式：優先嘗試 RGB24，若失敗則嘗試 RGB32
     bool formatConfigured = false;
-    const GUID targetFormats[] = { MFVideoFormat_RGB24, MFVideoFormat_RGB32, MFVideoFormat_YUY2 };
-
-    for (const auto& fmt : targetFormats) {
-        IMFMediaType* pMediaType = nullptr;
-        if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
-            pMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-            pMediaType->SetGUID(MF_MT_SUBTYPE, fmt);
-            int targetW = (config.width > 0) ? config.width : 640;
-            int targetH = (config.height > 0) ? config.height : 480;
-            MFSetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, targetW, targetH);
-
-            if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
-                formatConfigured = true;
-                pMediaType->Release();
-                break;
-            }
-            pMediaType->Release();
-        }
-    }
-
-    // 若設定自訂解析度失敗，嘗試僅要求 RGB24 色彩轉換（不強制縮放解析度）
-    if (!formatConfigured) {
+    
+    // 嘗試 RGB24
+    {
         IMFMediaType* pMediaType = nullptr;
         if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
             pMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
             pMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB24);
+            MFSetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, config.width, config.height);
+
             if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
                 static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
                 formatConfigured = true;
@@ -281,23 +229,21 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         }
     }
 
-    // 讀取當前最終生效的輸出格式與解析度
-    IMFMediaType* pCurrentType = nullptr;
-    if (SUCCEEDED(m_pSourceReader->GetCurrentMediaType(
-        static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), &pCurrentType)) && pCurrentType) {
-        UINT32 cw = 0, ch = 0;
-        MFGetAttributeSize(pCurrentType, MF_MT_FRAME_SIZE, &cw, &ch);
-        pCurrentType->GetGUID(MF_MT_SUBTYPE, &m_actualSubtype);
-        m_actualWidth = (cw > 0) ? static_cast<int>(cw) : 640;
-        m_actualHeight = (ch > 0) ? static_cast<int>(ch) : 480;
-        pCurrentType->Release();
-    } else {
-        m_actualWidth = (config.width > 0) ? config.width : 640;
-        m_actualHeight = (config.height > 0) ? config.height : 480;
-        m_actualSubtype = MFVideoFormat_RGB24;
-    }
+    // 若 RGB24 失敗，嘗試 RGB32
+    if (!formatConfigured) {
+        IMFMediaType* pMediaType = nullptr;
+        if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
+            pMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+            pMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
+            MFSetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, config.width, config.height);
 
-    std::cout << "[WindowsMfCameraDriver] 格式協商完成! 生效解析度: " << m_actualWidth << "x" << m_actualHeight << "\n";
+            if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
+                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
+                formatConfigured = true;
+            }
+            pMediaType->Release();
+        }
+    }
 
     m_isRunning.store(true);
     m_workerThread = std::thread(&WindowsMfCameraDriver::captureLoop, this);
@@ -333,13 +279,14 @@ void WindowsMfCameraDriver::setFrameCallback(FrameCallback callback) {
 }
 
 void WindowsMfCameraDriver::captureLoop() {
+    // 關鍵修復：工作執行緒必須初始化 COM 才能在 Media Foundation 中調用 ReadSample
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
     float fps = (m_config.fps > 0.0f) ? m_config.fps : 30.0f;
     const auto minFrameInterval = std::chrono::microseconds(static_cast<int64_t>(1000000.0f / (fps * 1.2f)));
 
-    int targetW = m_actualWidth > 0 ? m_actualWidth : 640;
-    int targetH = m_actualHeight > 0 ? m_actualHeight : 480;
+    int targetW = m_config.width > 0 ? m_config.width : 640;
+    int targetH = m_config.height > 0 ? m_config.height : 480;
     int numPixels = targetW * targetH;
 
     std::vector<uint8_t> rgbBuffer(numPixels * 3, 0);
