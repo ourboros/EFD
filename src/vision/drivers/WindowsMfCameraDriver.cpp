@@ -15,6 +15,17 @@ namespace efd {
 
 namespace {
 
+// 快速 BGR24 轉 RGB888 色彩空間轉換器 (Windows Media Foundation 預設為 BGR 排列)
+inline void bgr24ToRgb888(const uint8_t* bgr, uint8_t* rgb, int numPixels) {
+    for (int i = 0; i < numPixels; ++i) {
+        rgb[0] = bgr[2]; // R
+        rgb[1] = bgr[1]; // G
+        rgb[2] = bgr[0]; // B
+        bgr += 3;
+        rgb += 3;
+    }
+}
+
 // 快速 YUY2 轉 RGB888 色彩空間轉換器
 inline void yuy2ToRgb888(const uint8_t* yuy2, uint8_t* rgb, int numPixels) {
     for (int i = 0; i < numPixels; i += 2) {
@@ -126,7 +137,6 @@ std::vector<CameraDeviceInfo> WindowsMfCameraDriver::enumerateDevices() {
                     lowerName.find("integrated") != std::string::npos ||
                     lowerName.find("facetime") != std::string::npos ||
                     lowerName.find("webcam") != std::string::npos ||
-                    lowerName.find("usb") != std::string::npos ||
                     i == 0) {
                     dev.facing = CameraFacing::Front;
                 } else {
@@ -153,7 +163,7 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
 
     m_config = config;
 
-    // 1. 列舉系統所有設備來源
+    // 1. 列舉設備
     IMFAttributes* pAttributes = nullptr;
     HRESULT hr = MFCreateAttributes(&pAttributes, 1);
     if (FAILED(hr)) return false;
@@ -180,59 +190,38 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
     UINT32 targetIndex = static_cast<UINT32>(config.deviceIndex);
     if (targetIndex >= count) targetIndex = 0;
 
-    // 2. 自動嘗試開啟相機：優先嘗試 targetIndex，若失敗則自動遍歷所有可用實體相機
-    std::vector<UINT32> tryOrder;
-    tryOrder.push_back(targetIndex);
-    for (UINT32 i = 0; i < count; ++i) {
-        if (i != targetIndex) tryOrder.push_back(i);
-    }
-
-    bool activated = false;
-    for (UINT32 idx : tryOrder) {
-        m_pMediaSource = nullptr;
-        m_pSourceReader = nullptr;
-
-        hr = ppDevices[idx]->ActivateObject(IID_PPV_ARGS(&m_pMediaSource));
-        if (SUCCEEDED(hr) && m_pMediaSource) {
-            // 嘗試建立 SourceReader (優先啟用標準視訊處理)
-            IMFAttributes* pReaderAttributes = nullptr;
-            MFCreateAttributes(&pReaderAttributes, 1);
-            if (pReaderAttributes) {
-                pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
-            }
-
-            hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, pReaderAttributes, &m_pSourceReader);
-            if (pReaderAttributes) pReaderAttributes->Release();
-
-            // 若帶屬性建立失敗 (部分舊型相機回傳 0x80070057)，回退至預設無屬性建立
-            if (FAILED(hr) || !m_pSourceReader) {
-                hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, NULL, &m_pSourceReader);
-            }
-
-            if (SUCCEEDED(hr) && m_pSourceReader) {
-                activated = true;
-                m_config.deviceIndex = static_cast<int>(idx);
-                std::cout << "[WindowsMfCameraDriver] 成功啟用實體攝影機 (Device Index: " << idx << ")\n";
-                break;
-            } else {
-                if (m_pMediaSource) {
-                    m_pMediaSource->Release();
-                    m_pMediaSource = nullptr;
-                }
-            }
-        }
-    }
-
+    // 2. 啟動 MediaSource
+    hr = ppDevices[targetIndex]->ActivateObject(IID_PPV_ARGS(&m_pMediaSource));
     for (UINT32 i = 0; i < count; ++i) {
         ppDevices[i]->Release();
     }
     CoTaskMemFree(ppDevices);
 
-    if (!activated || !m_pSourceReader) {
+    if (FAILED(hr) || !m_pMediaSource) {
         return false;
     }
 
-    // 3. 設定輸出格式：多層次自適應協商 (RGB24 -> RGB32 -> YUY2 -> 原生相機格式)
+    // 3. 建立 SourceReader (啟用色彩轉換與硬體加速)
+    IMFAttributes* pReaderAttributes = nullptr;
+    MFCreateAttributes(&pReaderAttributes, 3);
+    if (pReaderAttributes) {
+        pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
+        pReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE);
+        pReaderAttributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE);
+    }
+
+    hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, pReaderAttributes, &m_pSourceReader);
+    if (pReaderAttributes) pReaderAttributes->Release();
+
+    if (FAILED(hr) || !m_pSourceReader) {
+        if (m_pMediaSource) {
+            m_pMediaSource->Release();
+            m_pMediaSource = nullptr;
+        }
+        return false;
+    }
+
+    // 4. 設定輸出格式：優先嘗試 RGB24，若失敗則嘗試 RGB32
     bool formatConfigured = false;
     
     // 嘗試 RGB24
@@ -265,35 +254,6 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
             }
             pMediaType->Release();
         }
-    }
-
-    // 若失敗，嘗試 YUY2
-    if (!formatConfigured) {
-        IMFMediaType* pMediaType = nullptr;
-        if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
-            pMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-            pMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2);
-
-            if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
-                formatConfigured = true;
-            }
-            pMediaType->Release();
-        }
-    }
-
-    // 4. 查詢實際生效的解析度
-    IMFMediaType* pActualType = nullptr;
-    if (SUCCEEDED(m_pSourceReader->GetCurrentMediaType(
-        static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), &pActualType))) {
-        UINT32 actW = 0, actH = 0;
-        if (SUCCEEDED(MFGetAttributeSize(pActualType, MF_MT_FRAME_SIZE, &actW, &actH))) {
-            if (actW > 0 && actH > 0) {
-                m_config.width = static_cast<int>(actW);
-                m_config.height = static_cast<int>(actH);
-            }
-        }
-        pActualType->Release();
     }
 
     m_isRunning.store(true);
@@ -381,8 +341,9 @@ void WindowsMfCameraDriver::captureLoop() {
 
                     // 依據緩衝區大小自動適配格式
                     if (currentLength == static_cast<DWORD>(numPixels * 3)) {
-                        // 標準 RGB24
-                        frame.data.assign(pData, pData + currentLength);
+                        // 標準 BGR24 轉 RGB888
+                        bgr24ToRgb888(pData, rgbBuffer.data(), numPixels);
+                        frame.data = rgbBuffer;
                     } else if (currentLength == static_cast<DWORD>(numPixels * 4)) {
                         // BGRA32 轉 RGB888
                         bgraToRgb888(pData, rgbBuffer.data(), numPixels);
