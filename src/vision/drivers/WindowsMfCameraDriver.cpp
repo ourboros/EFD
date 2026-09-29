@@ -166,10 +166,7 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
     // 1. 列舉設備
     IMFAttributes* pAttributes = nullptr;
     HRESULT hr = MFCreateAttributes(&pAttributes, 1);
-    if (FAILED(hr)) {
-        std::cout << "[WindowsMfCameraDriver] 建立 MF 屬性失敗! HRESULT = 0x" << std::hex << hr << std::dec << " (原因: Media Foundation 系統初始化異常)\n";
-        return false;
-    }
+    if (FAILED(hr)) return false;
 
     hr = pAttributes->SetGUID(
         MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
@@ -178,7 +175,6 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
 
     if (FAILED(hr)) {
         pAttributes->Release();
-        std::cout << "[WindowsMfCameraDriver] 設定視訊擷取 GUID 屬性失敗! HRESULT = 0x" << std::hex << hr << std::dec << "\n";
         return false;
     }
 
@@ -188,22 +184,11 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
     pAttributes->Release();
 
     if (FAILED(hr) || count == 0) {
-        std::cout << "[WindowsMfCameraDriver] 列舉視訊輸入裝置失敗或找不到實體裝置 (HRESULT = 0x"
-                  << std::hex << hr << std::dec << ", count = " << count << ")\n";
         return false;
     }
 
     UINT32 targetIndex = static_cast<UINT32>(config.deviceIndex);
     if (targetIndex >= count) targetIndex = 0;
-
-    WCHAR* devNameBuf = nullptr;
-    UINT32 devNameLen = 0;
-    std::string deviceName = "Camera Device " + std::to_string(targetIndex);
-    if (SUCCEEDED(ppDevices[targetIndex]->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &devNameBuf, &devNameLen))) {
-        deviceName = wcharToString(devNameBuf);
-        CoTaskMemFree(devNameBuf);
-    }
-    std::cout << "[WindowsMfCameraDriver] 正在嘗試連線攝影機 [" << targetIndex << "]: \"" << deviceName << "\"...\n";
 
     // 2. 啟動 MediaSource
     hr = ppDevices[targetIndex]->ActivateObject(IID_PPV_ARGS(&m_pMediaSource));
@@ -213,11 +198,8 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
     CoTaskMemFree(ppDevices);
 
     if (FAILED(hr) || !m_pMediaSource) {
-        std::cout << "[WindowsMfCameraDriver] 啟動 MediaSource 裝置失敗! HRESULT = 0x" << std::hex << hr << std::dec
-                  << " (原因: 攝影機可能正被其他應用程式如 Teams/OBS/瀏覽器獨佔使用，或硬體權限受拒)\n";
         return false;
     }
-    std::cout << "[WindowsMfCameraDriver] 成功啟用 MediaSource 裝置: \"" << deviceName << "\"\n";
 
     // 3. 建立 SourceReader (僅啟用基本色彩轉換；ADVANCED_VIDEO_PROCESSING 會導致 0x80070057)
     IMFAttributes* pReaderAttributes = nullptr;
@@ -231,14 +213,14 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
 
     // 若帶屬性失敗，嘗試以 NULL 屬性（原始模式）建立 SourceReader
     if (FAILED(hr) || !m_pSourceReader) {
-        std::cout << "[WindowsMfCameraDriver] SourceReader 帶色彩轉換屬性建立失敗 (HRESULT=0x"
-                  << std::hex << hr << std::dec << ")，回退至原生格式直讀模式...\n";
+        std::cout << "[WindowsMfCameraDriver] SourceReader 帶屬性建立失敗 (HRESULT=0x"
+                  << std::hex << hr << std::dec << ")，回退 NULL 屬性模式...\n";
         hr = MFCreateSourceReaderFromMediaSource(m_pMediaSource, nullptr, &m_pSourceReader);
     }
 
     if (FAILED(hr) || !m_pSourceReader) {
         std::cout << "[WindowsMfCameraDriver] 建立 SourceReader 失敗! HRESULT = 0x"
-                  << std::hex << hr << std::dec << " (原因: 驅動未能綁定 DirectShow/MF 管道)\n";
+                  << std::hex << hr << std::dec << "\n";
         if (m_pMediaSource) {
             m_pMediaSource->Release();
             m_pMediaSource = nullptr;
@@ -260,7 +242,6 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
             if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
                 static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
                 formatConfigured = true;
-                std::cout << "[WindowsMfCameraDriver] 格式協商成功: RGB24 (" << config.width << "x" << config.height << ")\n";
             }
             pMediaType->Release();
         }
@@ -277,19 +258,13 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
             if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
                 static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
                 formatConfigured = true;
-                std::cout << "[WindowsMfCameraDriver] 格式協商成功: RGB32 (" << config.width << "x" << config.height << ")\n";
             }
             pMediaType->Release();
         }
     }
 
-    if (!formatConfigured) {
-        std::cout << "[WindowsMfCameraDriver] 提示: 格式轉換要求未被硬體直接接受，採用原生預設串流直讀模式。\n";
-    }
-
     m_isRunning.store(true);
     m_workerThread = std::thread(&WindowsMfCameraDriver::captureLoop, this);
-    std::cout << "[WindowsMfCameraDriver] 實體攝影機連線成功，後台影像串流運作中！\n";
     return true;
 }
 

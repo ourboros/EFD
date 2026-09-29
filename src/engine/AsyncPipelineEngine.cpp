@@ -180,6 +180,7 @@ void AsyncPipelineEngine::inferenceWorkerLoop() {
 
         // 執行 468 點特徵定位推論
         LandmarkDetectionResult detection = m_landmarker->detect(frame);
+        FaceLandmarker::PresenceDiagnostic diag = m_landmarker->getLatestPresenceDiagnostic();
 
         // 將結果遞交至 Thread 3 佇列
         {
@@ -187,7 +188,7 @@ void AsyncPipelineEngine::inferenceWorkerLoop() {
             while (m_inferenceQueue.size() >= MAX_INFERENCE_QUEUE) {
                 m_inferenceQueue.pop();
             }
-            m_inferenceQueue.push(InferencePackage{std::move(frame), std::move(detection)});
+            m_inferenceQueue.push(InferencePackage{std::move(frame), std::move(detection), std::move(diag)});
             m_inferenceQueueCv.notify_one();
         }
     }
@@ -275,7 +276,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             EngineTelemetry telemetry;
             telemetry.latestFrame = std::move(package.frame);
             telemetry.detection = std::move(package.detection);
-            telemetry.presenceDiagnostic = m_landmarker->getLatestPresenceDiagnostic();
+            telemetry.presenceDiagnostic = std::move(package.diagnostic);
             telemetry.eyeMetrics = eyeMetrics;
             telemetry.complexityMetrics = m_cachedComplexity;
             telemetry.systemState = state;

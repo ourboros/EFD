@@ -56,7 +56,6 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
 SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds) {
     if (!faceDetected) {
         m_awayTimer += deltaSeconds;
-        m_lastScore = 0.0f; // 離座時即刻清空疲勞分數，避免離座殘留舊數據
         if (m_awayTimer >= static_cast<float>(m_awayResetThreshold)) {
             // 離座超過 5 分鐘，重置 20 分鐘冷卻狀態機
             m_cooldownState = CooldownState::AwayPaused;
@@ -64,9 +63,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_cooldownTimer = 0.0f;
             m_screeningTimer = 0.0f;
         }
-        SystemState state = getState();
-        state.userPresent = false;
-        return state;
+        return getState();
     }
 
     // 使用者在座 (人臉偵測成功)

@@ -27,10 +27,10 @@ namespace efd {
 struct EngineTelemetry {
     RawFrame latestFrame;
     LandmarkDetectionResult detection;
+    FaceLandmarker::PresenceDiagnostic presenceDiagnostic;
     EyeMetrics eyeMetrics;
     ComplexityMetrics complexityMetrics;
     SystemState systemState;
-    FaceLandmarker::PresenceDiagnostic presenceDiagnostic;
     float currentThreshold = 0.21f;
     int64_t totalFramesProcessed = 0;
     std::string lifecycleSummary;
@@ -117,6 +117,7 @@ private:
     struct InferencePackage {
         RawFrame frame;
         LandmarkDetectionResult detection;
+        FaceLandmarker::PresenceDiagnostic diagnostic;
     };
     std::queue<InferencePackage> m_inferenceQueue;
     std::mutex m_inferenceQueueMutex;

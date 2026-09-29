@@ -15,7 +15,7 @@ public:
 
     bool initialize(const std::string& modelPath = "");
     LandmarkDetectionResult detect(const RawFrame& frame);
-    LandmarkDetectionResult detect(const uint8_t* pixelData, int width, int height, PixelFormat format = PixelFormat::RGB888);
+    LandmarkDetectionResult detect(const uint8_t* pixelData, int width, int height, PixelFormat format = PixelFormat::RGB888, bool isSynthetic = false);
     bool isReady() const;
     void setSimulatedEyeOpenness(float openness);
 
@@ -28,6 +28,13 @@ public:
         float fillDensity = 0.0f;
         float aspectRatio = 0.0f;
         float symmetryRatio = 0.0f;
+        int boxX = 0;
+        int boxY = 0;
+        int boxW = 0;
+        int boxH = 0;
+        int frameWidth = 640;
+        int frameHeight = 480;
+        int stableCount = 0;
         std::string unconfirmedReason;
     };
 

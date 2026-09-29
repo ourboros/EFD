@@ -10,7 +10,7 @@ FaceLandmarker::~FaceLandmarker() = default;
 
 bool FaceLandmarker::initialize(const std::string& modelPath) {
     m_modelPath = modelPath;
-    m_useSyntheticEngine = modelPath.empty();
+    m_useSyntheticEngine = false; // 預設使用真實相機影像掃描
     m_isInitialized = true;
     return true;
 }
@@ -90,12 +90,12 @@ inline bool isSkinPixel(uint8_t c0, uint8_t c1, uint8_t c2) {
 
 LandmarkDetectionResult FaceLandmarker::detect(const RawFrame& frame) {
     if (!frame.isValid()) {
-        return {};
+        return detect(nullptr, 0, 0, PixelFormat::RGB888, true);
     }
-    return detect(frame.data.data(), frame.width, frame.height, frame.format);
+    return detect(frame.data.data(), frame.width, frame.height, frame.format, frame.isSynthetic);
 }
 
-LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int width, int height, PixelFormat format) {
+LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int width, int height, PixelFormat format, bool isSynthetic) {
     (void)format;
 
     auto startTime = std::chrono::steady_clock::now();
@@ -118,7 +118,9 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
     FaceLandmarker::PresenceDiagnostic diag;
 
-    if (pixelData && width >= 64 && height >= 64 && !m_useSyntheticEngine) {
+    bool isRealCamera = (pixelData != nullptr) && (width >= 64) && (height >= 64) && (!isSynthetic);
+
+    if (isRealCamera) {
         // ---------------------------------------------------------------------
         // 階段一：人體與人臉特徵掃描 (Human Body & Face Presence Verification)
         // 採樣步長縮小至 2 (<=640) 或 4 (>640)，獲取精準人體像素空間分佈
@@ -165,23 +167,29 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         diag.minSkinRequired = minSkinRequired;
         diag.fillDensity = fillDensity;
         diag.aspectRatio = aspectRatio;
+        diag.frameWidth = width;
+        diag.frameHeight = height;
+        diag.boxX = minSkinX;
+        diag.boxY = minSkinY;
+        diag.boxW = boxW;
+        diag.boxH = boxH;
 
         // 在場特徵驗證 (人臉/人體存在性)
         if (skinPixels < minSkinRequired) {
             diag.unconfirmedReason = "鏡頭前無人體或膚色採樣點不足 (採樣點: " + std::to_string(skinPixels) + " < 門檻 " + std::to_string(minSkinRequired) + ")";
         } else if (boxW < static_cast<int>(width * 0.05f) || boxH < static_cast<int>(height * 0.05f)) {
             diag.unconfirmedReason = "偵測目標尺寸過小，疑似非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
-        } else if (aspectRatio < 0.25f || aspectRatio > 4.50f) {
+        } else if (aspectRatio < 0.20f || aspectRatio > 4.80f) {
             diag.unconfirmedReason = "人體幾何長寬比不符合人臉輪廓特徵 (長寬比: " + std::to_string(aspectRatio) + ")";
-        } else if (fillDensity < 0.03f) {
+        } else if (fillDensity < 0.02f) {
             diag.unconfirmedReason = "像素點空間分佈零散，非連續人體輪廓 (填充率: " + std::to_string(fillDensity) + ")";
         } else {
             detectedFaceCx = static_cast<float>(skinSumX) / skinPixels;
             detectedFaceCy = static_cast<float>(skinSumY) / skinPixels;
 
             // 質心視野校驗
-            if (detectedFaceCx > width * 0.03f && detectedFaceCx < width * 0.97f &&
-                detectedFaceCy > static_cast<float>(height) * 0.03f && detectedFaceCy < static_cast<float>(height) * 0.97f) {
+            if (detectedFaceCx > width * 0.02f && detectedFaceCx < width * 0.98f &&
+                detectedFaceCy > static_cast<float>(height) * 0.02f && detectedFaceCy < static_cast<float>(height) * 0.98f) {
                 personInFrame = true;
                 detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, boxH)) * 0.85f,
                                                static_cast<float>(std::min(width, height)) * 0.15f,
@@ -233,6 +241,17 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         personInFrame = (m_simulatedOpenness >= 0.0f);
         facingCamera = personInFrame;
         symmetryRatio = 0.95f;
+        diag.frameWidth = (width > 0) ? width : 640;
+        diag.frameHeight = (height > 0) ? height : 480;
+        diag.boxW = diag.frameWidth / 3;
+        diag.boxH = static_cast<int>(diag.frameHeight * 0.48f);
+        diag.boxX = (diag.frameWidth - diag.boxW) / 2;
+        diag.boxY = (diag.frameHeight - diag.boxH) / 3;
+        diag.skinPixels = personInFrame ? 350 : 0;
+        diag.minSkinRequired = 20;
+        diag.fillDensity = personInFrame ? 0.35f : 0.0f;
+        diag.aspectRatio = 1.33f;
+        diag.symmetryRatio = personInFrame ? 0.95f : 0.0f;
         if (!personInFrame) {
             diag.unconfirmedReason = "Synthetic 模擬輸入為離座 (openness < 0)";
         }
@@ -265,8 +284,19 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
     }
 
     diag.isFaceConfirmed = m_isFaceConfirmed;
+    diag.stableCount = m_consecutiveFaceFrames;
     if (m_isFaceConfirmed) {
         diag.unconfirmedReason = "";
+        if (m_lastKnownScale > 0.0f && diag.frameWidth > 0 && diag.frameHeight > 0) {
+            int fw = static_cast<int>(m_lastKnownScale);
+            int fh = static_cast<int>(m_lastKnownScale * 1.25f);
+            int fx = static_cast<int>(m_lastKnownCx - fw / 2);
+            int fy = static_cast<int>(m_lastKnownCy - fh * 0.55f);
+            diag.boxX = std::max(0, fx);
+            diag.boxY = std::max(0, fy);
+            diag.boxW = std::min(fw, diag.frameWidth - diag.boxX);
+            diag.boxH = std::min(fh, diag.frameHeight - diag.boxY);
+        }
     }
     m_lastDiag = diag;
 
@@ -277,20 +307,65 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         result.hasFace = true;
         result.faceConfidence = std::clamp(symmetryRatio * 0.85f + 0.15f, 0.75f, 0.98f);
 
-        float effectiveOpenness = m_simulatedOpenness;
-        if (m_useSyntheticEngine && m_simulatedOpenness >= 0.85f) {
-            static auto initTime = std::chrono::steady_clock::now();
-            auto now = std::chrono::steady_clock::now();
-            float t = std::chrono::duration_cast<std::chrono::milliseconds>(now - initTime).count() / 1000.0f;
+        float effectiveOpenness = 1.0f;
+        if (!isRealCamera) {
+            // Synthetic 模擬測試驅動自然眨眼週期
+            effectiveOpenness = m_simulatedOpenness;
+            if (m_simulatedOpenness >= 0.85f) {
+                static auto initTime = std::chrono::steady_clock::now();
+                auto now = std::chrono::steady_clock::now();
+                float t = std::chrono::duration_cast<std::chrono::milliseconds>(now - initTime).count() / 1000.0f;
 
-            float tremor = 0.035f * std::sin(t * 6.7f) + 0.018f * std::cos(t * 17.3f);
-            float blinkCycle = std::fmod(t, 3.6f);
-            float blinkFactor = 1.0f;
-            if (blinkCycle > 3.40f && blinkCycle < 3.58f) {
-                float blinkProgress = (blinkCycle - 3.40f) / 0.18f;
-                blinkFactor = 0.05f + 0.95f * (4.0f * (blinkProgress - 0.5f) * (blinkProgress - 0.5f));
+                float tremor = 0.035f * std::sin(t * 6.7f) + 0.018f * std::cos(t * 17.3f);
+                float blinkCycle = std::fmod(t, 3.6f);
+                float blinkFactor = 1.0f;
+                if (blinkCycle > 3.40f && blinkCycle < 3.58f) {
+                    float blinkProgress = (blinkCycle - 3.40f) / 0.18f;
+                    blinkFactor = 0.05f + 0.95f * (4.0f * (blinkProgress - 0.5f) * (blinkProgress - 0.5f));
+                }
+                effectiveOpenness = std::clamp(m_simulatedOpenness * blinkFactor + tremor, 0.02f, 1.05f);
             }
-            effectiveOpenness = std::clamp(m_simulatedOpenness * blinkFactor + tremor, 0.02f, 1.05f);
+        } else {
+            // 實體相機真實眼睛動態提取 (Real Eye Openness Gradient Extraction)
+            float eyeDist = m_lastKnownScale * 0.28f;
+            float eyeYOffset = m_lastKnownScale * 0.10f;
+            int eyeBoxRadius = std::max(6, static_cast<int>(m_lastKnownScale * 0.08f));
+
+            int eyeCentersX[2] = {
+                static_cast<int>(m_lastKnownCx - eyeDist),
+                static_cast<int>(m_lastKnownCx + eyeDist)
+            };
+            int eyeCenterY = static_cast<int>(m_lastKnownCy - eyeYOffset);
+
+            float totalGrad = 0.0f;
+            int gradSamples = 0;
+
+            for (int e = 0; e < 2; ++e) {
+                int ecx = eyeCentersX[e];
+                int ecy = eyeCenterY;
+
+                for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
+                    int py = ecy + dy;
+                    if (py <= 1 || py >= height - 2) continue;
+
+                    for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
+                        int px = ecx + dx;
+                        if (px <= 0 || px >= width) continue;
+
+                        int idxTop = ((py - 1) * width + px) * 3;
+                        int idxBot = ((py + 1) * width + px) * 3;
+
+                        int lumTop = (pixelData[idxTop] * 299 + pixelData[idxTop + 1] * 587 + pixelData[idxTop + 2] * 114) / 1000;
+                        int lumBot = (pixelData[idxBot] * 299 + pixelData[idxBot + 1] * 587 + pixelData[idxBot + 2] * 114) / 1000;
+
+                        totalGrad += std::abs(lumBot - lumTop);
+                        gradSamples++;
+                    }
+                }
+            }
+
+            float avgGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 18.0f;
+            effectiveOpenness = std::clamp((avgGrad - 6.0f) / 16.0f, 0.05f, 1.0f);
         }
 
         result.landmarks = generateCanonicalFaceMesh(width, height, effectiveOpenness, m_lastKnownCx, m_lastKnownCy, m_lastKnownScale);
