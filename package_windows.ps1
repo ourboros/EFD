@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
-$BuildDir = Join-Path $ProjectRoot "build\vs-x64\Release"
+$BuildDir = if (Test-Path (Join-Path $ProjectRoot "build\Release\efd_gui.exe")) { Join-Path $ProjectRoot "build\Release" } else { Join-Path $ProjectRoot "build\vs-x64\Release" }
 $DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v2.0.0-Windows"
 $ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.0.0-Windows.zip"
 $ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.0.0-Windows.zip"
@@ -100,6 +100,13 @@ Write-Host " -> 正在壓縮封裝為 EFD-v2.0.0-Windows.zip..." -ForegroundColo
 if (Test-Path $ZipRootOutput) { Remove-Item -Force $ZipRootOutput }
 Compress-Archive -Path "$DistDir\*" -DestinationPath $ZipRootOutput -Force
 Copy-Item $ZipRootOutput $ZipBuildOutput -Force
+
+# 同步生成 efd_debuger 診斷專用打包檔案
+$DebuggerZipRoot = Join-Path $ProjectRoot "efd_debuger.zip"
+$DebuggerZipBuild = Join-Path $ProjectRoot "build\efd_debuger.zip"
+Copy-Item $ZipRootOutput $DebuggerZipRoot -Force
+Copy-Item $ZipRootOutput $DebuggerZipBuild -Force
+Write-Host " -> 同步產出診斷封裝套件: efd_debuger.zip" -ForegroundColor Green
 
 $zipItem = Get-Item $ZipRootOutput
 Write-Host "==================================================================" -ForegroundColor Cyan

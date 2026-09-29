@@ -30,6 +30,7 @@ struct EngineTelemetry {
     EyeMetrics eyeMetrics;
     ComplexityMetrics complexityMetrics;
     SystemState systemState;
+    FaceLandmarker::PresenceDiagnostic presenceDiagnostic;
     float currentThreshold = 0.21f;
     int64_t totalFramesProcessed = 0;
     std::string lifecycleSummary;

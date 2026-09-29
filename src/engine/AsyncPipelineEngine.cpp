@@ -255,10 +255,6 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             m_cachedComplexity.complexityIndex,
             deltaSec
         );
-        state.userPresent = package.detection.hasFace;
-        if (!package.detection.hasFace) {
-            state.currentFatigueScore = 0.0f;
-        }
 
         // 5. 定期落盤至本地結構化資料庫 (每 1 秒 30 幀記錄一筆，僅在人臉在座時記錄有效特徵)
         if (count % 30 == 0 && package.detection.hasFace) {
@@ -279,6 +275,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             EngineTelemetry telemetry;
             telemetry.latestFrame = std::move(package.frame);
             telemetry.detection = std::move(package.detection);
+            telemetry.presenceDiagnostic = m_landmarker->getLatestPresenceDiagnostic();
             telemetry.eyeMetrics = eyeMetrics;
             telemetry.complexityMetrics = m_cachedComplexity;
             telemetry.systemState = state;

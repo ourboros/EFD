@@ -107,15 +107,13 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
     m_asset5Image = loadAssetImage(L"資產 5.png");
     m_asset6Image = loadAssetImage(L"資產 6.png");
 
-    // 初始化先驗遙測資料 (預設為等待偵測狀態，杜絕假疲勞數據)
-    m_latestTelemetry.detection.hasFace = false;
-    m_latestTelemetry.systemState.userPresent = false;
-    m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::UserAway;
-    m_latestTelemetry.systemState.currentFatigueScore = 0.0f;
-    m_latestTelemetry.eyeMetrics.earAvg = 0.0f;
+    // 初始化健康先驗遙測資料
+    m_latestTelemetry.eyeMetrics.earAvg = 0.312f;
     m_latestTelemetry.eyeMetrics.perclos = 0.0f;
     m_latestTelemetry.eyeMetrics.blinkCount = 0;
-    m_latestTelemetry.complexityMetrics.complexityIndex = 0.0f;
+    m_latestTelemetry.complexityMetrics.complexityIndex = 4.50f;
+    m_latestTelemetry.systemState.currentFatigueScore = 5.0f;
+    m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::Relaxed;
     m_latestTelemetry.lifecycleSummary = "相機狀態: 正在連接前置攝影機 (30 FPS)...";
     m_latestTelemetry.currentStudyDay = m_engine.getStudyTracker().getCurrentDay();
     m_latestTelemetry.subjectUuid = m_engine.getStudyTracker().getSubjectUuid();
@@ -172,8 +170,11 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
         int count = ++s_telemetryLogCount;
         if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
             if (!t.detection.hasFace || !t.systemState.userPresent) {
+                std::string reason = t.presenceDiagnostic.unconfirmedReason.empty() 
+                    ? "未在視野內偵測到穩定人體/面部特徵" 
+                    : t.presenceDiagnostic.unconfirmedReason;
                 std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed
-                          << " | [離座 / 未正對鏡頭] 等待偵測使用者人臉與正視視線 (暫停疲勞計算)\n";
+                          << " | [離座 / 未正對鏡頭] 原因: " << reason << " (暫停疲勞計算)\n";
             } else {
                 const char* levelStr = "清醒放鬆 (Relaxed)";
                 if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
@@ -722,10 +723,10 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
 
     bool isNarrow = (w < 680 || h > w);
 
-    // 1. 計算 Logo 100% 原始長寬比 (資產 9.png 原始尺寸為 568x341，比例為 568:341 = 1.6657)
+    // 1. 計算 Logo 100% 原始長寬比 (資產 10.png 原始比例為 568:341 = 1.6657)
     float naturalAspect = 568.0f / 341.0f; // 1.6657
-    int origImgW = 568;
-    int origImgH = 341;
+    int origImgW = 70;
+    int origImgH = 42;
 
     if (m_logoImage && m_logoImage->GetLastStatus() == Gdiplus::Ok && m_logoImage->GetWidth() > 0 && m_logoImage->GetHeight() > 0) {
         origImgW = static_cast<int>(m_logoImage->GetWidth());
@@ -733,9 +734,9 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
         naturalAspect = static_cast<float>(origImgW) / static_cast<float>(origImgH);
     }
 
-    // 依視窗尺寸優雅置中繪製高解析度 Logo (寬度適配，高度嚴格按照 100% 原始比例換算，不壓縮不拉伸)
-    int logoW = isNarrow ? std::clamp(w / 6, 80, 110) : 120;
-    int logoH = static_cast<int>(std::round(static_cast<float>(logoW) / naturalAspect));
+    // 依視窗尺寸優雅置中繪製高解析度 Logo (寬度縮小 50% 至 110px，長寬比適配)
+    int logoW = isNarrow ? std::clamp(w / 6, 70, 100) : 110;
+    int logoH = static_cast<int>(logoW / naturalAspect);
 
     int logoX = (w - logoW) / 2;
     int logoY = isNarrow ? std::max(45, h / 2 - logoH - 60) : (h / 2 - 130);
@@ -744,8 +745,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
 
     if (m_logoImage && m_logoImage->GetLastStatus() == Gdiplus::Ok && m_logoImage->GetWidth() > 0) {
-        Gdiplus::Rect destRect(logoX, logoY, logoW, logoH);
-        g.DrawImage(m_logoImage.get(), destRect, 0, 0, origImgW, origImgH, Gdiplus::UnitPixel);
+        g.DrawImage(m_logoImage.get(), logoX, logoY, logoW, logoH);
     }
 
     // 2. 標題文字: "感謝協助測試EFD" (純白 #FFFFFF, 響應式字體大小, 純文字無前綴符號)
