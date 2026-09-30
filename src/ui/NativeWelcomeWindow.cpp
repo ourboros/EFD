@@ -166,7 +166,45 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
             utf8ToWide(t.lifecycleSummary)
         );
 
-        // 控制台持續輸出最新眼動與疲勞遙測數據 (每 15 幀或閉眼時輸出)
+        // 在一開始 (歡迎、預覽說明、倒數、校準階段) 持續鎖定並學習使用者的初始坐姿偏向位置
+        if (t.detection.hasFace && t.presenceDiagnostic.trackedCx > 0.0f) {
+            float curCx = t.presenceDiagnostic.trackedCx;
+            float curCy = t.presenceDiagnostic.trackedCy;
+            if (!this->m_userPositionBiasDetected) {
+                this->m_calibratedUserBiasX = curCx;
+                this->m_calibratedUserBiasY = curCy;
+                this->m_userPositionBiasDetected = true;
+            } else {
+                this->m_calibratedUserBiasX = this->m_calibratedUserBiasX * 0.85f + curCx * 0.15f;
+                this->m_calibratedUserBiasY = this->m_calibratedUserBiasY * 0.85f + curCy * 0.15f;
+            }
+            this->m_engine.getFaceLandmarker().calibrateUserPositionBias(this->m_calibratedUserBiasX, this->m_calibratedUserBiasY);
+        }
+
+        // 初次測試階段 (歡迎、演示、倒數、校準完成前) 先不進行疲勞判定與離座警告，僅專注學習初始偏向位置
+        if (this->m_currentStage != UIStage::MainDashboard) {
+            int count = ++s_telemetryLogCount;
+            if (count % 30 == 0) {
+                if (this->m_userPositionBiasDetected) {
+                    std::cout << "[初始位置學習] 影格: " << std::setw(5) << t.totalFramesProcessed
+                              << " | 成功捕捉使用者視野自然偏向位置: (" 
+                              << std::fixed << std::setprecision(1) << this->m_calibratedUserBiasX << ", " 
+                              << this->m_calibratedUserBiasY << ") | 初始測試階段暫停疲勞計算\n";
+                } else {
+                    std::cout << "[初始位置學習] 影格: " << std::setw(5) << t.totalFramesProcessed
+                              << " | 正在偵測鏡頭前使用者坐姿偏向位置... (暫停疲勞計算)\n";
+                }
+            }
+
+            if (this->m_hwnd && (this->m_currentStage == UIStage::CalibrationInstruction || 
+                                 this->m_currentStage == UIStage::ActiveCalibration ||
+                                 this->m_currentStage == UIStage::SettingsPanel)) {
+                InvalidateRect(this->m_hwnd, NULL, FALSE);
+            }
+            return;
+        }
+
+        // 控制台持續輸出最新眼動與疲勞遙測數據 (進入主儀表板後，每 15 幀或閉眼時輸出)
         int count = ++s_telemetryLogCount;
         if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
             bool isPresent = (t.detection.hasFace && t.systemState.userPresent);
@@ -197,7 +235,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
                 }
 
                 std::cout << " | 【在場依據: 膚色點數 " << t.presenceDiagnostic.skinPixels << ">=" << t.presenceDiagnostic.minSkinRequired
-                          << ", 對稱度 " << std::fixed << std::setprecision(2) << t.presenceDiagnostic.symmetryRatio << ">=0.12"
+                          << ", 對稱度 " << std::fixed << std::setprecision(2) << t.presenceDiagnostic.symmetryRatio << ">=0.06"
                           << ", 輪廓比例 " << std::setprecision(2) << t.presenceDiagnostic.aspectRatio << "】";
 
                 std::cout << " | 【疲勞依據: EAR=" << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
@@ -1498,7 +1536,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         std::wstring diagLine2;
         if (isPresent) {
             wchar_t presBuf[192];
-            swprintf_s(presBuf, 192, L"【在場依據】: 膚色點數 %d>=%d, 對稱度 %.2f>=0.12, 輪廓比例 %.2f, 雙眼垂直對比驗證通過",
+            swprintf_s(presBuf, 192, L"【在場依據】: 膚色點數 %d>=%d, 對稱度 %.2f>=0.06, 輪廓比例 %.2f, 雙眼垂直對比驗證通過",
                        m_latestTelemetry.presenceDiagnostic.skinPixels,
                        m_latestTelemetry.presenceDiagnostic.minSkinRequired,
                        static_cast<double>(m_latestTelemetry.presenceDiagnostic.symmetryRatio),

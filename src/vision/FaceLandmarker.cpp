@@ -68,17 +68,16 @@ std::vector<Point3D> FaceLandmarker::generateCanonicalFaceMesh(int frameWidth, i
 
 namespace {
 
-// 嚴格膚色色彩模型 (Kovac / Peer Rule + YCbCr 雙重約束)
+// 膚色與人體特徵色彩模型 (YCbCr + RGB 寬容約束，支援多種光照條件與偏向視角)
 inline bool isStrictSkinPixel(uint8_t r, uint8_t g, uint8_t b) {
     // 1. 基本色彩範圍與 RGB 比例約束
-    if (r <= 65 || g <= 35 || b <= 20) return false;
-    if (r <= g || r <= b) return false;
-    if (r - g < 12) return false;
+    if (r <= 50 || g <= 30 || b <= 20) return false;
+    if (r <= g) return false;
     int maxVal = std::max({r, g, b});
     int minVal = std::min({r, g, b});
-    if (maxVal - minVal < 14) return false;
+    if (maxVal - minVal < 10) return false;
 
-    // 2. YCbCr 經典膚色色度模型 (排除木質家具、黃色燈光與反光牆壁)
+    // 2. YCbCr 經典膚色色度模型 (支援暖光、冷光與自然漫射光，排除家具雜訊)
     float rf = static_cast<float>(r);
     float gf = static_cast<float>(g);
     float bf = static_cast<float>(b);
@@ -86,7 +85,7 @@ inline bool isStrictSkinPixel(uint8_t r, uint8_t g, uint8_t b) {
     float cb = 128.0f - 0.1687f * rf - 0.3313f * gf + 0.5000f * bf;
     float cr = 128.0f + 0.5000f * rf - 0.4187f * gf - 0.0813f * bf;
 
-    return (y >= 40.0f && y <= 245.0f && cb >= 77.0f && cb <= 130.0f && cr >= 132.0f && cr <= 175.0f);
+    return (y >= 30.0f && y <= 250.0f && cb >= 75.0f && cb <= 135.0f && cr >= 130.0f && cr <= 180.0f);
 }
 
 inline bool isSkinPixel(uint8_t c0, uint8_t c1, uint8_t c2, PixelFormat format) {
@@ -135,7 +134,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
     if (isRealCamera) {
         // ---------------------------------------------------------------------
-        // 階段一：人體與人臉特徵高精度掃描 (排除木質家具背景、黃光反射)
+        // 階段一：人體與人臉特徵高精度掃描 (全視野動態覆蓋)
         // ---------------------------------------------------------------------
         int step = (width > 640) ? 4 : 2;
         int skinPixels = 0;
@@ -171,32 +170,32 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         float fillDensity = (boxSampleArea > 0) ? (static_cast<float>(skinPixels) / boxSampleArea) : 0.0f;
         float aspectRatio = (boxW > 0) ? (static_cast<float>(boxH) / static_cast<float>(boxW)) : 0.0f;
 
-        // 嚴格特徵門檻 (排除散落家具背景反光，確保真人入鏡)
+        // 合理特徵門檻：既能過濾微小光影噪訊，又能敏銳捕捉任意坐姿與偏向角的使用者
         int totalSamples = (width / step) * (height / step);
-        int minSkinRequired = std::max(220, static_cast<int>(totalSamples * 0.0035f));
+        int minSkinRequired = std::max(70, static_cast<int>(totalSamples * 0.0012f));
 
         diag.skinPixels = skinPixels;
         diag.minSkinRequired = minSkinRequired;
         diag.fillDensity = fillDensity;
         diag.aspectRatio = aspectRatio;
 
-        // 在場人體特徵幾何檢驗
+        // 在場人體特徵幾何檢驗 (支援視野內邊緣位置、偏角與不同體態)
         if (skinPixels < minSkinRequired) {
             diag.unconfirmedReason = "鏡頭前未偵測到真人臉部膚色特徵 (使用者離座 / 採樣點 " + std::to_string(skinPixels) + " < " + std::to_string(minSkinRequired) + ")";
-        } else if (boxW < static_cast<int>(width * 0.08f) || boxH < static_cast<int>(height * 0.10f)) {
+        } else if (boxW < static_cast<int>(width * 0.04f) || boxH < static_cast<int>(height * 0.05f)) {
             diag.unconfirmedReason = "目標特徵區域過小，非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
-        } else if (aspectRatio < 0.55f || aspectRatio > 2.80f) {
+        } else if (aspectRatio < 0.35f || aspectRatio > 3.80f) {
             diag.unconfirmedReason = "長寬比例不符合人臉頭部輪廓 (比例: " + std::to_string(aspectRatio) + ")";
-        } else if (fillDensity < 0.08f) {
+        } else if (fillDensity < 0.03f) {
             diag.unconfirmedReason = "特徵分佈散亂，非連續臉部實體 (填充率: " + std::to_string(fillDensity) + ")";
         } else {
             detectedFaceCx = static_cast<float>(skinSumX) / skinPixels;
             detectedFaceCy = static_cast<float>(skinSumY) / skinPixels;
             detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, boxH)) * 0.88f,
-                                           static_cast<float>(std::min(width, height)) * 0.18f,
-                                           static_cast<float>(std::min(width, height)) * 0.95f);
+                                           static_cast<float>(std::min(width, height)) * 0.15f,
+                                           static_cast<float>(std::min(width, height)) * 0.98f);
 
-            // 雙重確認：檢驗眼部/眉毛區域垂直梯度對比 (杜絕將木質家具或牆面誤認為真人)
+            // 雙重確認：檢驗眼部/眉毛區域垂直梯度對比 (排除純平滑牆壁或木板反光)
             float eyeDist = detectedFaceScale * 0.28f;
             float eyeYOffset = detectedFaceScale * 0.10f;
             int eyeCenterY = static_cast<int>(detectedFaceCy - eyeYOffset);
@@ -228,7 +227,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             }
 
             float avgEyeGrad = (eyeGradCount > 0) ? (totalEyeGrad / eyeGradCount) : 0.0f;
-            if (avgEyeGrad < 3.2f) {
+            if (avgEyeGrad < 1.2f) {
                 diag.unconfirmedReason = "候選區域缺乏人臉眼部對比度 (判定為靜態背景家具非真人)";
             } else {
                 personInFrame = true;
@@ -262,14 +261,17 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             symmetryRatio = (maxSide > 0) ? (static_cast<float>(minSide) / maxSide) : 0.0f;
             diag.symmetryRatio = symmetryRatio;
 
-            float midBoxX = static_cast<float>(minSkinX + maxSkinX) * 0.5f;
-            bool centerAligned = std::abs(detectedFaceCx - midBoxX) < (static_cast<float>(boxW) * 0.65f);
-
-            // 正對鏡頭判定：容許微幅轉頭 (symmetryRatio >= 0.12)
-            if (symmetryRatio >= 0.12f && centerAligned) {
+            // 只要偵測到人臉並大致朝向鏡頭 (允許偏轉、偏坐或單側光照)
+            if (symmetryRatio >= 0.06f) {
                 facingCamera = true;
             } else {
-                diag.unconfirmedReason = "臉部未正視鏡頭或偏轉角度過大 (對稱度: " + std::to_string(symmetryRatio) + ")";
+                // 若位於畫面極邊緣，單側裁切屬正常現象，依然予以確認在場
+                bool nearBorder = (detectedFaceCx < width * 0.20f || detectedFaceCx > width * 0.80f);
+                if (nearBorder && skinPixels >= minSkinRequired) {
+                    facingCamera = true;
+                } else {
+                    diag.unconfirmedReason = "臉部偏轉角度過大 (對稱度: " + std::to_string(symmetryRatio) + ")";
+                }
             }
         }
     } else {
@@ -284,7 +286,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         diag.boxX = (diag.frameWidth - diag.boxW) / 2;
         diag.boxY = (diag.frameHeight - diag.boxH) / 3;
         diag.skinPixels = personInFrame ? 450 : 0;
-        diag.minSkinRequired = 200;
+        diag.minSkinRequired = 70;
         diag.fillDensity = personInFrame ? 0.35f : 0.0f;
         diag.aspectRatio = 1.33f;
         diag.symmetryRatio = personInFrame ? 0.95f : 0.0f;
@@ -298,7 +300,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
     // -------------------------------------------------------------------------
     // 階段三：動態平滑追隨跟蹤 (Smooth Dynamic Follow-Me Tracking)
-    // 方框隨使用者真實位置動態平滑移動，不強制鎖死在正中央！
+    // 方框隨使用者真實位置動態平滑移動，支援全畫面任意偏向位置追蹤！
     // -------------------------------------------------------------------------
     bool rawDetectionActive = (personInFrame && facingCamera);
     if (rawDetectionActive) {
@@ -311,8 +313,8 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             m_trackedScale = detectedFaceScale;
         } else {
             // 平滑動態跟隨使用者實際頭部位置移動
-            m_trackedCx = m_trackedCx * 0.65f + detectedFaceCx * 0.35f;
-            m_trackedCy = m_trackedCy * 0.65f + detectedFaceCy * 0.35f;
+            m_trackedCx = m_trackedCx * 0.60f + detectedFaceCx * 0.40f;
+            m_trackedCy = m_trackedCy * 0.60f + detectedFaceCy * 0.40f;
             m_trackedScale = m_trackedScale * 0.70f + detectedFaceScale * 0.30f;
         }
 
@@ -326,8 +328,8 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
     } else {
         m_consecutiveMissingFrames++;
         m_consecutiveFaceFrames = 0;
-        // 敏銳離座判定：連續 3 影格 (約 0.1 秒) 無訊號即刻確認離座，杜絕離座殘留！
-        if (m_consecutiveMissingFrames >= 3) {
+        // 允許 12 影格 (約 0.4 秒) 的短暫晃動或遮擋寬限期，避免一動就立刻判定離座
+        if (m_consecutiveMissingFrames >= 12) {
             m_isFaceConfirmed = false;
             m_trackedScale = 0.0f;
         }
