@@ -23,6 +23,7 @@ public:
         bool rawPersonInFrame = false;
         bool rawFacingCamera = false;
         bool isFaceConfirmed = false;
+        int stableCount = 0;
         int skinPixels = 0;
         int minSkinRequired = 0;
         float fillDensity = 0.0f;
@@ -34,7 +35,6 @@ public:
         int boxH = 0;
         int frameWidth = 640;
         int frameHeight = 480;
-        int stableCount = 0;
         std::string unconfirmedReason;
     };
 
