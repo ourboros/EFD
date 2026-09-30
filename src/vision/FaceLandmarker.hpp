@@ -23,6 +23,9 @@ public:
         bool rawPersonInFrame = false;
         bool rawFacingCamera = false;
         bool isFaceConfirmed = false;
+        bool isWithinCenterRegion = false;
+        bool isOutOfBounds = false;
+        int stableCount = 0;
         int skinPixels = 0;
         int minSkinRequired = 0;
         float fillDensity = 0.0f;
@@ -32,6 +35,10 @@ public:
         int boxY = 0;
         int boxW = 0;
         int boxH = 0;
+        int centerBoxX = 0;
+        int centerBoxY = 0;
+        int centerBoxW = 0;
+        int centerBoxH = 0;
         int frameWidth = 640;
         int frameHeight = 480;
         std::string unconfirmedReason;

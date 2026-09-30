@@ -68,17 +68,18 @@ std::vector<Point3D> FaceLandmarker::generateCanonicalFaceMesh(int frameWidth, i
 
 namespace {
 
-// 判斷單一色序是否符合膚色模型
+// 判斷單一色序是否符合膚色模型 (大範圍適應性色度模型，相容多種光線、膚色與距離)
 inline bool checkRgbSkin(uint8_t r, uint8_t g, uint8_t b) {
-    if (r <= 35 || g <= 20 || b <= 10) return false;
-    if (r < g - 5 || r < b - 5) return false;
+    if (r <= 30 || g <= 18 || b <= 10) return false;
+    // 人體膚色在紅光波段強度通常高於綠光與藍光，但放寬以包容冷色溫環境與暗處
+    if (r < g - 6 || r < b - 6) return false;
 
-    // YCbCr 經典膚色色度模型 (放寬邊界以適應各種室內光線與相機)
+    // YCbCr 經典膚色色度模型 (大範圍容差邊界)
     float y  =  0.299f * r + 0.587f * g + 0.114f * b;
     float cb = -0.1687f * r - 0.3313f * g + 0.500f * b + 128.0f;
     float cr =  0.500f * r - 0.4187f * g - 0.0813f * b + 128.0f;
 
-    return (y >= 20.0f && y <= 250.0f && cb >= 68.0f && cb <= 145.0f && cr >= 118.0f && cr <= 188.0f);
+    return (y >= 20.0f && y <= 250.0f && cb >= 70.0f && cb <= 145.0f && cr >= 120.0f && cr <= 186.0f);
 }
 
 // 多色彩空間膚色判斷 (同時校驗 RGB 與 BGR 兩種相機驅動可能輸出的排列順序)
@@ -118,12 +119,24 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
     FaceLandmarker::PresenceDiagnostic diag;
 
+    // 定義攝影機正中間的監控大範圍方框 (Center ROI Box: 中央 75% 寬度 x 80% 高度)
+    int cBoxW = static_cast<int>(width * 0.75f);
+    int cBoxH = static_cast<int>(height * 0.80f);
+    int cBoxX = (width - cBoxW) / 2;
+    int cBoxY = (height - cBoxH) / 2;
+    diag.centerBoxX = cBoxX;
+    diag.centerBoxY = cBoxY;
+    diag.centerBoxW = cBoxW;
+    diag.centerBoxH = cBoxH;
+    diag.frameWidth = width;
+    diag.frameHeight = height;
+
     bool isRealCamera = (pixelData != nullptr) && (width >= 64) && (height >= 64) && (!isSynthetic);
 
     if (isRealCamera) {
         // ---------------------------------------------------------------------
-        // 階段一：人體與人臉特徵掃描 (Human Body & Face Presence Verification)
-        // 採樣步長縮小至 2 (<=640) 或 4 (>640)，獲取精準人體像素空間分佈
+        // 階段一：大範圍人體特徵掃描 (Wide-range Feature Scanning)
+        // 採樣步長縮小至 2 (<=640) 或 4 (>640)，兼顧效能與靈敏度
         // ---------------------------------------------------------------------
         int step = (width > 640) ? 4 : 2;
         int skinPixels = 0;
@@ -159,43 +172,59 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         float fillDensity = (boxSampleArea > 0) ? (static_cast<float>(skinPixels) / boxSampleArea) : 0.0f;
         float aspectRatio = (boxW > 0) ? (static_cast<float>(boxH) / static_cast<float>(boxW)) : 0.0f;
 
-        // 動態最小特徵門檻 (全畫面取樣點數的 0.15% 或至少 12 點)
+        // 大範圍動態最小特徵門檻 (全畫面取樣點數的 0.15% 或至少 35 點，易於捕捉不同距離的使用者)
         int totalSamples = (width / step) * (height / step);
-        int minSkinRequired = std::max(12, static_cast<int>(totalSamples * 0.0015f));
+        int minSkinRequired = std::max(35, static_cast<int>(totalSamples * 0.0015f));
 
         diag.skinPixels = skinPixels;
         diag.minSkinRequired = minSkinRequired;
         diag.fillDensity = fillDensity;
         diag.aspectRatio = aspectRatio;
-        diag.frameWidth = width;
-        diag.frameHeight = height;
         diag.boxX = minSkinX;
         diag.boxY = minSkinY;
         diag.boxW = boxW;
         diag.boxH = boxH;
 
-        // 在場特徵驗證 (人臉/人體存在性)
+        // 1. 特徵充足性檢查 (若找不到相對應特徵，判定無人/離座)
         if (skinPixels < minSkinRequired) {
-            diag.unconfirmedReason = "鏡頭前無人體或膚色採樣點不足 (採樣點: " + std::to_string(skinPixels) + " < 門檻 " + std::to_string(minSkinRequired) + ")";
+            diag.unconfirmedReason = "鏡頭前找不到相對應的人體特徵 (特徵點消失 / 使用者離座)";
         } else if (boxW < static_cast<int>(width * 0.05f) || boxH < static_cast<int>(height * 0.05f)) {
-            diag.unconfirmedReason = "偵測目標尺寸過小，疑似非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
-        } else if (aspectRatio < 0.20f || aspectRatio > 4.80f) {
-            diag.unconfirmedReason = "人體幾何長寬比不符合人臉輪廓特徵 (長寬比: " + std::to_string(aspectRatio) + ")";
-        } else if (fillDensity < 0.02f) {
-            diag.unconfirmedReason = "像素點空間分佈零散，非連續人體輪廓 (填充率: " + std::to_string(fillDensity) + ")";
+            diag.unconfirmedReason = "偵測特徵尺寸過小，疑似非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
+        } else if (aspectRatio < 0.35f || aspectRatio > 3.60f) {
+            diag.unconfirmedReason = "特徵長寬比不符合人體輪廓 (長寬比: " + std::to_string(aspectRatio) + ")";
         } else {
             detectedFaceCx = static_cast<float>(skinSumX) / skinPixels;
             detectedFaceCy = static_cast<float>(skinSumY) / skinPixels;
 
-            // 質心視野校驗
-            if (detectedFaceCx > width * 0.02f && detectedFaceCx < width * 0.98f &&
-                detectedFaceCy > static_cast<float>(height) * 0.02f && detectedFaceCy < static_cast<float>(height) * 0.98f) {
-                personInFrame = true;
-                detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, boxH)) * 0.85f,
-                                               static_cast<float>(std::min(width, height)) * 0.15f,
-                                               static_cast<float>(std::min(width, height)) * 0.90f);
+            // 2. 邊界超出檢查 (Out-of-Bounds Check: 方框逐漸超出攝影機邊界時自動判定超出畫面)
+            bool touchingEdge = (minSkinX <= static_cast<int>(width * 0.02f) ||
+                                 maxSkinX >= static_cast<int>(width * 0.98f) ||
+                                 minSkinY <= static_cast<int>(height * 0.02f) ||
+                                 maxSkinY >= static_cast<int>(height * 0.98f));
+
+            bool centroidOutside = (detectedFaceCx < width * 0.06f || detectedFaceCx > width * 0.94f ||
+                                    detectedFaceCy < height * 0.06f || detectedFaceCy > height * 0.94f);
+
+            if (touchingEdge || centroidOutside) {
+                diag.isOutOfBounds = true;
+                diag.unconfirmedReason = "動態方框逐漸超出攝影機範圍外 (自動判定使用者超出畫面)";
             } else {
-                diag.unconfirmedReason = "人體質心偏離攝影機有效視野 (X:" + std::to_string(static_cast<int>(detectedFaceCx)) + ", Y:" + std::to_string(static_cast<int>(detectedFaceCy)) + ")";
+                diag.isOutOfBounds = false;
+
+                // 3. 正中間大範圍方框檢查 (使用者必須待在正中間的方框才會觸發提示)
+                bool insideCenterBox = (detectedFaceCx >= cBoxX && detectedFaceCx <= (cBoxX + cBoxW) &&
+                                        detectedFaceCy >= cBoxY && detectedFaceCy <= (cBoxY + cBoxH));
+                diag.isWithinCenterRegion = insideCenterBox;
+
+                if (!insideCenterBox) {
+                    diag.unconfirmedReason = "使用者未待在正中間方框內 (請將面部對準中央監控區域)";
+                } else {
+                    // 特徵充足 + 未超出攝影機畫面 + 位於正中間方框內 -> 通過在場人體驗證
+                    personInFrame = true;
+                    detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, boxH)) * 0.85f,
+                                                   static_cast<float>(std::min(width, height)) * 0.15f,
+                                                   static_cast<float>(std::min(width, height)) * 0.90f);
+                }
             }
         }
 
@@ -229,7 +258,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             float midBoxX = static_cast<float>(minSkinX + maxSkinX) * 0.5f;
             bool centerAligned = std::abs(detectedFaceCx - midBoxX) < (static_cast<float>(boxW) * 0.65f);
 
-            // 正對鏡頭判定：容許側臉與單側光照 (symmetryRatio >= 0.12)
+            // 正對鏡頭判定：大範圍容許側臉角度 (symmetryRatio >= 0.12)
             if (symmetryRatio >= 0.12f && centerAligned) {
                 facingCamera = true;
             } else {
@@ -247,6 +276,8 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         diag.boxH = static_cast<int>(diag.frameHeight * 0.48f);
         diag.boxX = (diag.frameWidth - diag.boxW) / 2;
         diag.boxY = (diag.frameHeight - diag.boxH) / 3;
+        diag.isWithinCenterRegion = personInFrame;
+        diag.isOutOfBounds = false;
         diag.skinPixels = personInFrame ? 350 : 0;
         diag.minSkinRequired = 20;
         diag.fillDensity = personInFrame ? 0.35f : 0.0f;
@@ -262,7 +293,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
     // -------------------------------------------------------------------------
     // 時間平滑遲滯過濾器 (Temporal Hysteresis Filter)
-    // 進入在場快速確認 (2 影格)，離座靈敏確認 (15 影格 = 0.5 秒連續無人即判定離座)
+    // 進入在場快速確認 (2 影格)，離座確認 (6 影格 = 0.2 秒無人體即離座清空方框)
     // -------------------------------------------------------------------------
     bool rawDetectionActive = (personInFrame && facingCamera);
     if (rawDetectionActive) {
@@ -277,13 +308,15 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
     } else {
         m_consecutiveMissingFrames++;
         m_consecutiveFaceFrames = 0;
-        // 15 影格 (約 0.5 秒) 連續無人體/正視訊號，即確認離座，解決離座後仍顯示在場數據的問題
-        if (m_consecutiveMissingFrames >= 15) {
+        // 6 影格 (約 0.2 秒) 無訊號即確認離座
+        if (m_consecutiveMissingFrames >= 6) {
             m_isFaceConfirmed = false;
+            m_lastKnownScale = 0.0f;
         }
     }
 
     diag.isFaceConfirmed = m_isFaceConfirmed;
+    diag.stableCount = m_consecutiveFaceFrames;
     if (m_isFaceConfirmed) {
         diag.unconfirmedReason = "";
         if (m_lastKnownScale > 0.0f && diag.frameWidth > 0 && diag.frameHeight > 0) {
@@ -296,6 +329,12 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             diag.boxW = std::min(fw, diag.frameWidth - diag.boxX);
             diag.boxH = std::min(fh, diag.frameHeight - diag.boxY);
         }
+    } else {
+        // 確認離座或超出畫面時，清空動態方框，防止畫面殘留舊座標
+        diag.boxX = 0;
+        diag.boxY = 0;
+        diag.boxW = 0;
+        diag.boxH = 0;
     }
     m_lastDiag = diag;
 
