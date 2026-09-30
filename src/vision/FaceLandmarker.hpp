@@ -23,7 +23,6 @@ public:
         bool rawPersonInFrame = false;
         bool rawFacingCamera = false;
         bool isFaceConfirmed = false;
-        int stableCount = 0;
         int skinPixels = 0;
         int minSkinRequired = 0;
         float fillDensity = 0.0f;

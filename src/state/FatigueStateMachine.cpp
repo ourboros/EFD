@@ -62,16 +62,13 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_currentLevel = FatigueLevel::UserAway;
             m_cooldownTimer = 0.0f;
             m_screeningTimer = 0.0f;
-        } else {
-            // 短暫離開鏡頭 (< 5 分鐘)：標記離座，但保留冷卻計時器防止誤觸發警報
-            m_currentLevel = FatigueLevel::UserAway;
         }
         return getState();
     }
 
     // 使用者在座 (人臉偵測成功)
     if (m_cooldownState == CooldownState::AwayPaused) {
-        // 使用者離座超過 5 分鐘後回座，重啟全新 20 分鐘監控追蹤
+        // 使用者回座，重啟正常追蹤
         m_cooldownState = CooldownState::NormalTracking;
         m_currentLevel = FatigueLevel::Relaxed;
         m_awayTimer = 0.0f;
@@ -80,23 +77,29 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
 
     m_lastScore = computeFatigueScore(perclos, blinkRate, complexityIndex);
 
-    // 20/5/5 狀態機推進 (20分鐘冷卻週期 / 5分鐘快篩間隔 / 5分鐘離座清零)
+    // 20/5/5 狀態機推進 (使用者要求：放寬嚴重疲勞範圍，降低至 65.0 分)
     switch (m_cooldownState) {
     case CooldownState::NormalTracking:
         if (m_lastScore >= 65.0f) {
-            // 首次觸發嚴重疲勞警告：啟動 20 分鐘防打擾冷卻週期與 5 分鐘快篩間隔
+            // 直接進入紅色危險狀態 (嚴重疲勞警告：門檻放寬至 65.0 分)
             m_currentLevel = FatigueLevel::SevereWarning;
             m_cooldownState = CooldownState::InCooldown;
-            m_cooldownTimer = static_cast<float>(m_cooldownDuration);      // 1200 秒 (20 分鐘)
-            m_screeningTimer = static_cast<float>(m_screeningInterval);    // 300 秒 (5 分鐘)
+            m_cooldownTimer = static_cast<float>(m_cooldownDuration);
+            m_screeningTimer = static_cast<float>(m_screeningInterval);
 
-            // 僅發送一次警告通知
             if (m_alertCallback) {
                 m_alertCallback(m_currentLevel, m_lastScore, "你的眼睛處於疲勞狀態，請適當休息");
             }
         } else if (m_lastScore >= 45.0f) {
             // 觸發初級提醒 (黃色注意：45.0 ~ 64.9 分)
             m_currentLevel = FatigueLevel::Attention;
+            m_cooldownState = CooldownState::InCooldown;
+            m_cooldownTimer = static_cast<float>(m_cooldownDuration);
+            m_screeningTimer = static_cast<float>(m_screeningInterval);
+
+            if (m_alertCallback) {
+                m_alertCallback(m_currentLevel, m_lastScore, "偵測到用眼疲勞，建議休息或遠眺放鬆。");
+            }
         } else {
             m_currentLevel = FatigueLevel::Relaxed;
         }
@@ -106,19 +109,16 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
         m_cooldownTimer -= deltaSeconds;
         m_screeningTimer -= deltaSeconds;
 
-        // 冷卻期中嚴禁重複發送警報通知，保持安靜防打擾
         if (m_screeningTimer <= 0.0f) {
-            // 每 5 分鐘快篩間隔到達，進入 5 秒短暫快篩期
+            // 進入 5 分鐘快篩期
             m_cooldownState = CooldownState::FastScreening;
-            m_screeningTimer = 5.0f;
+            m_screeningTimer = 30.0f; // 進行 30 秒快篩
         }
 
         if (m_cooldownTimer <= 0.0f) {
             // 20 分鐘冷卻期滿，重回正常追蹤
             m_cooldownState = CooldownState::NormalTracking;
-            m_currentLevel = (m_lastScore >= 45.0f) ? FatigueLevel::Attention : FatigueLevel::Relaxed;
-            m_cooldownTimer = 0.0f;
-            m_screeningTimer = 0.0f;
+            m_currentLevel = FatigueLevel::Relaxed;
         }
         break;
 
@@ -127,27 +127,22 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
         m_screeningTimer -= deltaSeconds;
 
         if (m_lastScore >= 65.0f) {
-            // 快篩時疲勞仍未緩解：僅發送一次升級提醒，並立即重設 5 分鐘快篩計時回到 InCooldown
+            // 疲勞持續加劇，警報升級至紅色危險狀態 (門檻 65.0)
             m_currentLevel = FatigueLevel::SevereWarning;
             if (m_alertCallback) {
-                m_alertCallback(m_currentLevel, m_lastScore, "疲勞持續未緩解，建議適度休息放鬆");
+                m_alertCallback(m_currentLevel, m_lastScore, "你的眼睛處於疲勞狀態，請適當休息");
             }
+        }
+
+        if (m_screeningTimer <= 0.0f) {
+            // 快篩結束，回到冷卻計時
             m_cooldownState = CooldownState::InCooldown;
             m_screeningTimer = static_cast<float>(m_screeningInterval);
-        } else if (m_screeningTimer <= 0.0f) {
-            // 快篩結束，疲勞已有所緩解，回到冷卻計時
-            m_cooldownState = CooldownState::InCooldown;
-            m_screeningTimer = static_cast<float>(m_screeningInterval);
-            if (m_lastScore < 45.0f) {
-                m_currentLevel = FatigueLevel::Relaxed;
-            }
         }
 
         if (m_cooldownTimer <= 0.0f) {
             m_cooldownState = CooldownState::NormalTracking;
-            m_currentLevel = (m_lastScore >= 45.0f) ? FatigueLevel::Attention : FatigueLevel::Relaxed;
-            m_cooldownTimer = 0.0f;
-            m_screeningTimer = 0.0f;
+            m_currentLevel = FatigueLevel::Relaxed;
         }
         break;
 
