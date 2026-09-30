@@ -81,6 +81,7 @@ public:
     AdaptiveBaseline& getAdaptiveBaseline() { return m_baseline; }
     FeatureExtractor& getFeatureExtractor() { return m_extractor; }
     CameraService& getCameraService() { return *m_camera; }
+    FaceLandmarker& getFaceLandmarker() { return *m_landmarker; }
     DatabaseService& getDatabaseService() { return m_database; }
     StudyWorkflowTracker& getStudyTracker() { return m_studyTracker; }
     NetworkSyncWorker& getSyncWorker() { return m_syncWorker; }

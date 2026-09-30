@@ -79,6 +79,10 @@ private:
     // 動畫與時間計算
     float m_animTimeSec = 0.0f;
     float m_stageTimeSec = 0.0f;
+    std::chrono::steady_clock::time_point m_lastAlertNotificationTime{};
+    float m_calibratedUserBiasX = 0.0f;
+    float m_calibratedUserBiasY = 0.0f;
+    bool m_userPositionBiasDetected = false;
 
     // 階段 2 預覽演示動畫座標
     float m_demoDotX = 0.5f;

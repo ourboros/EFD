@@ -170,38 +170,47 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
         int count = ++s_telemetryLogCount;
         if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
             bool isPresent = (t.detection.hasFace && t.systemState.userPresent);
-            const char* presStr = isPresent ? "是 (正視)" : "否 (離座 / 超出視野)";
-            
-            const char* levelStr = "清醒放鬆 (Relaxed)";
-            if (t.systemState.cooldownState == CooldownState::InCooldown) levelStr = "冷卻防打擾中";
-            else if (t.systemState.fatigueLevel == FatigueLevel::Attention) levelStr = "注意力提醒 (Attention)";
-            else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) levelStr = "嚴重疲勞警告 (SevereWarning)";
-            else if (t.systemState.fatigueLevel == FatigueLevel::UserAway) levelStr = "使用者離座 (UserAway)";
+            bool inCooldown = (t.systemState.cooldownState == CooldownState::InCooldown);
+            int cdRemaining = t.systemState.cooldownRemainingSeconds;
+            int cdMins = cdRemaining / 60;
+            int cdSecs = cdRemaining % 60;
 
-            std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed
-                      << " | 【是否在場: " << presStr << "】"
-                      << " | 【正中間方框: " << (t.presenceDiagnostic.isWithinCenterRegion ? "在框內" : "超出中央") << "】"
-                      << " | 【動態追蹤方框: (" << t.presenceDiagnostic.boxX << "," << t.presenceDiagnostic.boxY << "," 
-                      << t.presenceDiagnostic.boxW << "x" << t.presenceDiagnostic.boxH << ")】"
-                      << " | 【邊界超出: " << (t.presenceDiagnostic.isOutOfBounds ? "是 (超出畫面)" : "否") << "】"
-                      << " | 【是否疲勞: " << levelStr << "】";
-
-            if (t.systemState.cooldownState == CooldownState::InCooldown) {
-                std::cout << " (冷卻中: " << t.systemState.cooldownRemainingSeconds << "s)";
-            }
-
+            std::cout << "[即時眼動數據] 影格: " << std::setw(5) << t.totalFramesProcessed;
             if (!isPresent) {
                 std::string reason = t.presenceDiagnostic.unconfirmedReason.empty() 
                     ? "未在視野內偵測到穩定人體/面部特徵" 
                     : t.presenceDiagnostic.unconfirmedReason;
-                std::cout << " | 【離座原因: " << reason << "】 (暫停疲勞計算)\n";
+                std::cout << " | 【是否在場: 否 (離座中)】"
+                          << " | 【在場依據: " << reason << "】"
+                          << " | 【疲勞依據: 暫停特徵計算 (離座防誤報)】\n";
             } else {
-                std::cout << " | 【數值: EAR=" << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
+                std::cout << " | 【是否在場: 是 (動態跟隨)】";
+
+                if (inCooldown) {
+                    std::cout << " | 【是否疲勞: 20/5/5 冷卻暫停提醒中 (剩餘 " << cdMins << "分" << std::setw(2) << std::setfill('0') << cdSecs << "秒)】" << std::setfill(' ');
+                } else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning || t.systemState.currentFatigueScore >= 65.0f) {
+                    std::cout << " | 【是否疲勞: 是 (超標警報)】";
+                } else if (t.systemState.fatigueLevel == FatigueLevel::Attention) {
+                    std::cout << " | 【是否疲勞: 輕度 (注意力提醒)】";
+                } else {
+                    std::cout << " | 【是否疲勞: 否 (清醒放鬆)】";
+                }
+
+                std::cout << " | 【在場依據: 膚色點數 " << t.presenceDiagnostic.skinPixels << ">=" << t.presenceDiagnostic.minSkinRequired
+                          << ", 對稱度 " << std::fixed << std::setprecision(2) << t.presenceDiagnostic.symmetryRatio << ">=0.12"
+                          << ", 輪廓比例 " << std::setprecision(2) << t.presenceDiagnostic.aspectRatio << "】";
+
+                std::cout << " | 【疲勞依據: EAR=" << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
                           << (t.eyeMetrics.isEyeClosed ? " (閉眼)" : " (睜眼)")
-                          << ", PERCLOS=" << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
+                          << " (基準閾值 0.217), PERCLOS=" << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
                           << ", 眨眼=" << std::setprecision(1) << t.eyeMetrics.blinkRatePerMin << "次/分"
-                          << ", CI=" << std::setprecision(2) << t.complexityMetrics.complexityIndex
-                          << ", 分數=" << std::setprecision(1) << t.systemState.currentFatigueScore << "/65.0】\n";
+                          << ", MSE CI=" << std::setprecision(2) << t.complexityMetrics.complexityIndex
+                          << ", 疲勞分=" << std::setprecision(1) << t.systemState.currentFatigueScore << "/65.0"
+                          << ", 狀態: ";
+                if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) std::cout << "嚴重疲勞警告 (SevereWarning)";
+                else if (t.systemState.fatigueLevel == FatigueLevel::Attention) std::cout << "注意力提醒 (Attention)";
+                else std::cout << "清醒放鬆 (Relaxed)";
+                std::cout << "】\n";
             }
         }
 
@@ -214,20 +223,33 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
 
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
-        // 僅於使用者眼睛疲勞值超標時 (SevereWarning 或疲勞分數 >= 70.0) 跳出提醒
-        if (level == FatigueLevel::SevereWarning || score >= 70.0f) {
+        // 僅於主儀表板階段觸發警報，且疲勞分數達到嚴重警告門檻 (>= 65.0)
+        if (this->m_currentStage != UIStage::MainDashboard) {
+            return;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        auto elapsedSinceLastAlert = std::chrono::duration_cast<std::chrono::seconds>(now - this->m_lastAlertNotificationTime).count();
+
+        // 智能防打擾節流：若距離上次提醒未滿 300 秒 (5 分鐘) 則靜默，不重複彈窗騷擾
+        if (elapsedSinceLastAlert < 300 && this->m_lastAlertNotificationTime.time_since_epoch().count() > 0) {
+            return;
+        }
+
+        if (level == FatigueLevel::SevereWarning || score >= 65.0f) {
+            this->m_lastAlertNotificationTime = now;
             std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
-                      << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 <<<\n\n";
+                      << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 (已啟動 20/5/5 靜默防打擾冷卻機制) <<<\n\n";
 
             std::ostringstream oss;
-            oss << "疲勞指數 " << std::fixed << std::setprecision(1) << score << " - 你的眼睛處於疲勞狀態，請適當休息";
+            oss << "疲勞指數 " << std::fixed << std::setprecision(1) << score << " - 你的眼睛處於疲勞狀態，請適當休息 (已進入 20 分鐘暫停提醒冷卻保護)";
             this->m_dashboardMessage = oss.str();
             
             // 發送 Windows 原生氣泡/Toast 警報通知 (純文字無符號表情)
             if (this->m_soundAlertEnabled) {
                 this->m_trayManager.showBalloonNotification(
                     L"你的眼睛處於疲勞狀態，請適當休息",
-                    L"你的眼睛處於疲勞狀態，請適當休息",
+                    L"系統已記錄疲勞狀態，並進入 20 分鐘暫停提醒冷卻保護，避免重複打擾。",
                     level
                 );
             }
@@ -400,7 +422,16 @@ void NativeWelcomeWindow::onTimerTick() {
             m_targetDotY = p0.y + (p1.y - p0.y) * smoothT;
             m_calibrationProgress = std::clamp(m_stageTimeSec / totalDuration, 0.0f, 1.0f);
         } else {
-            // 採樣完成，校準基準並進入階段 5 (測驗完成提示)
+            // 採樣完成，鎖定學習使用者視野自然偏向位置，校準基準並進入階段 5 (測驗完成提示)
+            if (m_latestTelemetry.detection.hasFace && m_latestTelemetry.presenceDiagnostic.trackedCx > 0.0f) {
+                m_calibratedUserBiasX = m_latestTelemetry.presenceDiagnostic.trackedCx;
+                m_calibratedUserBiasY = m_latestTelemetry.presenceDiagnostic.trackedCy;
+                m_userPositionBiasDetected = true;
+                m_engine.getFaceLandmarker().calibrateUserPositionBias(m_calibratedUserBiasX, m_calibratedUserBiasY);
+                std::cout << "[視覺校準] 成功學習並鎖定使用者視野自然偏向位置: (" 
+                          << std::fixed << std::setprecision(1) << m_calibratedUserBiasX << ", " 
+                          << m_calibratedUserBiasY << ")\n";
+            }
             m_engine.calibrate(3.0f);
             setStage(UIStage::CalibrationResult);
         }
@@ -1195,9 +1226,6 @@ void NativeWelcomeWindow::drawCalibrationResult(Gdiplus::Graphics& g, int w, int
 // -----------------------------------------------------------------------------
 // 階段 6：即時疲勞監控中心 (即時跳動數據 + 相機硬體狀態條 + 4 功能按鈕)
 // -----------------------------------------------------------------------------
-// -----------------------------------------------------------------------------
-// 階段 6：即時疲勞監控中心 (含攝影機即時視野 Viewfinder、正中間監控方框、動態追蹤方框、判定依據與 4 指標卡片)
-// -----------------------------------------------------------------------------
 void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) {
     // 深黑背景 (#25291C)
     Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 37, 41, 28));
@@ -1246,7 +1274,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     int cdMins = cdRemaining / 60;
     int cdSecs = cdRemaining % 60;
 
-    std::wstring presenceStr = isPresent ? L"是 (正視中)" : L"否 (離座 / 超出視野)";
+    std::wstring presenceStr = isPresent ? L"是 (動態跟隨中)" : L"否 (離座中 / 未在視野)";
     std::wstring fatigueStr;
     Gdiplus::Color fatiguePillColor;
     if (!isPresent) {
@@ -1267,6 +1295,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         fatigueStr = L"否 (清醒放鬆)";
         fatiguePillColor = Gdiplus::Color(220, 30, 177, 138);
     }
+
     Gdiplus::Color statusColor = Gdiplus::Color(255, 30, 177, 138); // 正常綠
     const wchar_t* statusText = L"生理狀態：正常清醒 (Relaxed)";
     wchar_t statusBuf[128];
@@ -1276,7 +1305,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         statusText = L"生理狀態：未偵測到人臉 / 離座中 (暫停計算)";
     } else if (inCooldown) {
         statusColor = Gdiplus::Color(255, 60, 115, 145); // 舒緩冷卻藍
-        swprintf_s(statusBuf, 128, L"生理狀態：疲勞提醒冷卻中 (%d分%02d秒) - 暫停重複提醒", cdMins, cdSecs);
+        swprintf_s(statusBuf, 128, L"生理狀態：疲勞提醒冷卻中 (%d分%02d秒) - 20/5/5 智能靜默暫停提醒", cdMins, cdSecs);
         statusText = statusBuf;
     } else if (level == FatigueLevel::Attention) {
         statusColor = Gdiplus::Color(255, 247, 227, 175); // 注意黃
@@ -1353,66 +1382,16 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         float sy = static_cast<float>(viewH - 8) / fh;
 
         // -------------------------------------------------------------------------
-        // B1. 正中間的監控大範圍方框 (Central Monitoring Box / Center Anchor)
-        // 使用者必須待在此中央方框內才會觸發提示
-        // -------------------------------------------------------------------------
-        int cbX = m_latestTelemetry.presenceDiagnostic.centerBoxX;
-        int cbY = m_latestTelemetry.presenceDiagnostic.centerBoxY;
-        int cbW = m_latestTelemetry.presenceDiagnostic.centerBoxW;
-        int cbH = m_latestTelemetry.presenceDiagnostic.centerBoxH;
-        if (cbW <= 0 || cbH <= 0) {
-            cbW = static_cast<int>(fw * 0.75f);
-            cbH = static_cast<int>(fh * 0.80f);
-            cbX = (fw - cbW) / 2;
-            cbY = (fh - cbH) / 2;
-        }
-
-        int drawCbX = leftX + 4 + static_cast<int>(cbX * sx);
-        int drawCbY = viewY + 4 + static_cast<int>(cbY * sy);
-        int drawCbW = static_cast<int>(cbW * sx);
-        int drawCbH = static_cast<int>(cbH * sy);
-
-        // 繪製半透明卡其金/薄荷綠導引虛線方框
-        Gdiplus::Pen centerBoxPen(Gdiplus::Color(140, 247, 227, 175), 1.5f);
-        centerBoxPen.SetDashStyle(Gdiplus::DashStyleDash);
-        g.DrawRectangle(&centerBoxPen, drawCbX, drawCbY, drawCbW, drawCbH);
-
-        // 正中間方框四角科技瞄準標記 (Center Box Corner Brackets)
-        Gdiplus::Pen cCornerPen(Gdiplus::Color(220, 247, 227, 175), 2.0f);
-        int cbCornerLen = 16;
-        g.DrawLine(&cCornerPen, drawCbX, drawCbY, drawCbX + cbCornerLen, drawCbY);
-        g.DrawLine(&cCornerPen, drawCbX, drawCbY, drawCbX, drawCbY + cbCornerLen);
-        g.DrawLine(&cCornerPen, drawCbX + drawCbW, drawCbY, drawCbX + drawCbW - cbCornerLen, drawCbY);
-        g.DrawLine(&cCornerPen, drawCbX + drawCbW, drawCbY, drawCbX + drawCbW, drawCbY + cbCornerLen);
-        g.DrawLine(&cCornerPen, drawCbX, drawCbY + drawCbH, drawCbX + cbCornerLen, drawCbY + drawCbH);
-        g.DrawLine(&cCornerPen, drawCbX, drawCbY + drawCbH, drawCbX, drawCbY + drawCbH - cbCornerLen);
-        g.DrawLine(&cCornerPen, drawCbX + drawCbW, drawCbY + drawCbH, drawCbX + drawCbW - cbCornerLen, drawCbY + drawCbH);
-        g.DrawLine(&cCornerPen, drawCbX + drawCbW, drawCbY + drawCbH, drawCbX + drawCbW, drawCbY + drawCbH - cbCornerLen);
-
-        // 正中間方框標籤
-        Gdiplus::SolidBrush centerTagBg(Gdiplus::Color(160, 45, 52, 35));
-        int cTagW = 160;
-        int cTagH = 18;
-        int cTagX = drawCbX + (drawCbW - cTagW) / 2;
-        int cTagY = drawCbY + 4;
-        drawRoundedButton(g, cTagX, cTagY, cTagW, cTagH, 6, &centerTagBg);
-        Gdiplus::Font cTagFont(&fontFamily, 9, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-        Gdiplus::SolidBrush goldBrush(Gdiplus::Color(255, 247, 227, 175));
-        Gdiplus::RectF cTagRect(static_cast<float>(cTagX), static_cast<float>(cTagY), static_cast<float>(cTagW), static_cast<float>(cTagH));
-        g.DrawString(L"正中間監控區域 (大範圍)", -1, &cTagFont, cTagRect, &centerFormat, &goldBrush);
-
-        // -------------------------------------------------------------------------
-        // B2. 隨使用者位置移動的動態方形框 (Dynamic User Bounding Box)
+        // B. 動態平滑追蹤方形框 (Follow-Me Dynamic User Bounding Box)
+        // 隨使用者真實位置動態平滑追蹤，不鎖定在正中間！
         // -------------------------------------------------------------------------
         int bx = m_latestTelemetry.presenceDiagnostic.boxX;
         int by = m_latestTelemetry.presenceDiagnostic.boxY;
         int bw = m_latestTelemetry.presenceDiagnostic.boxW;
         int bh = m_latestTelemetry.presenceDiagnostic.boxH;
-        bool isOutOfBounds = m_latestTelemetry.presenceDiagnostic.isOutOfBounds;
-        bool inCenter = m_latestTelemetry.presenceDiagnostic.isWithinCenterRegion;
 
         if (isPresent && bw > 0 && bh > 0) {
-            // 使用者在場且位於中央框內：高亮翡翠綠實線框
+            // 使用者在場：高亮翡翠綠動態追隨方框
             int drawBoxX = leftX + 4 + static_cast<int>(bx * sx);
             int drawBoxY = viewY + 4 + static_cast<int>(by * sy);
             int drawBoxW = static_cast<int>(bw * sx);
@@ -1441,55 +1420,15 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
             // 方形框上方標籤
             Gdiplus::SolidBrush tagBg(Gdiplus::Color(220, 30, 177, 138));
             int tagH = 18;
-            int tagW = 130;
+            int tagW = 140;
             int tagY = std::max(viewY + 6, drawBoxY - tagH - 2);
             drawRoundedButton(g, drawBoxX, tagY, tagW, tagH, 6, &tagBg);
             Gdiplus::Font tagFont(&fontFamily, 10, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
             Gdiplus::SolidBrush tagText(Gdiplus::Color(255, 255, 255, 255));
             Gdiplus::RectF tagRect(static_cast<float>(drawBoxX), static_cast<float>(tagY), static_cast<float>(tagW), static_cast<float>(tagH));
-            g.DrawString(L"使用者在場 (鎖定追蹤)", -1, &tagFont, tagRect, &centerFormat, &tagText);
-        } else if (bw > 0 && bh > 0 && isOutOfBounds) {
-            // 方框逐漸超出攝影機範圍：橘紅邊界警報框
-            int drawBoxX = leftX + 4 + static_cast<int>(bx * sx);
-            int drawBoxY = viewY + 4 + static_cast<int>(by * sy);
-            int drawBoxW = static_cast<int>(bw * sx);
-            int drawBoxH = static_cast<int>(bh * sy);
-
-            Gdiplus::Pen warnPen(Gdiplus::Color(230, 255, 110, 60), 2.0f);
-            warnPen.SetDashStyle(Gdiplus::DashStyleDash);
-            g.DrawRectangle(&warnPen, drawBoxX, drawBoxY, drawBoxW, drawBoxH);
-
-            Gdiplus::SolidBrush warnBg(Gdiplus::Color(220, 255, 110, 60));
-            int tagH = 18;
-            int tagW = 140;
-            int tagY = std::max(viewY + 6, drawBoxY - tagH - 2);
-            drawRoundedButton(g, drawBoxX, tagY, tagW, tagH, 6, &warnBg);
-            Gdiplus::Font tagFont(&fontFamily, 10, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush tagText(Gdiplus::Color(255, 255, 255, 255));
-            Gdiplus::RectF tagRect(static_cast<float>(drawBoxX), static_cast<float>(tagY), static_cast<float>(tagW), static_cast<float>(tagH));
-            g.DrawString(L"超出邊界 (Out of Frame)", -1, &tagFont, tagRect, &centerFormat, &tagText);
-        } else if (bw > 0 && bh > 0 && !inCenter) {
-            // 未在正中間方框內：黃色提醒框
-            int drawBoxX = leftX + 4 + static_cast<int>(bx * sx);
-            int drawBoxY = viewY + 4 + static_cast<int>(by * sy);
-            int drawBoxW = static_cast<int>(bw * sx);
-            int drawBoxH = static_cast<int>(bh * sy);
-
-            Gdiplus::Pen yellowPen(Gdiplus::Color(220, 247, 227, 175), 2.0f);
-            yellowPen.SetDashStyle(Gdiplus::DashStyleDash);
-            g.DrawRectangle(&yellowPen, drawBoxX, drawBoxY, drawBoxW, drawBoxH);
-
-            Gdiplus::SolidBrush warnBg(Gdiplus::Color(200, 210, 160, 50));
-            int tagH = 18;
-            int tagW = 150;
-            int tagY = std::max(viewY + 6, drawBoxY - tagH - 2);
-            drawRoundedButton(g, drawBoxX, tagY, tagW, tagH, 6, &warnBg);
-            Gdiplus::Font tagFont(&fontFamily, 10, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush tagText(Gdiplus::Color(255, 255, 255, 255));
-            Gdiplus::RectF tagRect(static_cast<float>(drawBoxX), static_cast<float>(tagY), static_cast<float>(tagW), static_cast<float>(tagH));
-            g.DrawString(L"請移回正中間方框內", -1, &tagFont, tagRect, &centerFormat, &tagText);
+            g.DrawString(L"使用者在場 (動態跟隨中)", -1, &tagFont, tagRect, &centerFormat, &tagText);
         } else {
-            // 離座狀態：正中間提示方框
+            // 離座狀態：視野中央提示方框
             Gdiplus::Pen redDashedPen(Gdiplus::Color(200, 235, 87, 87), 2.0f);
             redDashedPen.SetDashStyle(Gdiplus::DashStyleDash);
             int defW = leftW * 5 / 10;
@@ -1500,156 +1439,133 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
             Gdiplus::SolidBrush tagBg(Gdiplus::Color(200, 235, 87, 87));
             int tagH = 20;
-            int tagW = 140;
+            int tagW = 160;
             drawRoundedButton(g, defX + (defW - tagW) / 2, defY + (defH - tagH) / 2, tagW, tagH, 8, &tagBg);
             Gdiplus::Font tagFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
             Gdiplus::SolidBrush tagText(Gdiplus::Color(255, 255, 255, 255));
             Gdiplus::RectF tagRect(static_cast<float>(defX + (defW - tagW) / 2), static_cast<float>(defY + (defH - tagH) / 2), static_cast<float>(tagW), static_cast<float>(tagH));
-            g.DrawString(L"未在場 / 離座中", -1, &tagFont, tagRect, &centerFormat, &tagText);
+            g.DrawString(L"【未在場 / 離座中】 等待使用者", -1, &tagFont, tagRect, &centerFormat, &tagText);
         }
 
-        // -------------------------------------------------------------------------
-        // C. 視野畫面浮水印標籤 (HUD Status Badges)
-        // -------------------------------------------------------------------------
-        // 左上角標籤: 【是否在場】
-        {
-            int pBadgeW = 150;
-            int pBadgeH = 24;
-            int pBadgeX = leftX + 10;
-            int pBadgeY = viewY + 10;
-            Gdiplus::SolidBrush pBadgeBg(isPresent ? Gdiplus::Color(220, 30, 177, 138) : Gdiplus::Color(220, 235, 87, 87));
-            drawRoundedButton(g, pBadgeX, pBadgeY, pBadgeW, pBadgeH, 12, &pBadgeBg);
-            Gdiplus::Font bFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush bText(Gdiplus::Color(255, 255, 255, 255));
-            std::wstring bStr = L"是否在場: " + (isPresent ? std::wstring(L"是 (正視)") : std::wstring(L"否 (離座)"));
-            Gdiplus::RectF bRect(static_cast<float>(pBadgeX), static_cast<float>(pBadgeY), static_cast<float>(pBadgeW), static_cast<float>(pBadgeH));
-            g.DrawString(bStr.c_str(), -1, &bFont, bRect, &centerFormat, &bText);
-        }
-        // 右上角標籤: 【是否疲勞】
-        {
-            int fBadgeW = 150;
-            int fBadgeH = 24;
-            int fBadgeX = leftX + leftW - fBadgeW - 10;
-            int fBadgeY = viewY + 10;
-            Gdiplus::SolidBrush fBadgeBg(fatiguePillColor);
-            drawRoundedButton(g, fBadgeX, fBadgeY, fBadgeW, fBadgeH, 12, &fBadgeBg);
-            Gdiplus::Font bFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush bText(Gdiplus::Color(255, 255, 255, 255));
-            std::wstring fStr = L"是否疲勞: " + fatigueStr;
-            Gdiplus::RectF fRect(static_cast<float>(fBadgeX), static_cast<float>(fBadgeY), static_cast<float>(fBadgeW), static_cast<float>(fBadgeH));
-            g.DrawString(fStr.c_str(), -1, &bFont, fRect, &centerFormat, &bText);
-        }
+        // 視野左上角 HUD 狀態膠囊 (Presence Badge)
+        int badgeW = 120;
+        int badgeH = 22;
+        int badgeX = leftX + 12;
+        int badgeY = viewY + 12;
+        Gdiplus::SolidBrush badgeBg(isPresent ? Gdiplus::Color(220, 30, 177, 138) : Gdiplus::Color(220, 110, 120, 105));
+        drawRoundedButton(g, badgeX, badgeY, badgeW, badgeH, 10, &badgeBg);
+        Gdiplus::Font badgeFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush badgeText(Gdiplus::Color(255, 255, 255, 255));
+        Gdiplus::RectF badgeRect(static_cast<float>(badgeX), static_cast<float>(badgeY), static_cast<float>(badgeW), static_cast<float>(badgeH));
+        g.DrawString(isPresent ? L"在座正視" : L"離座等待", -1, &badgeFont, badgeRect, &centerFormat, &badgeText);
+
+        // 視野右上角 疲勞等級膠囊 (Fatigue Badge)
+        int fBadgeW = inCooldown ? 140 : 120;
+        int fBadgeH = 22;
+        int fBadgeX = leftX + leftW - fBadgeW - 12;
+        int fBadgeY = viewY + 12;
+        Gdiplus::SolidBrush fBadgeBg(fatiguePillColor);
+        drawRoundedButton(g, fBadgeX, fBadgeY, fBadgeW, fBadgeH, 10, &fBadgeBg);
+        Gdiplus::RectF fBadgeRect(static_cast<float>(fBadgeX), static_cast<float>(fBadgeY), static_cast<float>(fBadgeW), static_cast<float>(fBadgeH));
+        g.DrawString(fatigueStr.c_str(), -1, &badgeFont, fBadgeRect, &centerFormat, &badgeText);
 
         // -------------------------------------------------------------------------
-        // D. 判定依據字串卡片 (Diagnostic Rationale Card)
+        // C. 左欄下方：即時判斷依據與狀態日誌卡片 (Diagnostic Rationale Card)
         // -------------------------------------------------------------------------
-        int cardY = viewY + viewH + 10;
-        int cardH = h - cardY - 70;
-        Gdiplus::SolidBrush cardBg(Gdiplus::Color(255, 30, 36, 24));
-        Gdiplus::Pen cardBorder(Gdiplus::Color(160, 247, 227, 175), 1.0f);
-        drawRoundedButton(g, leftX, cardY, leftW, cardH, 16, &cardBg, &cardBorder);
+        int diagCardY = viewY + viewH + 10;
+        int diagCardH = h - 68 - diagCardY - 8;
+        Gdiplus::SolidBrush diagCardBg(Gdiplus::Color(255, 28, 32, 22));
+        Gdiplus::Pen diagCardBorder(Gdiplus::Color(160, 30, 177, 138), 1.0f);
+        drawRoundedButton(g, leftX, diagCardY, leftW, diagCardH, 14, &diagCardBg, &diagCardBorder);
 
-        // 卡片標題
-        Gdiplus::Font rTitleFont(&fontFamily, 13, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-        Gdiplus::RectF rTitleRect(static_cast<float>(leftX + 14), static_cast<float>(cardY + 8), static_cast<float>(leftW - 28), 20.0f);
-        g.DrawString(L"AI 視覺特徵即時判定依據 (Real-time Diagnostic Rationale)", -1, &rTitleFont, rTitleRect, &leftFormat, &goldBrush);
+        Gdiplus::Font dTitleFont(&fontFamily, 12, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush dTitleBrush(Gdiplus::Color(255, 247, 227, 175)); // 卡其金
+        Gdiplus::RectF dTitleRect(static_cast<float>(leftX + 14), static_cast<float>(diagCardY + 8), static_cast<float>(leftW - 28), 18.0f);
+        g.DrawString(L"即時判斷依據與狀態日誌 (Live Diagnostic Rationale)", -1, &dTitleFont, dTitleRect, &leftFormat, &dTitleBrush);
 
-        // 組合判定字串
-        wchar_t linePres[128];
-        wchar_t linePresWhy[256];
-        wchar_t lineFatigue[128];
-        wchar_t lineFatigueWhy[256];
-        wchar_t lineConclusion[128];
+        Gdiplus::Font dTextFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush dTextBrush(Gdiplus::Color(255, 220, 220, 220));
+        Gdiplus::SolidBrush cyanText(Gdiplus::Color(255, 150, 197, 247));
+        Gdiplus::SolidBrush redText(Gdiplus::Color(255, 235, 87, 87));
+        Gdiplus::SolidBrush greenText(Gdiplus::Color(255, 30, 220, 140));
 
+        // 診斷行 1: 是否在場
+        std::wstring diagLine1 = L"【是否在場】: " + presenceStr;
+        Gdiplus::RectF dRect1(static_cast<float>(leftX + 14), static_cast<float>(diagCardY + 30), static_cast<float>(leftW - 28), 18.0f);
+        g.DrawString(diagLine1.c_str(), -1, &dTextFont, dRect1, &leftFormat, isPresent ? &greenText : &redText);
+
+        // 診斷行 2: 在場依據
+        std::wstring diagLine2;
         if (isPresent) {
-            swprintf_s(linePres, 128, L"【是否在場】: 是 (正視中 - 雙眼特徵連續追蹤)");
-            swprintf_s(linePresWhy, 256, L"【在場依據】: 動態方框(%d,%d,%dx%d), 正中間方框內: 是, 採樣點 %d>=%d, 對稱度 %.2f",
-                       bx, by, bw, bh,
+            wchar_t presBuf[192];
+            swprintf_s(presBuf, 192, L"【在場依據】: 膚色點數 %d>=%d, 對稱度 %.2f>=0.12, 輪廓比例 %.2f, 雙眼垂直對比驗證通過",
                        m_latestTelemetry.presenceDiagnostic.skinPixels,
                        m_latestTelemetry.presenceDiagnostic.minSkinRequired,
-                       static_cast<double>(m_latestTelemetry.presenceDiagnostic.symmetryRatio));
-            
-            if (inCooldown) {
-                swprintf_s(lineFatigue, 128, L"【是否疲勞】: 暫停提醒 (20/5/5 防打擾冷卻中: %d分%02d秒)", cdMins, cdSecs);
-                swprintf_s(lineFatigueWhy, 256, L"【疲勞依據】: EAR=%.3f (%s), PERCLOS=%.1f%%, 進入冷卻暫停彈出警告",
-                           static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg),
-                           m_latestTelemetry.eyeMetrics.isEyeClosed ? L"閉眼" : L"睜眼",
-                           static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f));
-                swprintf_s(lineConclusion, 128, L"【狀態結論】: 冷卻計時剩餘 %d分%02d秒，避免反覆提醒打擾工作", cdMins, cdSecs);
-            } else {
-                swprintf_s(lineFatigue, 128, L"【是否疲勞】: %s", fatigueStr.c_str());
-                swprintf_s(lineFatigueWhy, 256, L"【疲勞依據】: EAR=%.3f (%s, 閾值 %.3f), PERCLOS=%.1f%%, 眨眼=%.1f次/分, CI=%.2f",
-                           static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg),
-                           m_latestTelemetry.eyeMetrics.isEyeClosed ? L"閉眼" : L"睜眼",
-                           static_cast<double>(m_latestTelemetry.currentThreshold),
-                           static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f),
-                           static_cast<double>(m_latestTelemetry.eyeMetrics.blinkRatePerMin),
-                           static_cast<double>(m_latestTelemetry.complexityMetrics.complexityIndex));
-                swprintf_s(lineConclusion, 128, L"【狀態結論】: 疲勞分數 %.1f/65.0 (警報線 65.0) | 生理指標正常運作中",
-                           static_cast<double>(m_latestTelemetry.systemState.currentFatigueScore));
-            }
+                       static_cast<double>(m_latestTelemetry.presenceDiagnostic.symmetryRatio),
+                       static_cast<double>(m_latestTelemetry.presenceDiagnostic.aspectRatio));
+            diagLine2 = presBuf;
         } else {
-            swprintf_s(linePres, 128, L"【是否在場】: 否 (離座 / 超出畫面範圍)");
             std::string reason = m_latestTelemetry.presenceDiagnostic.unconfirmedReason.empty()
-                ? "視野內未偵測到人體面部特徵"
+                ? "未在視野內偵測到穩定人體/面部特徵"
                 : m_latestTelemetry.presenceDiagnostic.unconfirmedReason;
-            std::wstring wReason = utf8ToWide(reason);
-            swprintf_s(linePresWhy, 256, L"【在場依據】: %s (邊界超出: %s, 正中間方框: %s)",
-                       wReason.c_str(),
-                       isOutOfBounds ? L"是" : L"否",
-                       inCenter ? L"在框內" : L"超出中央");
-            swprintf_s(lineFatigue, 128, L"【是否疲勞】: 暫停 (離座數據保護啟動)");
-            swprintf_s(lineFatigueWhy, 256, L"【疲勞依據】: 暫停特徵計算 (數據安全歸零保護，杜絕離座產生假疲勞警報)");
-            swprintf_s(lineConclusion, 128, L"【狀態結論】: 等待使用者返回正中間監控方框... (離座時不計入疲勞時長)");
+            diagLine2 = L"【在場依據】: " + utf8ToWide(reason);
         }
+        Gdiplus::RectF dRect2(static_cast<float>(leftX + 14), static_cast<float>(diagCardY + 50), static_cast<float>(leftW - 28), 18.0f);
+        g.DrawString(diagLine2.c_str(), -1, &dTextFont, dRect2, &leftFormat, &dTextBrush);
 
-        Gdiplus::Font rTextFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-        Gdiplus::SolidBrush whiteText(Gdiplus::Color(255, 230, 230, 230));
-        Gdiplus::SolidBrush greenText(Gdiplus::Color(255, 30, 220, 140));
-        Gdiplus::SolidBrush cyanText(Gdiplus::Color(255, 150, 197, 247));
-        Gdiplus::SolidBrush orangeText(Gdiplus::Color(255, 255, 140, 70));
+        // 診斷行 3: 是否疲勞
+        std::wstring diagLine3;
+        if (!isPresent) {
+            diagLine3 = L"【是否疲勞】: 暫停判定 (離座防誤報保護)";
+        } else if (inCooldown) {
+            wchar_t cdBuf[128];
+            swprintf_s(cdBuf, 128, L"【是否疲勞】: 20/5/5 冷卻暫停提醒中 (剩餘 %d分%02d秒)", cdMins, cdSecs);
+            diagLine3 = cdBuf;
+        } else if (level == FatigueLevel::SevereWarning || fatigueScore >= 65.0f) {
+            diagLine3 = L"【是否疲勞】: 是 (嚴重疲勞警告 - 請適當休息)";
+        } else if (level == FatigueLevel::Attention) {
+            diagLine3 = L"【是否疲勞】: 輕度 (注意力提醒)";
+        } else {
+            diagLine3 = L"【是否疲勞】: 否 (清醒放鬆)";
+        }
+        Gdiplus::RectF dRect3(static_cast<float>(leftX + 14), static_cast<float>(diagCardY + 70), static_cast<float>(leftW - 28), 18.0f);
+        g.DrawString(diagLine3.c_str(), -1, &dTextFont, dRect3, &leftFormat, inCooldown ? &cyanText : (level == FatigueLevel::SevereWarning ? &redText : &greenText));
 
-        float lineY = static_cast<float>(cardY + 30);
-        float lineStep = static_cast<float>(cardH - 36) / 5.0f;
-
-        Gdiplus::RectF lr1(static_cast<float>(leftX + 14), lineY + 0 * lineStep, static_cast<float>(leftW - 28), lineStep);
-        g.DrawString(linePres, -1, &rTextFont, lr1, &leftFormat, isPresent ? &greenText : &orangeText);
-
-        Gdiplus::RectF lr2(static_cast<float>(leftX + 14), lineY + 1 * lineStep, static_cast<float>(leftW - 28), lineStep);
-        g.DrawString(linePresWhy, -1, &rTextFont, lr2, &leftFormat, &whiteText);
-
-        Gdiplus::RectF lr3(static_cast<float>(leftX + 14), lineY + 2 * lineStep, static_cast<float>(leftW - 28), lineStep);
-        g.DrawString(lineFatigue, -1, &rTextFont, lr3, &leftFormat, (isPresent && !inCooldown) ? &greenText : &cyanText);
-
-        Gdiplus::RectF lr4(static_cast<float>(leftX + 14), lineY + 3 * lineStep, static_cast<float>(leftW - 28), lineStep);
-        g.DrawString(lineFatigueWhy, -1, &rTextFont, lr4, &leftFormat, &whiteText);
-
-        Gdiplus::RectF lr5(static_cast<float>(leftX + 14), lineY + 4 * lineStep, static_cast<float>(leftW - 28), lineStep);
-        g.DrawString(lineConclusion, -1, &rTextFont, lr5, &leftFormat, &goldBrush);
+        // 診斷行 4: 疲勞依據
+        std::wstring diagLine4;
+        if (!isPresent) {
+            diagLine4 = L"【疲勞依據】: 暫停特徵計算 (離座防誤報)";
+        } else {
+            wchar_t fatBuf[256];
+            swprintf_s(fatBuf, 256, L"【疲勞依據】: EAR=%.3f (%s), PERCLOS=%.1f%%, 眨眼=%.1f次/分, MSE CI=%.2f, 疲勞分=%.1f/65.0",
+                       static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg),
+                       m_latestTelemetry.eyeMetrics.isEyeClosed ? L"閉眼" : L"睜眼",
+                       static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f),
+                       static_cast<double>(m_latestTelemetry.eyeMetrics.blinkRatePerMin),
+                       static_cast<double>(m_latestTelemetry.complexityMetrics.complexityIndex),
+                       static_cast<double>(m_latestTelemetry.systemState.currentFatigueScore));
+            diagLine4 = fatBuf;
+        }
+        Gdiplus::RectF dRect4(static_cast<float>(leftX + 14), static_cast<float>(diagCardY + 90), static_cast<float>(leftW - 28), 18.0f);
+        g.DrawString(diagLine4.c_str(), -1, &dTextFont, dRect4, &leftFormat, &cyanText);
 
         // =========================================================================
-        // 右欄佈局：核心生理狀態卡片 + 4 遙測指標卡片 + 科研追蹤卡片
+        // 右欄：生理狀態大卡片、4 遙測指標網格、科研追蹤資訊卡片
         // =========================================================================
-        int rightX = leftX + leftW + 16;
+        int rightX = leftX + leftW + 20;
         int rightW = w - rightX - 24;
 
-        // -------------------------------------------------------------------------
-        // 1. 核心生理狀態大卡片 (20px 圓角邊框)
-        // -------------------------------------------------------------------------
-        int statCardH = 75;
+        // 右欄頂部：核心狀態大卡片
+        int statCardH = 56;
+        Gdiplus::SolidBrush cardBrush(statusColor);
+        drawRoundedButton(g, rightX, viewY, rightW, statCardH, 16, &cardBrush);
 
+        Gdiplus::Font cardFont(&fontFamily, 14, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush cardTextBrush(Gdiplus::Color(255, 37, 41, 28));
+        Gdiplus::RectF cardTextRect(static_cast<float>(rightX), static_cast<float>(viewY), static_cast<float>(rightW), static_cast<float>(statCardH));
+        g.DrawString(statusText, -1, &cardFont, cardTextRect, &centerFormat, &cardTextBrush);
 
-        Gdiplus::SolidBrush statBrush(statusColor);
-        drawRoundedButton(g, rightX, viewY, rightW, statCardH, 18, &statBrush);
-
-        Gdiplus::Font statFont(&fontFamily, 14, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-        Gdiplus::SolidBrush darkText(Gdiplus::Color(255, 37, 41, 28));
-        Gdiplus::RectF statRect(static_cast<float>(rightX), static_cast<float>(viewY), static_cast<float>(rightW), static_cast<float>(statCardH));
-        g.DrawString(statusText, -1, &statFont, statRect, &centerFormat, &darkText);
-
-        // -------------------------------------------------------------------------
-        // 2. 四大遙測指標卡片 (2x2 網格, 圓角卡片)
-        // -------------------------------------------------------------------------
+        // 右欄中部：4 欄動態遙測數據 (2x2 網格)
         wchar_t b1[32], b2[32], b3[32], b4[32];
         if (!isPresent) {
             swprintf_s(b1, 32, L"--");
@@ -1709,8 +1625,9 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         g.DrawString((L"受試者匿名代碼: " + wUuid).c_str(), -1, &scFont, scRect1, &leftFormat, &cyanText);
 
         Gdiplus::RectF scRect2(static_cast<float>(rightX + 12), static_cast<float>(studyCardY + 28), static_cast<float>(rightW - 24), 18.0f);
-        g.DrawString(L"時序資料庫: SQLite 本機封存 (WAL 模式啟動)", -1, &scFont, scRect2, &leftFormat, &whiteText);
+        g.DrawString(L"時序資料庫: SQLite 本機封存 (WAL 模式啟動)", -1, &scFont, scRect2, &leftFormat, &whiteBrush);
 
+        Gdiplus::SolidBrush goldBrush(Gdiplus::Color(255, 247, 227, 175));
         Gdiplus::RectF scRect3(static_cast<float>(rightX + 12), static_cast<float>(studyCardY + 48), static_cast<float>(rightW - 24), 18.0f);
         g.DrawString(L"防打擾機制: 20/5/5 智能靜默 (冷卻 1200s, 快篩 300s)", -1, &scFont, scRect3, &leftFormat, &goldBrush);
 
@@ -1740,15 +1657,6 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         float sx = static_cast<float>(cardW - 8) / fw;
         float sy = static_cast<float>(viewH - 8) / fh;
 
-        // 窄螢幕正中間方框
-        int cbW = static_cast<int>(fw * 0.75f);
-        int cbH = static_cast<int>(fh * 0.80f);
-        int cbX = (fw - cbW) / 2;
-        int cbY = (fh - cbH) / 2;
-        Gdiplus::Pen cPen(Gdiplus::Color(140, 247, 227, 175), 1.5f);
-        cPen.SetDashStyle(Gdiplus::DashStyleDash);
-        g.DrawRectangle(&cPen, cardX + 4 + static_cast<int>(cbX * sx), viewY + 4 + static_cast<int>(cbY * sy), static_cast<int>(cbW * sx), static_cast<int>(cbH * sy));
-
         // 窄螢幕動態方框
         if (isPresent && m_latestTelemetry.presenceDiagnostic.boxW > 0) {
             Gdiplus::Pen boxPen(Gdiplus::Color(255, 30, 220, 140), 2.0f);
@@ -1767,8 +1675,8 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
         std::wstring l1 = L"【是否在場】: " + presenceStr;
         std::wstring l2 = isPresent 
-            ? (L"【在場依據】: 正中間方框內: 是, 採樣點 " + std::to_wstring(m_latestTelemetry.presenceDiagnostic.skinPixels) + L">=" + std::to_wstring(m_latestTelemetry.presenceDiagnostic.minSkinRequired))
-            : L"【在場依據】: 視野內未達正中間人臉門檻";
+            ? (L"【在場依據】: 動態跟隨中, 採樣點 " + std::to_wstring(m_latestTelemetry.presenceDiagnostic.skinPixels) + L">=" + std::to_wstring(m_latestTelemetry.presenceDiagnostic.minSkinRequired))
+            : L"【在場依據】: 視野內未偵測到真人特徵";
         std::wstring l3 = inCooldown ? (L"【是否疲勞】: 冷卻中 (" + std::to_wstring(cdMins) + L"分" + std::to_wstring(cdSecs) + L"秒)") : (L"【是否疲勞】: " + fatigueStr);
         std::wstring l4 = isPresent
             ? (L"【疲勞依據】: EAR=" + std::to_wstring(m_latestTelemetry.eyeMetrics.earAvg).substr(0, 5) + L", PERCLOS=" + std::to_wstring(static_cast<int>(m_latestTelemetry.eyeMetrics.perclos * 100)) + L"%")
@@ -1780,9 +1688,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         g.DrawString(l4.c_str(), -1, &infoFont, Gdiplus::RectF(static_cast<float>(cardX), static_cast<float>(infoY + 54), static_cast<float>(cardW), 16.0f), &leftFormat, &infoBrush);
     }
 
-    // -------------------------------------------------------------------------
-    // 底部控制按鈕：進入設定介面 與 關閉系統介面 (粗體字體、20px 圓角邊框)
-    // -------------------------------------------------------------------------
+    // 5. 底部控制按鈕：進入設定介面 與 關閉系統介面 (粗體字體、20px 圓角邊框)
     if (!isNarrow) {
         int btnW = 210;
         int btnH = 46;

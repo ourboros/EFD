@@ -46,6 +46,7 @@ private:
     int   m_studyDay = 1;
     bool  m_isStudyLocked = false;
     bool  m_userPresent = false;
+    bool  m_screeningAlertFired = false;
 
     AlertCallback m_alertCallback;
 };

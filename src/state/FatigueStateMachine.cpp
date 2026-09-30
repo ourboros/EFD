@@ -77,7 +77,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
 
     m_lastScore = computeFatigueScore(perclos, blinkRate, complexityIndex);
 
-    // 20/5/5 狀態機推進 (使用者要求：放寬嚴重疲勞範圍，降低至 65.0 分)
+    // 20/5/5 狀態機推進 (嚴重疲勞閾值 65.0 分)
     switch (m_cooldownState) {
     case CooldownState::NormalTracking:
         if (m_lastScore >= 65.0f) {
@@ -86,6 +86,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_cooldownState = CooldownState::InCooldown;
             m_cooldownTimer = static_cast<float>(m_cooldownDuration);
             m_screeningTimer = static_cast<float>(m_screeningInterval);
+            m_screeningAlertFired = false;
 
             if (m_alertCallback) {
                 m_alertCallback(m_currentLevel, m_lastScore, "你的眼睛處於疲勞狀態，請適當休息");
@@ -96,6 +97,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_cooldownState = CooldownState::InCooldown;
             m_cooldownTimer = static_cast<float>(m_cooldownDuration);
             m_screeningTimer = static_cast<float>(m_screeningInterval);
+            m_screeningAlertFired = false;
 
             if (m_alertCallback) {
                 m_alertCallback(m_currentLevel, m_lastScore, "偵測到用眼疲勞，建議休息或遠眺放鬆。");
@@ -109,16 +111,18 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
         m_cooldownTimer -= deltaSeconds;
         m_screeningTimer -= deltaSeconds;
 
+        // 冷卻防打擾期內保持安靜，絕不重複發送警報彈窗
         if (m_screeningTimer <= 0.0f) {
-            // 進入 5 分鐘快篩期
+            // 進入 5 分鐘快篩期 (持續 30 秒)
             m_cooldownState = CooldownState::FastScreening;
-            m_screeningTimer = 30.0f; // 進行 30 秒快篩
+            m_screeningTimer = 30.0f;
+            m_screeningAlertFired = false;
         }
 
         if (m_cooldownTimer <= 0.0f) {
             // 20 分鐘冷卻期滿，重回正常追蹤
             m_cooldownState = CooldownState::NormalTracking;
-            m_currentLevel = FatigueLevel::Relaxed;
+            m_currentLevel = (m_lastScore >= 65.0f) ? FatigueLevel::Attention : FatigueLevel::Relaxed;
         }
         break;
 
@@ -126,8 +130,9 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
         m_cooldownTimer -= deltaSeconds;
         m_screeningTimer -= deltaSeconds;
 
-        if (m_lastScore >= 65.0f) {
-            // 疲勞持續加劇，警報升級至紅色危險狀態 (門檻 65.0)
+        // 快篩期內最多僅發出一次提醒，杜絕每幀持續跳出彈窗騷擾
+        if (m_lastScore >= 65.0f && !m_screeningAlertFired) {
+            m_screeningAlertFired = true;
             m_currentLevel = FatigueLevel::SevereWarning;
             if (m_alertCallback) {
                 m_alertCallback(m_currentLevel, m_lastScore, "你的眼睛處於疲勞狀態，請適當休息");
@@ -138,11 +143,12 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             // 快篩結束，回到冷卻計時
             m_cooldownState = CooldownState::InCooldown;
             m_screeningTimer = static_cast<float>(m_screeningInterval);
+            m_screeningAlertFired = false;
         }
 
         if (m_cooldownTimer <= 0.0f) {
             m_cooldownState = CooldownState::NormalTracking;
-            m_currentLevel = FatigueLevel::Relaxed;
+            m_currentLevel = (m_lastScore >= 65.0f) ? FatigueLevel::Attention : FatigueLevel::Relaxed;
         }
         break;
 
