@@ -43,7 +43,7 @@ std::vector<Point3D> FaceLandmarker::generateCanonicalFaceMesh(int frameWidth, i
     float eyeMaxHeight = eyeWidth * 0.32f;
     float currentEyeHeight = eyeWidth * 0.10f + (eyeMaxHeight - eyeWidth * 0.10f) * openness;
 
-    float leftEyeCx = cx - faceScale * 0.30f;
+    float leftEyeCx = cx - faceScale * 0.22f;
     float leftEyeCy = cy - faceScale * 0.12f;
 
     mesh[33]  = { leftEyeCx - eyeWidth * 0.5f, leftEyeCy, 0.0f };
@@ -53,7 +53,7 @@ std::vector<Point3D> FaceLandmarker::generateCanonicalFaceMesh(int frameWidth, i
     mesh[153] = { leftEyeCx + eyeWidth * 0.25f, leftEyeCy + currentEyeHeight * 0.5f, 0.0f };
     mesh[144] = { leftEyeCx - eyeWidth * 0.25f, leftEyeCy + currentEyeHeight * 0.5f, 0.0f };
 
-    float rightEyeCx = cx + faceScale * 0.30f;
+    float rightEyeCx = cx + faceScale * 0.22f;
     float rightEyeCy = cy - faceScale * 0.12f;
 
     mesh[362] = { rightEyeCx - eyeWidth * 0.5f, rightEyeCy, 0.0f };
@@ -68,16 +68,17 @@ std::vector<Point3D> FaceLandmarker::generateCanonicalFaceMesh(int frameWidth, i
 
 namespace {
 
-// 膚色與人體特徵色彩模型 (YCbCr + RGB 寬容約束，支援多種光照條件與偏向視角)
+// 膚色與人體特徵色彩模型 (YCbCr + RGB 寬容約束，嚴格排除木質家具與黃光反光)
 inline bool isStrictSkinPixel(uint8_t r, uint8_t g, uint8_t b) {
     // 1. 基本色彩範圍與 RGB 比例約束
-    if (r <= 50 || g <= 30 || b <= 20) return false;
-    if (r <= g) return false;
+    if (r <= 60 || g <= 35 || b <= 25) return false;
+    if (r <= g || r <= b) return false;
+    if (r - g < 8) return false;
     int maxVal = std::max({r, g, b});
     int minVal = std::min({r, g, b});
     if (maxVal - minVal < 10) return false;
 
-    // 2. YCbCr 經典膚色色度模型 (支援暖光、冷光與自然漫射光，排除家具雜訊)
+    // 2. YCbCr 經典膚色色度模型
     float rf = static_cast<float>(r);
     float gf = static_cast<float>(g);
     float bf = static_cast<float>(b);
@@ -85,7 +86,10 @@ inline bool isStrictSkinPixel(uint8_t r, uint8_t g, uint8_t b) {
     float cb = 128.0f - 0.1687f * rf - 0.3313f * gf + 0.5000f * bf;
     float cr = 128.0f + 0.5000f * rf - 0.4187f * gf - 0.0813f * bf;
 
-    return (y >= 30.0f && y <= 250.0f && cb >= 75.0f && cb <= 135.0f && cr >= 130.0f && cr <= 180.0f);
+    // 關鍵特徵：真人血液血紅素吸收使 Cr (紅色) 明顯高於 Cb (藍色)；木頭與牆面反光則 Cr 與 Cb 接近
+    if (cr <= cb + 8.0f) return false;
+
+    return (y >= 40.0f && y <= 245.0f && cb >= 77.0f && cb <= 130.0f && cr >= 133.0f && cr <= 175.0f);
 }
 
 inline bool isSkinPixel(uint8_t c0, uint8_t c1, uint8_t c2, PixelFormat format) {
@@ -189,46 +193,60 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         } else if (fillDensity < 0.03f) {
             diag.unconfirmedReason = "特徵分佈散亂，非連續臉部實體 (填充率: " + std::to_string(fillDensity) + ")";
         } else {
-            detectedFaceCx = static_cast<float>(skinSumX) / skinPixels;
-            detectedFaceCy = static_cast<float>(skinSumY) / skinPixels;
-            detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, boxH)) * 0.88f,
+            // 人體/頭部幾何定位 (避免脖子/胸口將中心下拉)
+            detectedFaceCx = (minSkinX + maxSkinX) * 0.5f;
+            int faceH = std::min(boxH, static_cast<int>(boxW * 1.35f));
+            detectedFaceCy = minSkinY + faceH * 0.50f;
+            detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, faceH)),
                                            static_cast<float>(std::min(width, height)) * 0.15f,
                                            static_cast<float>(std::min(width, height)) * 0.98f);
 
-            // 雙重確認：檢驗眼部/眉毛區域垂直梯度對比 (排除純平滑牆壁或木板反光)
-            float eyeDist = detectedFaceScale * 0.28f;
-            float eyeYOffset = detectedFaceScale * 0.10f;
-            int eyeCenterY = static_cast<int>(detectedFaceCy - eyeYOffset);
-            int eyeBoxRadius = std::max(6, static_cast<int>(detectedFaceScale * 0.09f));
-            int eyeCentersX[2] = {
-                static_cast<int>(detectedFaceCx - eyeDist),
-                static_cast<int>(detectedFaceCx + eyeDist)
-            };
+            // 雙眼真實解剖位置 (眼睛位於頭頂至下巴的 38% 處)
+            int eyeCenterY = static_cast<int>(minSkinY + faceH * 0.38f);
+            int eyeLeftX = static_cast<int>(detectedFaceCx - boxW * 0.22f);
+            int eyeRightX = static_cast<int>(detectedFaceCx + boxW * 0.22f);
+            int eyeBoxRadius = std::clamp(static_cast<int>(boxW * 0.10f), 8, 36);
 
-            float totalEyeGrad = 0.0f;
-            int eyeGradCount = 0;
+            int eyeCentersX[2] = { eyeLeftX, eyeRightX };
+            float totalGrad = 0.0f;
+            int gradSamples = 0;
+            float totalContrast = 0.0f;
+
             for (int e = 0; e < 2; ++e) {
                 int ecx = eyeCentersX[e];
                 int ecy = eyeCenterY;
+                int minLum = 255;
+                int maxLum = 0;
+
                 for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
                     int py = ecy + dy;
                     if (py <= 1 || py >= height - 2) continue;
                     for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
                         int px = ecx + dx;
                         if (px <= 0 || px >= width) continue;
+
+                        int idx = (py * width + px) * 3;
+                        int lum = (pixelData[idx] * 299 + pixelData[idx + 1] * 587 + pixelData[idx + 2] * 114) / 1000;
+                        if (lum < minLum) minLum = lum;
+                        if (lum > maxLum) maxLum = lum;
+
                         int idxTop = ((py - 1) * width + px) * 3;
                         int idxBot = ((py + 1) * width + px) * 3;
                         int lumTop = (pixelData[idxTop] * 299 + pixelData[idxTop + 1] * 587 + pixelData[idxTop + 2] * 114) / 1000;
                         int lumBot = (pixelData[idxBot] * 299 + pixelData[idxBot + 1] * 587 + pixelData[idxBot + 2] * 114) / 1000;
-                        totalEyeGrad += std::abs(lumBot - lumTop);
-                        eyeGradCount++;
+                        totalGrad += std::abs(lumBot - lumTop);
+                        gradSamples++;
                     }
                 }
+                totalContrast += static_cast<float>(std::max(0, maxLum - minLum));
             }
 
-            float avgEyeGrad = (eyeGradCount > 0) ? (totalEyeGrad / eyeGradCount) : 0.0f;
-            if (avgEyeGrad < 1.2f) {
-                diag.unconfirmedReason = "候選區域缺乏人臉眼部對比度 (判定為靜態背景家具非真人)";
+            float avgEyeGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 0.0f;
+            float avgContrast = totalContrast * 0.5f;
+
+            // 真人眼部必然存在瞳孔/睫毛與眼眶的反差；空木椅或牆面無此特徵
+            if (avgContrast < 14.0f && avgEyeGrad < 1.5f) {
+                diag.unconfirmedReason = "候選區域缺乏人臉眼部特徵反差 (判定為背景家具非真人)";
             } else {
                 personInFrame = true;
             }
@@ -385,10 +403,10 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 effectiveOpenness = std::clamp(m_simulatedOpenness * blinkFactor + tremor, 0.02f, 1.05f);
             }
         } else {
-            // 實體相機：依據跟隨追蹤的使用者位置提取雙眼動態梯度
-            float eyeDist = m_trackedScale * 0.28f;
-            float eyeYOffset = m_trackedScale * 0.10f;
-            int eyeBoxRadius = std::max(6, static_cast<int>(m_trackedScale * 0.08f));
+            // 實體相機：依據解剖生理學與動態跟隨的使用者位置，精確提取雙眼動態反差與垂直梯度
+            float eyeDist = m_trackedScale * 0.22f;
+            float eyeYOffset = m_trackedScale * 0.12f;
+            int eyeBoxRadius = std::clamp(static_cast<int>(m_trackedScale * 0.08f), 6, 28);
 
             int eyeCentersX[2] = {
                 static_cast<int>(m_trackedCx - eyeDist),
@@ -396,12 +414,15 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             };
             int eyeCenterY = static_cast<int>(m_trackedCy - eyeYOffset);
 
+            float totalContrast = 0.0f;
             float totalGrad = 0.0f;
             int gradSamples = 0;
 
             for (int e = 0; e < 2; ++e) {
                 int ecx = eyeCentersX[e];
                 int ecy = eyeCenterY;
+                int minLum = 255;
+                int maxLum = 0;
 
                 for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
                     int py = ecy + dy;
@@ -410,6 +431,11 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                     for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
                         int px = ecx + dx;
                         if (px <= 0 || px >= width) continue;
+
+                        int idx = (py * width + px) * 3;
+                        int lum = (pixelData[idx] * 299 + pixelData[idx + 1] * 587 + pixelData[idx + 2] * 114) / 1000;
+                        if (lum < minLum) minLum = lum;
+                        if (lum > maxLum) maxLum = lum;
 
                         int idxTop = ((py - 1) * width + px) * 3;
                         int idxBot = ((py + 1) * width + px) * 3;
@@ -421,10 +447,38 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                         gradSamples++;
                     }
                 }
+                totalContrast += static_cast<float>(std::max(0, maxLum - minLum));
             }
 
-            float avgGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 18.0f;
-            effectiveOpenness = std::clamp((avgGrad - 6.0f) / 16.0f, 0.05f, 1.0f);
+            float avgContrast = totalContrast * 0.5f;
+            float avgGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 0.0f;
+
+            // 綜合眼部特徵訊號：結合瞳孔/虹膜內部反差與上下眼瞼垂直梯度
+            float eyeSignal = avgContrast * 0.6f + avgGrad * 2.0f;
+
+            // 自適應基線跟隨：人類睜眼時間佔 95% 以上，緩慢自適應追蹤開眼峰值
+            if (eyeSignal > m_baselineEyeScore) {
+                m_baselineEyeScore = m_baselineEyeScore * 0.85f + eyeSignal * 0.15f;
+            } else {
+                m_baselineEyeScore = m_baselineEyeScore * 0.998f;
+            }
+            m_baselineEyeScore = std::clamp(m_baselineEyeScore, 24.0f, 90.0f);
+
+            // 動態映射開闔度：
+            // 當 eyeSignal 接近基準 (>= 0.68 * baseline) 時為完全睜眼 (openness ~ 0.85..1.0)
+            // 當眨眼或閉眼時，瞳孔被覆蓋，eyeSignal 驟降 (<= 0.38 * baseline)，openness 降至 0.05..0.15
+            float closedThresh = m_baselineEyeScore * 0.38f;
+            float openThresh = m_baselineEyeScore * 0.68f;
+
+            if (eyeSignal >= openThresh) {
+                effectiveOpenness = 0.85f + 0.15f * std::clamp((eyeSignal - openThresh) / (m_baselineEyeScore - openThresh + 1e-4f), 0.0f, 1.0f);
+            } else if (eyeSignal <= closedThresh) {
+                effectiveOpenness = 0.05f + 0.10f * std::clamp(eyeSignal / closedThresh, 0.0f, 1.0f);
+            } else {
+                float ratio = (eyeSignal - closedThresh) / (openThresh - closedThresh);
+                effectiveOpenness = 0.15f + 0.70f * ratio;
+            }
+            effectiveOpenness = std::clamp(effectiveOpenness, 0.05f, 1.0f);
         }
 
         // 依據跟隨的位置動態生成臉部特徵網格
@@ -458,6 +512,7 @@ void FaceLandmarker::resetTracking() {
     m_trackedCx = 0.0f;
     m_trackedCy = 0.0f;
     m_trackedScale = 0.0f;
+    m_baselineEyeScore = 35.0f;
     m_consecutiveFaceFrames = 0;
     m_consecutiveMissingFrames = 100;
     m_isFaceConfirmed = false;

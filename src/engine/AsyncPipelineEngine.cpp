@@ -279,6 +279,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             telemetry.complexityMetrics = m_cachedComplexity;
             telemetry.systemState = state;
             telemetry.currentThreshold = currentThreshold;
+            telemetry.presenceDiagnostic = m_landmarker->getLatestPresenceDiagnostic();
             telemetry.totalFramesProcessed = count;
             telemetry.lifecycleSummary = m_lifecycle.getStatusSummary();
             telemetry.currentStudyDay = m_studyTracker.getCurrentDay();
