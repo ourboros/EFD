@@ -1,6 +1,13 @@
 #include "PlatformLifecycleAdapter.hpp"
 #include <sstream>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace efd {
 
 PlatformLifecycleAdapter::PlatformLifecycleAdapter(PlatformType platform)
@@ -81,6 +88,72 @@ bool PlatformLifecycleAdapter::supportsSystemTray() const {
 
 bool PlatformLifecycleAdapter::supportsHotResume() const {
     return (m_platform == PlatformType::iOS || m_platform == PlatformType::Android);
+}
+
+bool PlatformLifecycleAdapter::isAutoStartEnabled() const {
+#ifdef _WIN32
+    HKEY hKey;
+    LONG result = RegOpenKeyExW(
+        HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        0,
+        KEY_READ,
+        &hKey
+    );
+    if (result != ERROR_SUCCESS) {
+        return false;
+    }
+    DWORD type = 0;
+    result = RegQueryValueExW(hKey, L"EFD_FatigueMonitor", nullptr, &type, nullptr, nullptr);
+    RegCloseKey(hKey);
+    return (result == ERROR_SUCCESS);
+#else
+    return false;
+#endif
+}
+
+bool PlatformLifecycleAdapter::setAutoStartEnabled(bool enable) {
+#ifdef _WIN32
+    HKEY hKey;
+    LONG result = RegOpenKeyExW(
+        HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        0,
+        KEY_SET_VALUE,
+        &hKey
+    );
+    if (result != ERROR_SUCCESS) {
+        return false;
+    }
+
+    if (enable) {
+        wchar_t exePath[MAX_PATH];
+        DWORD len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        if (len == 0 || len >= MAX_PATH) {
+            RegCloseKey(hKey);
+            return false;
+        }
+        std::wstring quoted = L"\"" + std::wstring(exePath) + L"\"";
+        result = RegSetValueExW(
+            hKey,
+            L"EFD_FatigueMonitor",
+            0,
+            REG_SZ,
+            reinterpret_cast<const BYTE*>(quoted.c_str()),
+            static_cast<DWORD>((quoted.length() + 1) * sizeof(wchar_t))
+        );
+    } else {
+        result = RegDeleteValueW(hKey, L"EFD_FatigueMonitor");
+        if (result == ERROR_FILE_NOT_FOUND) {
+            result = ERROR_SUCCESS;
+        }
+    }
+    RegCloseKey(hKey);
+    return (result == ERROR_SUCCESS);
+#else
+    (void)enable;
+    return false;
+#endif
 }
 
 std::string PlatformLifecycleAdapter::getStatusSummary() const {

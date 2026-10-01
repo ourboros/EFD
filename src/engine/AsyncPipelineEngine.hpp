@@ -75,6 +75,9 @@ public:
     // 設定模擬眼睛開合狀態 (供測試與驗證)
     void setSimulatedEyeOpenness(float openness);
 
+    // 執行手動觸發當日眼動數據落盤與雲端同步
+    bool triggerManualDataSync();
+
     // 存取各核心模組
     PlatformLifecycleAdapter& getLifecycleAdapter() { return m_lifecycle; }
     FatigueStateMachine& getStateMachine() { return m_stateMachine; }
@@ -127,6 +130,7 @@ private:
     TelemetryCallback m_telemetryCallback;
     std::atomic<int64_t> m_processedFrameCount{0};
     ComplexityMetrics m_cachedComplexity;
+    int m_lastSyncedDateInt = 0;
 
     void inferenceWorkerLoop();
     void signalProcessingWorkerLoop();

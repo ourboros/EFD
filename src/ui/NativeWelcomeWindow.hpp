@@ -118,6 +118,8 @@ private:
     RECT m_toggleSoundBtnRect{};
     RECT m_toggleCamModeBtnRect{};
     RECT m_sensitivityBtnRect{};
+    RECT m_autoStartBtnRect{};    // 開機自動啟動按鈕
+    RECT m_manualSyncBtnRect{};   // 手動立即同步數據按鈕
     RECT m_cameraPrevBtnRect{};   // 相機切換 ← 按鈕
     RECT m_cameraNextBtnRect{};   // 相機切換 → 按鈕
     RECT m_cameraRefreshBtnRect{}; // 重新掃描相機按鈕
@@ -142,6 +144,8 @@ private:
     bool m_isHoveringToggleSoundBtn = false;
     bool m_isHoveringToggleCamModeBtn = false;
     bool m_isHoveringSensitivityBtn = false;
+    bool m_isHoveringAutoStartBtn = false;
+    bool m_isHoveringManualSyncBtn = false;
     bool m_isHoveringCameraPrevBtn = false;
     bool m_isHoveringCameraNextBtn = false;
     bool m_isHoveringCameraRefreshBtn = false;

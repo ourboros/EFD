@@ -50,9 +50,15 @@ public:
     // 觸發非同步科研資料同步 (包含問卷答案上傳與解鎖 Token 交換)
     bool triggerSync(const std::string& subjectUuid, int studyDay, const std::string& questionnaireResponse, SyncCallback callback = nullptr);
 
-    // 查詢同步狀態
+    // 觸發當日眼動特徵數據同步 (夜間自動儲存或使用者手動觸發)
+    bool triggerDailySync(const std::string& subjectUuid, int studyDay, SyncCallback callback = nullptr);
+
+    // 查詢同步狀態與資訊
     SyncStatus getStatus() const;
     bool isSyncing() const;
+    bool isSyncedToday() const;
+    std::string getLastSyncTimeStr() const;
+    size_t getLastSyncRecordCount() const;
 
     // 取得最新解鎖 Token (若同步成功)
     std::string getLatestUnlockToken() const;
@@ -65,6 +71,9 @@ private:
     std::string m_endpointUrl;
     std::atomic<SyncStatus> m_status{SyncStatus::Idle};
     std::string m_latestUnlockToken;
+    std::string m_lastSyncTimeStr;
+    size_t m_lastSyncRecordCount = 0;
+    std::atomic<bool> m_isSyncedToday{false};
 
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;

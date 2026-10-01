@@ -63,6 +63,10 @@ public:
     bool supportsSystemTray() const;
     bool supportsHotResume() const;
 
+    // 開機自動啟動 (支援 Windows 登錄檔 / macOS LaunchAgents)
+    bool isAutoStartEnabled() const;
+    bool setAutoStartEnabled(bool enable);
+
     // 格式化當前平台狀態摘要
     std::string getStatusSummary() const;
 

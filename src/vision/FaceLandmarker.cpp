@@ -43,7 +43,7 @@ std::vector<Point3D> FaceLandmarker::generateCanonicalFaceMesh(int frameWidth, i
     float eyeMaxHeight = eyeWidth * 0.32f;
     float currentEyeHeight = eyeWidth * 0.10f + (eyeMaxHeight - eyeWidth * 0.10f) * openness;
 
-    float leftEyeCx = cx - faceScale * 0.22f;
+    float leftEyeCx = cx - faceScale * 0.30f;
     float leftEyeCy = cy - faceScale * 0.12f;
 
     mesh[33]  = { leftEyeCx - eyeWidth * 0.5f, leftEyeCy, 0.0f };
@@ -53,7 +53,7 @@ std::vector<Point3D> FaceLandmarker::generateCanonicalFaceMesh(int frameWidth, i
     mesh[153] = { leftEyeCx + eyeWidth * 0.25f, leftEyeCy + currentEyeHeight * 0.5f, 0.0f };
     mesh[144] = { leftEyeCx - eyeWidth * 0.25f, leftEyeCy + currentEyeHeight * 0.5f, 0.0f };
 
-    float rightEyeCx = cx + faceScale * 0.22f;
+    float rightEyeCx = cx + faceScale * 0.30f;
     float rightEyeCy = cy - faceScale * 0.12f;
 
     mesh[362] = { rightEyeCx - eyeWidth * 0.5f, rightEyeCy, 0.0f };
@@ -403,10 +403,10 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 effectiveOpenness = std::clamp(m_simulatedOpenness * blinkFactor + tremor, 0.02f, 1.05f);
             }
         } else {
-            // 實體相機：依據解剖生理學與動態跟隨的使用者位置，精確提取雙眼動態反差與垂直梯度
-            float eyeDist = m_trackedScale * 0.22f;
-            float eyeYOffset = m_trackedScale * 0.12f;
-            int eyeBoxRadius = std::clamp(static_cast<int>(m_trackedScale * 0.08f), 6, 28);
+            // 實體相機：依據跟隨追蹤的使用者位置提取雙眼動態梯度
+            float eyeDist = m_trackedScale * 0.28f;
+            float eyeYOffset = m_trackedScale * 0.10f;
+            int eyeBoxRadius = std::max(6, static_cast<int>(m_trackedScale * 0.08f));
 
             int eyeCentersX[2] = {
                 static_cast<int>(m_trackedCx - eyeDist),
@@ -414,15 +414,12 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             };
             int eyeCenterY = static_cast<int>(m_trackedCy - eyeYOffset);
 
-            float totalContrast = 0.0f;
             float totalGrad = 0.0f;
             int gradSamples = 0;
 
             for (int e = 0; e < 2; ++e) {
                 int ecx = eyeCentersX[e];
                 int ecy = eyeCenterY;
-                int minLum = 255;
-                int maxLum = 0;
 
                 for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
                     int py = ecy + dy;
@@ -431,11 +428,6 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                     for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
                         int px = ecx + dx;
                         if (px <= 0 || px >= width) continue;
-
-                        int idx = (py * width + px) * 3;
-                        int lum = (pixelData[idx] * 299 + pixelData[idx + 1] * 587 + pixelData[idx + 2] * 114) / 1000;
-                        if (lum < minLum) minLum = lum;
-                        if (lum > maxLum) maxLum = lum;
 
                         int idxTop = ((py - 1) * width + px) * 3;
                         int idxBot = ((py + 1) * width + px) * 3;
@@ -447,38 +439,10 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                         gradSamples++;
                     }
                 }
-                totalContrast += static_cast<float>(std::max(0, maxLum - minLum));
             }
 
-            float avgContrast = totalContrast * 0.5f;
-            float avgGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 0.0f;
-
-            // 綜合眼部特徵訊號：結合瞳孔/虹膜內部反差與上下眼瞼垂直梯度
-            float eyeSignal = avgContrast * 0.6f + avgGrad * 2.0f;
-
-            // 自適應基線跟隨：人類睜眼時間佔 95% 以上，緩慢自適應追蹤開眼峰值
-            if (eyeSignal > m_baselineEyeScore) {
-                m_baselineEyeScore = m_baselineEyeScore * 0.85f + eyeSignal * 0.15f;
-            } else {
-                m_baselineEyeScore = m_baselineEyeScore * 0.998f;
-            }
-            m_baselineEyeScore = std::clamp(m_baselineEyeScore, 24.0f, 90.0f);
-
-            // 動態映射開闔度：
-            // 當 eyeSignal 接近基準 (>= 0.68 * baseline) 時為完全睜眼 (openness ~ 0.85..1.0)
-            // 當眨眼或閉眼時，瞳孔被覆蓋，eyeSignal 驟降 (<= 0.38 * baseline)，openness 降至 0.05..0.15
-            float closedThresh = m_baselineEyeScore * 0.38f;
-            float openThresh = m_baselineEyeScore * 0.68f;
-
-            if (eyeSignal >= openThresh) {
-                effectiveOpenness = 0.85f + 0.15f * std::clamp((eyeSignal - openThresh) / (m_baselineEyeScore - openThresh + 1e-4f), 0.0f, 1.0f);
-            } else if (eyeSignal <= closedThresh) {
-                effectiveOpenness = 0.05f + 0.10f * std::clamp(eyeSignal / closedThresh, 0.0f, 1.0f);
-            } else {
-                float ratio = (eyeSignal - closedThresh) / (openThresh - closedThresh);
-                effectiveOpenness = 0.15f + 0.70f * ratio;
-            }
-            effectiveOpenness = std::clamp(effectiveOpenness, 0.05f, 1.0f);
+            float avgGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 18.0f;
+            effectiveOpenness = std::clamp((avgGrad - 6.0f) / 16.0f, 0.05f, 1.0f);
         }
 
         // 依據跟隨的位置動態生成臉部特徵網格
@@ -512,7 +476,6 @@ void FaceLandmarker::resetTracking() {
     m_trackedCx = 0.0f;
     m_trackedCy = 0.0f;
     m_trackedScale = 0.0f;
-    m_baselineEyeScore = 35.0f;
     m_consecutiveFaceFrames = 0;
     m_consecutiveMissingFrames = 100;
     m_isFaceConfirmed = false;

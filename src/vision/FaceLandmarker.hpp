@@ -68,7 +68,6 @@ private:
     float m_userBiasY = 0.0f;
     bool m_isPositionBiasCalibrated = false;
     bool m_isFaceConfirmed = false;
-    float m_baselineEyeScore = 35.0f;
     PresenceDiagnostic m_lastDiag;
 
     std::vector<Point3D> generateCanonicalFaceMesh(int frameWidth, int frameHeight, float openness, float customCx = 0.0f, float customCy = 0.0f, float customScale = 0.0f) const;

@@ -1,0 +1,32 @@
+{
+  "recordCount": 3,
+  "records": [
+    {
+      "timestampMs": 1700000000000,
+      "subjectUuid": "SUBJ-SYNC-101",
+      "ear": 0.3100,
+      "perclos": 0.0000,
+      "complexityIndex": 0.0000,
+      "fatigueScore": 12.00,
+      "alertLevel": 0
+    },
+    {
+      "timestampMs": 1700000001000,
+      "subjectUuid": "SUBJ-SYNC-101",
+      "ear": 0.3000,
+      "perclos": 0.0000,
+      "complexityIndex": 0.0000,
+      "fatigueScore": 12.00,
+      "alertLevel": 0
+    },
+    {
+      "timestampMs": 1700000002000,
+      "subjectUuid": "SUBJ-SYNC-101",
+      "ear": 0.2900,
+      "perclos": 0.0000,
+      "complexityIndex": 0.0000,
+      "fatigueScore": 12.00,
+      "alertLevel": 0
+    }
+  ]
+}

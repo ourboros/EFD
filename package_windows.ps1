@@ -48,7 +48,7 @@ Copy-Item (Join-Path $ProjectRoot "assets\*") (Join-Path $DistDir "assets") -Rec
 Copy-Item (Join-Path $ProjectRoot "design\*") (Join-Path $DistDir "design") -Recurse -Force
 
 # 6. 建立一鍵啟動腳本與捷徑建立腳本
-Write-Host " -> 建立「啟動 EFD.bat」與「建立桌面捷徑.bat」..." -ForegroundColor Green
+Write-Host " -> 建立「啟動 EFD.bat」、「建立桌面捷徑.bat」、「啟用開機自動啟動.bat」..." -ForegroundColor Green
 
 $startBatLines = @(
     '@echo off',
@@ -91,6 +91,40 @@ $shortcutBatLines = @(
 )
 [System.IO.File]::WriteAllLines((Join-Path $DistDir "建立桌面捷徑.bat"), $shortcutBatLines, [System.Text.Encoding]::GetEncoding(65001))
 
+$enableAutoStartBatLines = @(
+    '@echo off',
+    'chcp 65001 >nul',
+    'cd /d "%~dp0"',
+    'echo ==================================================================',
+    'echo   正在啟用 EFD 眼睛疲勞監測系統 - 開機自動啟動...',
+    'echo ==================================================================',
+    'reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "EFD_FatigueMonitor" /t REG_SZ /d "\"%~dp0EFD.exe\"" /f >nul',
+    'if %ERRORLEVEL% equ 0 (',
+    '    echo [成功] 已成功加入 Windows 開機自動啟動！系統將於開機登入時自動在背景守護。',
+    ') else (',
+    '    echo [失敗] 設定失敗，請嘗試手動在軟體「設定」介面中開啟。',
+    ')',
+    'echo 視窗將在 3 秒後自動關閉...',
+    'timeout /t 3 >nul',
+    'exit'
+)
+[System.IO.File]::WriteAllLines((Join-Path $DistDir "啟用開機自動啟動.bat"), $enableAutoStartBatLines, [System.Text.Encoding]::GetEncoding(65001))
+
+$disableAutoStartBatLines = @(
+    '@echo off',
+    'chcp 65001 >nul',
+    'cd /d "%~dp0"',
+    'echo ==================================================================',
+    'echo   正在停用 EFD 眼睛疲勞監測系統 - 開機自動啟動...',
+    'echo ==================================================================',
+    'reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "EFD_FatigueMonitor" /f >nul 2>&1',
+    'echo [完成] 已移除開機自動啟動設定。',
+    'echo 視窗將在 3 秒後自動關閉...',
+    'timeout /t 3 >nul',
+    'exit'
+)
+[System.IO.File]::WriteAllLines((Join-Path $DistDir "停用開機自動啟動.bat"), $disableAutoStartBatLines, [System.Text.Encoding]::GetEncoding(65001))
+
 # 7. 複製使用說明文檔
 Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "README_Windows.md") -Force
 Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "使用說明.txt") -Force
@@ -113,4 +147,3 @@ Write-Host "==================================================================" 
 Write-Host "  [SUCCESS] Windows 桌面端分發套件打包完成！" -ForegroundColor Green
 Write-Host "  輸出路徑: $($zipItem.FullName) ($([Math]::Round($zipItem.Length / 1MB, 2)) MB)" -ForegroundColor Green
 Write-Host "==================================================================" -ForegroundColor Cyan
-

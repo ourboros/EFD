@@ -110,6 +110,7 @@ void AsyncPipelineEngine::stop() {
             while (!m_inferenceQueue.empty()) m_inferenceQueue.pop();
         }
 
+        m_database.flush();
         m_lifecycle.transitionTo(AppLifecycleState::Terminating, "Engine terminated");
     }
 }
@@ -144,6 +145,15 @@ void AsyncPipelineEngine::setSimulatedEyeOpenness(float openness) {
     if (m_landmarker) {
         m_landmarker->setSimulatedEyeOpenness(openness);
     }
+}
+
+bool AsyncPipelineEngine::triggerManualDataSync() {
+    m_database.flush();
+    return m_syncWorker.triggerDailySync(
+        m_studyTracker.getSubjectUuid(),
+        m_studyTracker.getCurrentDay(),
+        nullptr
+    );
 }
 
 void AsyncPipelineEngine::handleLifecycleEvent(const LifecycleEvent& event) {
@@ -270,6 +280,25 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             m_database.logRecord(record);
         }
 
+        // 5.1 夜間定時自動儲存與上傳 (每 900 幀 / 約 30 秒檢查一次系統時鐘)
+        if (count % 900 == 0) {
+            auto nowTime = std::chrono::system_clock::now();
+            std::time_t nowT = std::chrono::system_clock::to_time_t(nowTime);
+            std::tm tmNow{};
+#ifdef _WIN32
+            localtime_s(&tmNow, &nowT);
+#else
+            localtime_r(&nowT, &tmNow);
+#endif
+            int todayDateInt = (tmNow.tm_year + 1900) * 10000 + (tmNow.tm_mon + 1) * 100 + tmNow.tm_mday;
+            // 晚上 21:00 ~ 23:59 之間，且今天尚未執行過自動儲存上傳
+            if (tmNow.tm_hour >= 21 && m_lastSyncedDateInt != todayDateInt) {
+                m_lastSyncedDateInt = todayDateInt;
+                m_database.flush();
+                m_syncWorker.triggerDailySync(m_studyTracker.getSubjectUuid(), m_studyTracker.getCurrentDay());
+            }
+        }
+
         // 6. 分發遙測至 UI Thread
         if (m_telemetryCallback) {
             EngineTelemetry telemetry;
@@ -279,7 +308,6 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             telemetry.complexityMetrics = m_cachedComplexity;
             telemetry.systemState = state;
             telemetry.currentThreshold = currentThreshold;
-            telemetry.presenceDiagnostic = m_landmarker->getLatestPresenceDiagnostic();
             telemetry.totalFramesProcessed = count;
             telemetry.lifecycleSummary = m_lifecycle.getStatusSummary();
             telemetry.currentStudyDay = m_studyTracker.getCurrentDay();

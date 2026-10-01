@@ -3,6 +3,8 @@
 #include <iomanip>
 #include <chrono>
 #include <iostream>
+#include <fstream>
+#include <ctime>
 
 namespace efd {
 
@@ -72,12 +74,30 @@ bool NetworkSyncWorker::triggerSync(const std::string& subjectUuid, int studyDay
     return true;
 }
 
+bool NetworkSyncWorker::triggerDailySync(const std::string& subjectUuid, int studyDay, SyncCallback callback) {
+    return triggerSync(subjectUuid, studyDay, "Daily_Evening_Data_Sync", std::move(callback));
+}
+
 SyncStatus NetworkSyncWorker::getStatus() const {
     return m_status.load();
 }
 
 bool NetworkSyncWorker::isSyncing() const {
     return m_status.load() == SyncStatus::Syncing;
+}
+
+bool NetworkSyncWorker::isSyncedToday() const {
+    return m_isSyncedToday.load();
+}
+
+std::string NetworkSyncWorker::getLastSyncTimeStr() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_lastSyncTimeStr;
+}
+
+size_t NetworkSyncWorker::getLastSyncRecordCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_lastSyncRecordCount;
 }
 
 std::string NetworkSyncWorker::getLatestUnlockToken() const {
@@ -157,7 +177,49 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     result.success = true;
     result.httpStatusCode = 200;
     result.unlockToken = oss.str();
-    result.message = "科研數據與後測問卷同步成功，解鎖憑證已簽發。";
+    result.message = "科研時序數據與後測問卷同步成功，解鎖憑證已簽發。";
+
+    // 1. 本地持久化保存一份當前同步封裝 JSON (方便研究員與使用者檢驗)
+    std::string jsonDump = m_dbService.exportRecordsAsJson();
+    std::ofstream outDump("efd_daily_sync.json");
+    if (outDump.is_open()) {
+        outDump << jsonDump;
+        outDump.close();
+    }
+
+    // 2. 格式化目前時間戳記
+    auto now = std::chrono::system_clock::now();
+    std::time_t tt = std::chrono::system_clock::to_time_t(now);
+    std::tm localTm{};
+#ifdef _WIN32
+    localtime_s(&localTm, &tt);
+#else
+    localtime_r(&tt, &localTm);
+#endif
+    char timeBuf[64];
+    std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_lastSyncTimeStr = timeBuf;
+        m_lastSyncRecordCount = payload.recordCount;
+        m_isSyncedToday = true;
+    }
+
+    // 3. 輸出醒目的終端機科研同步成功 Log
+    std::cout << "\n"
+              << "================================================================================\n"
+              << ">>> [科研雲端同步成功] 當日眼動數據已安全上傳至科研中心伺服器！ <<<\n"
+              << "  [同步時間]: " << timeBuf << "\n"
+              << "  [受試者 UUID]: " << payload.subjectUuid << " | [實驗天數]: 第 " << payload.currentDay << " 天\n"
+              << "  [上傳數據筆數]: " << payload.recordCount << " 筆時序眼動特徵\n"
+              << "  [數據完整性 Checksum]: " << payload.dataChecksum << "\n"
+              << "  [伺服器回應]: 200 OK - " << result.message << "\n"
+              << "  [解鎖簽章憑證]: " << result.unlockToken << "\n"
+              << "  [本機備份封裝]: efd_daily_sync.json 已同步落盤更新\n"
+              << "================================================================================\n"
+              << std::endl;
+
     return result;
 }
 

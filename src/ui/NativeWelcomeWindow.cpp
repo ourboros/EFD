@@ -384,6 +384,13 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_recalibFromSettingsBtnRect, pt)) {
             setStage(UIStage::CalibrationInstruction);
+        } else if (PtInRect(&m_autoStartBtnRect, pt)) {
+            bool cur = m_engine.getLifecycleAdapter().isAutoStartEnabled();
+            m_engine.getLifecycleAdapter().setAutoStartEnabled(!cur);
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        } else if (PtInRect(&m_manualSyncBtnRect, pt)) {
+            m_engine.triggerManualDataSync();
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_saveSettingsBtnRect, pt)) {
             setStage(UIStage::MainDashboard);
         }
@@ -536,6 +543,8 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         bool inSettings = (pThis->m_currentStage == UIStage::MainDashboard) && (PtInRect(&pThis->m_settingsBtnRect, pt) != FALSE);
         bool inMinimizeTray = (pThis->m_currentStage == UIStage::MainDashboard) && (PtInRect(&pThis->m_minimizeTrayBtnRect, pt) != FALSE);
         bool inSensitivity = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_sensitivityBtnRect, pt) != FALSE);
+        bool inAutoStart = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_autoStartBtnRect, pt) != FALSE);
+        bool inManualSync = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_manualSyncBtnRect, pt) != FALSE);
         bool inRecalibFromSet = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_recalibFromSettingsBtnRect, pt) != FALSE);
         bool inSaveSet = (pThis->m_currentStage == UIStage::SettingsPanel) && (PtInRect(&pThis->m_saveSettingsBtnRect, pt) != FALSE);
         bool inFillQ = (pThis->m_currentStage == UIStage::StudyCompletedGate) && (PtInRect(&pThis->m_fillQuestionnaireBtnRect, pt) != FALSE);
@@ -553,6 +562,8 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
                           inSettings != pThis->m_isHoveringSettingsBtn ||
                           inMinimizeTray != pThis->m_isHoveringMinimizeTrayBtn ||
                           inSensitivity != pThis->m_isHoveringSensitivityBtn ||
+                          inAutoStart != pThis->m_isHoveringAutoStartBtn ||
+                          inManualSync != pThis->m_isHoveringManualSyncBtn ||
                           inRecalibFromSet != pThis->m_isHoveringRecalibFromSettingsBtn ||
                           inSaveSet != pThis->m_isHoveringSaveSettingsBtn ||
                           inFillQ != pThis->m_isHoveringFillQuestionnaireBtn ||
@@ -571,6 +582,8 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
             pThis->m_isHoveringSettingsBtn = inSettings;
             pThis->m_isHoveringMinimizeTrayBtn = inMinimizeTray;
             pThis->m_isHoveringSensitivityBtn = inSensitivity;
+            pThis->m_isHoveringAutoStartBtn = inAutoStart;
+            pThis->m_isHoveringManualSyncBtn = inManualSync;
             pThis->m_isHoveringRecalibFromSettingsBtn = inRecalibFromSet;
             pThis->m_isHoveringSaveSettingsBtn = inSaveSet;
             pThis->m_isHoveringFillQuestionnaireBtn = inFillQ;
@@ -1669,6 +1682,13 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         Gdiplus::RectF scRect3(static_cast<float>(rightX + 12), static_cast<float>(studyCardY + 48), static_cast<float>(rightW - 24), 18.0f);
         g.DrawString(L"防打擾機制: 20/5/5 智能靜默 (冷卻 1200s, 快篩 300s)", -1, &scFont, scRect3, &leftFormat, &goldBrush);
 
+        Gdiplus::SolidBrush mintBrush(Gdiplus::Color(255, 120, 230, 195));
+        Gdiplus::RectF scRect4(static_cast<float>(rightX + 12), static_cast<float>(studyCardY + 68), static_cast<float>(rightW - 24), 18.0f);
+        std::wstring syncInfo = m_engine.getSyncWorker().isSyncedToday() 
+            ? (L"科研雲端同步: 本日已成功同步 (" + utf8ToWide(m_engine.getSyncWorker().getLastSyncTimeStr()) + L", " + std::to_wstring(m_engine.getSyncWorker().getLastSyncRecordCount()) + L" 筆)")
+            : L"科研雲端同步: 每晚 21:00 自動儲存落盤並上傳 (或至設定手動同步)";
+        g.DrawString(syncInfo.c_str(), -1, &scFont, scRect4, &leftFormat, &mintBrush);
+
     } else {
         // =========================================================================
         // 窄螢幕模式 (手機模擬器等比排列)
@@ -1818,8 +1838,8 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
     int cardW = isNarrow ? (w - 30) : std::min(w - 120, 620);
     int cardX = (w - cardW) / 2;
     int startY = static_cast<int>(titleY + (isNarrow ? 40 : 50));
-    int itemH = isNarrow ? 52 : 60;
-    int gap = isNarrow ? 12 : 16;
+    int itemH = isNarrow ? 46 : 52;
+    int gap = isNarrow ? 10 : 12;
 
     Gdiplus::Font itemTitleFont(&fontFamily, 15, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::Font itemValFont(&fontFamily, 13, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
@@ -1851,10 +1871,40 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF item2VRect(static_cast<float>(cardX + cardW / 2), static_cast<float>(item2Y), static_cast<float>(cardW / 2 - 20), static_cast<float>(itemH));
     g.DrawString(L"重新校準眼動基準 (點擊執行)", -1, &itemValFont, item2VRect, &rightFormat, &mintText);
 
+    // 設定項目 3: 開機自動啟動 (支援 Windows 登錄檔，粗體, 20px 圓角邊框)
+    int item3Y = item2Y + itemH + gap;
+    m_autoStartBtnRect = { cardX, item3Y, cardX + cardW, item3Y + itemH };
+    bool autoStartOn = m_engine.getLifecycleAdapter().isAutoStartEnabled();
+    Gdiplus::SolidBrush item3Bg(m_isHoveringAutoStartBtn ? Gdiplus::Color(255, 60, 68, 46) : Gdiplus::Color(255, 50, 56, 38));
+    Gdiplus::Pen item3Border(autoStartOn ? Gdiplus::Color(200, 30, 220, 140) : Gdiplus::Color(160, 120, 120, 120), 1.5f);
+    drawRoundedButton(g, cardX, item3Y, cardW, itemH, 20, &item3Bg, &item3Border);
+
+    Gdiplus::RectF item3TRect(static_cast<float>(cardX + 20), static_cast<float>(item3Y), static_cast<float>(cardW / 2), static_cast<float>(itemH));
+    g.DrawString(L"開機自動啟動", -1, &itemTitleFont, item3TRect, &leftFormat, &whiteBrush);
+    Gdiplus::SolidBrush autoStartBrush(autoStartOn ? Gdiplus::Color(255, 120, 230, 195) : Gdiplus::Color(255, 180, 180, 180));
+    Gdiplus::RectF item3VRect(static_cast<float>(cardX + cardW / 2), static_cast<float>(item3Y), static_cast<float>(cardW / 2 - 20), static_cast<float>(itemH));
+    g.DrawString(autoStartOn ? L"已啟用 (點擊關閉)" : L"已停用 (點擊開啟)", -1, &itemValFont, item3VRect, &rightFormat, &autoStartBrush);
+
+    // 設定項目 4: 當日科研數據同步 (夜間自動儲存或手動立即同步，粗體, 20px 圓角邊框)
+    int item4Y = item3Y + itemH + gap;
+    m_manualSyncBtnRect = { cardX, item4Y, cardX + cardW, item4Y + itemH };
+    bool isSyncing = m_engine.getSyncWorker().isSyncing();
+    bool isSyncedToday = m_engine.getSyncWorker().isSyncedToday();
+    Gdiplus::SolidBrush item4Bg(m_isHoveringManualSyncBtn ? Gdiplus::Color(255, 30, 80, 120) : Gdiplus::Color(255, 20, 50, 80));
+    Gdiplus::Pen item4Border(Gdiplus::Color(200, 150, 197, 247), 1.5f);
+    drawRoundedButton(g, cardX, item4Y, cardW, itemH, 20, &item4Bg, &item4Border);
+
+    Gdiplus::RectF item4TRect(static_cast<float>(cardX + 20), static_cast<float>(item4Y), static_cast<float>(cardW / 2), static_cast<float>(itemH));
+    g.DrawString(L"當日數據同步", -1, &itemTitleFont, item4TRect, &leftFormat, &whiteBrush);
+    std::wstring syncVal = isSyncing ? L"正在同步中..." : (isSyncedToday ? L"本日已同步完成 (點擊再次同步)" : L"每晚21:00自動同步 (點擊立即同步)");
+    Gdiplus::SolidBrush syncBrush(isSyncedToday ? Gdiplus::Color(255, 120, 230, 195) : Gdiplus::Color(255, 150, 197, 247));
+    Gdiplus::RectF item4VRect(static_cast<float>(cardX + cardW / 2), static_cast<float>(item4Y), static_cast<float>(cardW / 2 - 20), static_cast<float>(itemH));
+    g.DrawString(syncVal.c_str(), -1, &itemValFont, item4VRect, &rightFormat, &syncBrush);
+
     // 3. 底部動作按鈕：返回監控中心 (粗體, 20px 圓角邊框)
-    int btnH = isNarrow ? 44 : 48;
+    int btnH = isNarrow ? 42 : 46;
     int btnW = isNarrow ? std::min(w - 40, 280) : 280;
-    int returnBtnY = item2Y + itemH + (isNarrow ? 24 : 36);
+    int returnBtnY = item4Y + itemH + (isNarrow ? 18 : 24);
     int returnBtnX = (w - btnW) / 2;
 
     m_saveSettingsBtnRect = { returnBtnX, returnBtnY, returnBtnX + btnW, returnBtnY + btnH };
