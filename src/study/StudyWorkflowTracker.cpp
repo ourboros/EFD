@@ -21,8 +21,9 @@ bool StudyWorkflowTracker::initialize() {
             std::chrono::system_clock::now().time_since_epoch()).count();
         m_currentDay = 1;
         m_status = StudyStatus::ActiveMonitoring;
-        saveConfigUnlocked();
     }
+    m_launchCount++;
+    saveConfigUnlocked();
     return true;
 }
 
@@ -49,6 +50,38 @@ float StudyWorkflowTracker::getStudyProgressPercent() const {
 std::string StudyWorkflowTracker::getUnlockToken() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_unlockToken;
+}
+
+int StudyWorkflowTracker::getLaunchCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_launchCount;
+}
+
+bool StudyWorkflowTracker::isSecondOrSubsequentLaunch() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_launchCount >= 2;
+}
+
+bool StudyWorkflowTracker::isInitialSetupCompleted() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_hasCompletedInitialSetup;
+}
+
+void StudyWorkflowTracker::setInitialSetupCompleted(bool completed) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_hasCompletedInitialSetup = completed;
+    saveConfigUnlocked();
+}
+
+std::string StudyWorkflowTracker::getCloudSyncEndpoint() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_cloudSyncEndpoint;
+}
+
+void StudyWorkflowTracker::setCloudSyncEndpoint(const std::string& endpoint) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_cloudSyncEndpoint = endpoint;
+    saveConfigUnlocked();
 }
 
 void StudyWorkflowTracker::setTimeWarpDay(int day) {
@@ -115,7 +148,10 @@ void StudyWorkflowTracker::saveConfigUnlocked() {
         << "  \"currentDay\": " << m_currentDay << ",\n"
         << "  \"status\": " << static_cast<int>(m_status) << ",\n"
         << "  \"unlockToken\": \"" << m_unlockToken << "\",\n"
-        << "  \"studyStartTimestamp\": " << m_studyStartTimestamp << "\n"
+        << "  \"studyStartTimestamp\": " << m_studyStartTimestamp << ",\n"
+        << "  \"launchCount\": " << m_launchCount << ",\n"
+        << "  \"hasCompletedInitialSetup\": " << (m_hasCompletedInitialSetup ? "true" : "false") << ",\n"
+        << "  \"cloudSyncEndpoint\": \"" << m_cloudSyncEndpoint << "\"\n"
         << "}\n";
 }
 
@@ -146,6 +182,9 @@ void StudyWorkflowTracker::loadConfigUnlocked() {
         else if (key == "status") m_status = static_cast<StudyStatus>(std::stoi(val));
         else if (key == "unlockToken") m_unlockToken = val;
         else if (key == "studyStartTimestamp") m_studyStartTimestamp = std::stoll(val);
+        else if (key == "launchCount") m_launchCount = std::stoi(val);
+        else if (key == "hasCompletedInitialSetup") m_hasCompletedInitialSetup = (val == "true" || val == "1");
+        else if (key == "cloudSyncEndpoint") m_cloudSyncEndpoint = val;
     }
 }
 

@@ -38,6 +38,16 @@ public:
     // 重設實驗週期 (供測試使用)
     void resetStudy(const std::string& newUuid = "");
 
+    // 啟動次數與初始設定狀態 (判斷首次開啟或第二次及往後開啟)
+    int getLaunchCount() const;
+    bool isSecondOrSubsequentLaunch() const;
+    bool isInitialSetupCompleted() const;
+    void setInitialSetupCompleted(bool completed);
+
+    // 雲端同步端點 (支援 Google 試算表 Web App 或科研中心 API)
+    std::string getCloudSyncEndpoint() const;
+    void setCloudSyncEndpoint(const std::string& endpoint);
+
 private:
     std::string m_configPath;
     std::string m_subjectUuid;
@@ -45,6 +55,9 @@ private:
     StudyStatus m_status = StudyStatus::ActiveMonitoring;
     std::string m_unlockToken;
     int64_t m_studyStartTimestamp = 0;
+    int m_launchCount = 0;
+    bool m_hasCompletedInitialSetup = false;
+    std::string m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycb.../exec";
     mutable std::mutex m_mutex;
 
     void saveConfigUnlocked();

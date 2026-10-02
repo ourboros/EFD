@@ -89,8 +89,8 @@ static void drawRoundedButton(Gdiplus::Graphics& g, int x, int y, int w, int h, 
 
 } // anonymous namespace
 
-NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
-    : m_width(width), m_height(height), m_engine(PlatformType::Windows) {
+NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBackground)
+    : m_width(width), m_height(height), m_startInBackground(startInBackground), m_engine(PlatformType::Windows) {
     
     // 初始化 GDI+
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
@@ -293,6 +293,23 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height)
             }
         }
     });
+
+    // 依據啟動模式與啟動次數決定起始介面並自動連線攝影機記錄眼動數據
+    if (m_startInBackground) {
+        // 開機背景啟動模式：不開啟UI操作介面，只開啟背景偵測功能和提醒機制
+        m_currentStage = UIStage::MainDashboard;
+        m_engine.start();
+        std::cout << "[開機啟動模式] 系統已在背景靜默啟動，攝影機已自動連線並開始即時記錄眼動數據與疲勞監控 (常駐系統托盤)\n";
+    } else if (m_engine.getStudyTracker().isSecondOrSubsequentLaunch() || m_engine.getStudyTracker().isInitialSetupCompleted()) {
+        // 第二次系統啟動：直接進入設定頁面中，並自動連線攝影機開始記錄眼動數據
+        m_currentStage = UIStage::SettingsPanel;
+        m_engine.start();
+        std::cout << "[第二次系統啟動] 系統直接進入設定頁面，攝影機已啟動並即時記錄眼動數據\n";
+    } else {
+        // 首次啟動：引導至歡迎與視覺校準流程
+        m_currentStage = UIStage::Welcome;
+        std::cout << "[首次系統啟動] 進入歡迎與視覺校準引導流程\n";
+    }
 }
 
 NativeWelcomeWindow::~NativeWelcomeWindow() {
@@ -335,7 +352,7 @@ void NativeWelcomeWindow::setStage(UIStage stage) {
     if (stage == UIStage::ActiveCalibration) {
         m_calibrationProgress = 0.0f;
     }
-    if (stage == UIStage::CalibrationInstruction || stage == UIStage::ActiveCalibration || stage == UIStage::MainDashboard) {
+    if (stage == UIStage::CalibrationInstruction || stage == UIStage::ActiveCalibration || stage == UIStage::MainDashboard || stage == UIStage::SettingsPanel) {
         if (!m_engine.isRunning()) {
             m_engine.start();
         }
@@ -348,7 +365,28 @@ void NativeWelcomeWindow::setStage(UIStage stage) {
 void NativeWelcomeWindow::handleMouseClick(int x, int y) {
     POINT pt = { x, y };
 
-    // 依據主畫面流程按鈕進行切換 (無頂部導覽列)
+    // 0. 優先檢查頂部全局快速導覽列切換
+    for (size_t i = 0; i < m_navTabRects.size(); ++i) {
+        if (PtInRect(&m_navTabRects[i], pt)) {
+            const UIStage stages[] = {
+                UIStage::Welcome,
+                UIStage::CalibrationInstruction,
+                UIStage::CountdownWait,
+                UIStage::ActiveCalibration,
+                UIStage::CalibrationResult,
+                UIStage::MainDashboard,
+                UIStage::SettingsPanel,
+                UIStage::StudyCompletedGate,
+                UIStage::QuestionnaireSubmitted
+            };
+            if (i < sizeof(stages) / sizeof(stages[0])) {
+                setStage(stages[i]);
+                return;
+            }
+        }
+    }
+
+    // 依據主畫面流程按鈕進行切換
     if (m_currentStage == UIStage::Welcome) {
         if (PtInRect(&m_startBtnRect, pt)) {
             setStage(UIStage::CalibrationInstruction);
@@ -362,12 +400,15 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
     } else if (m_currentStage == UIStage::ActiveCalibration) {
         if (PtInRect(&m_skipCalibBtnRect, pt)) {
             m_engine.calibrate(3.0f);
+            m_engine.getStudyTracker().setInitialSetupCompleted(true);
             setStage(UIStage::CalibrationResult);
         }
     } else if (m_currentStage == UIStage::CalibrationResult) {
         if (PtInRect(&m_proceedDashboardBtnRect, pt)) {
+            m_engine.getStudyTracker().setInitialSetupCompleted(true);
             setStage(UIStage::MainDashboard);
         } else if (PtInRect(&m_closeBgResultBtnRect, pt)) {
+            m_engine.getStudyTracker().setInitialSetupCompleted(true);
             minimizeToTray();
         } else if (PtInRect(&m_restartCalibBtnRect, pt)) {
             setStage(UIStage::CalibrationInstruction);
@@ -2104,7 +2145,7 @@ int NativeWelcomeWindow::run() {
         0,
         wc.lpszClassName,
         L"Eye Fatigue Detection (EFD) - 視覺校準與疲勞監控系統",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        WS_OVERLAPPEDWINDOW | (m_startInBackground ? 0 : WS_VISIBLE),
         posX, posY, m_width, m_height,
         NULL, NULL, wc.hInstance, this
     );
@@ -2125,8 +2166,18 @@ int NativeWelcomeWindow::run() {
     // 啟動 60 FPS 畫面更新計時器
     SetTimer(m_hwnd, 1, 16, NULL);
 
-    ShowWindow(m_hwnd, SW_SHOW);
-    UpdateWindow(m_hwnd);
+    if (m_startInBackground) {
+        ShowWindow(m_hwnd, SW_HIDE);
+        // 背景常駐啟動，發送系統氣泡提示通知使用者
+        m_trayManager.showBalloonNotification(
+            L"EFD 眼睛疲勞監測系統已在背景啟動",
+            L"攝影機已自動連線並即時記錄眼動數據，如偵測到疲勞將自動發送提醒。",
+            FatigueLevel::Relaxed
+        );
+    } else {
+        ShowWindow(m_hwnd, SW_SHOW);
+        UpdateWindow(m_hwnd);
+    }
 
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {

@@ -39,7 +39,7 @@ enum class UIStage : uint8_t {
 
 class NativeWelcomeWindow {
 public:
-    explicit NativeWelcomeWindow(int width = 960, int height = 640);
+    explicit NativeWelcomeWindow(int width = 960, int height = 640, bool startInBackground = false);
     ~NativeWelcomeWindow();
 
     int run();
@@ -53,6 +53,7 @@ public:
 private:
     int m_width;
     int m_height;
+    bool m_startInBackground = false;
     AsyncPipelineEngine m_engine;
     UIStage m_currentStage = UIStage::Welcome;
 

@@ -133,7 +133,7 @@ bool PlatformLifecycleAdapter::setAutoStartEnabled(bool enable) {
             RegCloseKey(hKey);
             return false;
         }
-        std::wstring quoted = L"\"" + std::wstring(exePath) + L"\"";
+        std::wstring quoted = L"\"" + std::wstring(exePath) + L"\" --background";
         result = RegSetValueExW(
             hKey,
             L"EFD_FatigueMonitor",

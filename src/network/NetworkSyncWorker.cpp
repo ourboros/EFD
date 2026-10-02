@@ -179,7 +179,7 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     result.unlockToken = oss.str();
     result.message = "科研時序數據與後測問卷同步成功，解鎖憑證已簽發。";
 
-    // 1. 本地持久化保存一份當前同步封裝 JSON (方便研究員與使用者檢驗)
+    // 1. 本地持久化保存一份當前同步封裝 JSON 與 Excel/Google 試算表相容 CSV (方便研究員與使用者直接打開)
     std::string jsonDump = m_dbService.exportRecordsAsJson();
     std::ofstream outDump("efd_daily_sync.json");
     if (outDump.is_open()) {
@@ -187,7 +187,27 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
         outDump.close();
     }
 
-    // 2. 格式化目前時間戳記
+    std::string csvDump = m_dbService.exportRecordsAsCsv();
+    std::ofstream outCsv("efd_daily_export.csv");
+    if (outCsv.is_open()) {
+        // UTF-8 BOM，確保 Excel 與 Google 試算表開啟無亂碼
+        outCsv << "\xEF\xBB\xBF";
+        outCsv << csvDump;
+        outCsv.close();
+    }
+
+    // 2. 檢查是否設定 Google Apps Script Web App 雲端試算表網址，並執行線上同步
+    bool uploadedToGoogleSheets = false;
+    std::string endpoint = getEndpointUrl();
+    if (endpoint.find("script.google.com/macros/s/") != std::string::npos) {
+        std::string curlCmd = "curl.exe -s -L -X POST -H \"Content-Type: application/json\" --data-binary @efd_daily_sync.json \"" + endpoint + "\" >nul 2>&1";
+        int ret = system(curlCmd.c_str());
+        if (ret == 0) {
+            uploadedToGoogleSheets = true;
+        }
+    }
+
+    // 3. 格式化目前時間戳記
     auto now = std::chrono::system_clock::now();
     std::time_t tt = std::chrono::system_clock::to_time_t(now);
     std::tm localTm{};
@@ -206,18 +226,26 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
         m_isSyncedToday = true;
     }
 
-    // 3. 輸出醒目的終端機科研同步成功 Log
+    // 4. 輸出醒目的終端機科研同步成功 Log (涵蓋 Google 試算表與 Excel 格式)
     std::cout << "\n"
               << "================================================================================\n"
-              << ">>> [科研雲端同步成功] 當日眼動數據已安全上傳至科研中心伺服器！ <<<\n"
+              << ">>> [科研雲端同步成功] 當日眼動數據已安全儲存並完成同步！ <<<\n"
               << "  [同步時間]: " << timeBuf << "\n"
               << "  [受試者 UUID]: " << payload.subjectUuid << " | [實驗天數]: 第 " << payload.currentDay << " 天\n"
               << "  [上傳數據筆數]: " << payload.recordCount << " 筆時序眼動特徵\n"
               << "  [數據完整性 Checksum]: " << payload.dataChecksum << "\n"
               << "  [伺服器回應]: 200 OK - " << result.message << "\n"
               << "  [解鎖簽章憑證]: " << result.unlockToken << "\n"
-              << "  [本機備份封裝]: efd_daily_sync.json 已同步落盤更新\n"
-              << "================================================================================\n"
+              << "  [本機備份封裝]: efd_daily_sync.json (JSON 格式完整時序結構)\n"
+              << "  [本機 Excel 報表]: efd_daily_export.csv (支援 Excel / Google 試算表一鍵開啟)\n";
+    if (uploadedToGoogleSheets) {
+        std::cout << "  [Google 試算表]: 已成功寫入線上雲端試算表 (Google Sheets Web App 即時同步)\n";
+    } else if (endpoint.find("script.google.com") != std::string::npos) {
+        std::cout << "  [Google 試算表]: 正在連線中或請檢查網路與 Apps Script 部署網址權限\n";
+    } else {
+        std::cout << "  [Google 試算表教學]: 可將 efd_daily_export.csv 拖拉上傳至 Google 雲端硬碟開啟\n";
+    }
+    std::cout << "================================================================================\n"
               << std::endl;
 
     return result;

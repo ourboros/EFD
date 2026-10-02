@@ -3,5 +3,8 @@
   "currentDay": 14,
   "status": 1,
   "unlockToken": "EFD-14D-6030-6415",
-  "studyStartTimestamp": 1789821995
+  "studyStartTimestamp": 1789821995,
+  "launchCount": 3,
+  "hasCompletedInitialSetup": false,
+  "cloudSyncEndpoint": "https://script.google.com/macros/s/AKfycb.../exec"
 }

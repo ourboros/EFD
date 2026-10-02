@@ -23,6 +23,7 @@ int main(int argc, char* argv[]) {
     int winWidth = 960;
     int winHeight = 640;
     bool isMobileMode = false;
+    bool isBackgroundMode = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -33,6 +34,8 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--tablet" || arg == "-t") {
             winWidth = 768;
             winHeight = 1024;
+        } else if (arg == "--background" || arg == "-b" || arg == "--autostart" || arg == "--silent") {
+            isBackgroundMode = true;
         }
     }
 
@@ -59,7 +62,7 @@ int main(int argc, char* argv[]) {
     std::cout << "====================================================\n";
 
 #ifdef _WIN32
-    efd::NativeWelcomeWindow window(winWidth, winHeight);
+    efd::NativeWelcomeWindow window(winWidth, winHeight, isBackgroundMode);
     return window.run();
 #elif defined(__APPLE__)
     efd::MacWelcomeWindow window(winWidth, winHeight);
