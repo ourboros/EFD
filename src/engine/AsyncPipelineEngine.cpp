@@ -16,6 +16,7 @@ AsyncPipelineEngine::AsyncPipelineEngine(PlatformType platform)
     m_landmarker->initialize();
     m_database.initialize();
     m_studyTracker.initialize();
+    m_syncWorker.setEndpointUrl(m_studyTracker.getCloudSyncEndpoint());
     m_cachedComplexity.complexityIndex = 4.5f;
     m_cachedComplexity.imfCount = 2;
 

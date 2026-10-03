@@ -89,6 +89,8 @@ static void drawRoundedButton(Gdiplus::Graphics& g, int x, int y, int w, int h, 
 
 } // anonymous namespace
 
+static const UINT WM_EFD_SHOW_UI = RegisterWindowMessageW(L"WM_EFD_SHOW_UI_MSG");
+
 NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBackground)
     : m_width(width), m_height(height), m_startInBackground(startInBackground), m_engine(PlatformType::Windows) {
     
@@ -261,15 +263,15 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
 
     m_engine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
-        // 僅於主儀表板階段觸發警報，且疲勞分數達到嚴重警告門檻 (>= 65.0)
-        if (this->m_currentStage != UIStage::MainDashboard) {
+        // 初始測試階段不彈出打擾提醒
+        if (this->m_currentStage != UIStage::MainDashboard && this->m_currentStage != UIStage::SettingsPanel) {
             return;
         }
 
         auto now = std::chrono::steady_clock::now();
         auto elapsedSinceLastAlert = std::chrono::duration_cast<std::chrono::seconds>(now - this->m_lastAlertNotificationTime).count();
 
-        // 智能防打擾節流：若距離上次提醒未滿 1200 秒 (20 分鐘冷卻期) 則靜默，不重複彈窗騷擾
+        // 嚴格遵守 System design.md 5.2 規範：觸發警報後啟動 20 分鐘 (1200 秒) 絕對靜默防打擾冷卻期
         if (elapsedSinceLastAlert < 1200 && this->m_lastAlertNotificationTime.time_since_epoch().count() > 0) {
             return;
         }
@@ -277,7 +279,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         if (level == FatigueLevel::SevereWarning || score >= 65.0f) {
             this->m_lastAlertNotificationTime = now;
             std::cout << "\n>>> [疲勞警報通知發送] 疲勞分數: " << std::fixed << std::setprecision(1) << score
-                      << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 (已啟動 20/5/5 靜默防打擾冷卻機制) <<<\n\n";
+                      << " (嚴重警告) - 你的眼睛處於疲勞狀態，請適當休息 (已啟動 20 分鐘絕對靜默防打擾冷卻機制) <<<\n\n";
 
             std::ostringstream oss;
             oss << "疲勞指數 " << std::fixed << std::setprecision(1) << score << " - 你的眼睛處於疲勞狀態，請適當休息 (已進入 20 分鐘暫停提醒冷卻保護)";
@@ -294,21 +296,34 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         }
     });
 
-    // 依據啟動模式與啟動次數決定起始介面並自動連線攝影機記錄眼動數據
+    // 判斷受試者是否已完成初次測試 (包含校準紀錄或已有時序特徵資料)
+    bool hasTested = m_engine.getStudyTracker().isInitialSetupCompleted() || 
+                     (m_engine.getDatabaseService().getRecordCount() > 0);
+
     if (m_startInBackground) {
-        // 開機背景啟動模式：不開啟UI操作介面，只開啟背景偵測功能和提醒機制
-        m_currentStage = UIStage::MainDashboard;
-        m_engine.start();
-        std::cout << "[開機啟動模式] 系統已在背景靜默啟動，攝影機已自動連線並開始即時記錄眼動數據與疲勞監控 (常駐系統托盤)\n";
-    } else if (m_engine.getStudyTracker().isSecondOrSubsequentLaunch() || m_engine.getStudyTracker().isInitialSetupCompleted()) {
-        // 第二次系統啟動：直接進入設定頁面中，並自動連線攝影機開始記錄眼動數據
-        m_currentStage = UIStage::SettingsPanel;
-        m_engine.start();
-        std::cout << "[第二次系統啟動] 系統直接進入設定頁面，攝影機已啟動並即時記錄眼動數據\n";
+        if (hasTested) {
+            // 開機背景啟動模式且已測試過：在背景運行 (常駐托盤不彈窗)，自動連線攝影機開始即時記錄眼動數據與疲勞監控
+            m_currentStage = UIStage::MainDashboard;
+            m_engine.start();
+            std::cout << "[開機啟動模式] 已載入受試者資料，系統已在背景運行，攝影機已自動連線並即時記錄眼動數據 (常駐系統托盤)\n";
+        } else {
+            // 開機背景啟動模式但尚未進行過初次測試：解除背景隱藏，直接呈現歡迎畫面引導使用者完成初次校準
+            m_startInBackground = false;
+            m_currentStage = UIStage::Welcome;
+            std::cout << "[開機啟動模式] 偵測到尚未完成初次視覺校準，自動彈出歡迎介面引導使用者\n";
+        }
     } else {
-        // 首次啟動：引導至歡迎與視覺校準流程
-        m_currentStage = UIStage::Welcome;
-        std::cout << "[首次系統啟動] 進入歡迎與視覺校準引導流程\n";
+        // 手動開啟程式：
+        if (hasTested) {
+            // 已有受試者測試紀錄：直接進入設定畫面，同時自動連線攝影機開始即時記錄眼動數據
+            m_currentStage = UIStage::SettingsPanel;
+            m_engine.start();
+            std::cout << "[手動開啟系統] 成功載入受試者資料，直接進入設定介面，攝影機已自動連線並記錄眼動數據\n";
+        } else {
+            // 尚未進行過測試：顯示歡迎畫面引導校準
+            m_currentStage = UIStage::Welcome;
+            std::cout << "[手動開啟系統] 首次使用或尚未完成初次測試，進入歡迎介面引導流程\n";
+        }
     }
 }
 
@@ -519,7 +534,6 @@ void NativeWelcomeWindow::onTimerTick() {
                           << m_calibratedUserBiasY << ")\n";
             }
             m_engine.calibrate(3.0f);
-            m_engine.getStudyTracker().setInitialSetupCompleted(true);
             setStage(UIStage::CalibrationResult);
         }
 
@@ -541,15 +555,19 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 
-    switch (msg) {
-    case WM_USER + 201: // 自訂喚醒訊息 (外部新實例請求只顯示系統介面)
+    if (msg == WM_EFD_SHOW_UI) {
         pThis->showMainWindow();
-        if (pThis->m_currentStage == UIStage::Welcome && 
-            (pThis->m_engine.getStudyTracker().isSecondOrSubsequentLaunch() || pThis->m_engine.getStudyTracker().isInitialSetupCompleted())) {
+        bool hasTested = pThis->m_engine.getStudyTracker().isInitialSetupCompleted() || 
+                         (pThis->m_engine.getDatabaseService().getRecordCount() > 0);
+        if (hasTested) {
             pThis->setStage(UIStage::SettingsPanel);
+        } else {
+            pThis->setStage(UIStage::Welcome);
         }
         return 0;
+    }
 
+    switch (msg) {
     case WM_PAINT:
         pThis->onPaint(hwnd);
         return 0;

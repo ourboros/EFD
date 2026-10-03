@@ -42,7 +42,6 @@ private:
     float m_screeningTimer = 0.0f;
     float m_awayTimer = 0.0f;
     float m_lastScore = 0.0f;
-    float m_fatigueSustainedSeconds = 0.0f;
 
     int   m_studyDay = 1;
     bool  m_isStudyLocked = false;

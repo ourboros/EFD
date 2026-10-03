@@ -1,5 +1,4 @@
 #include "StudyWorkflowTracker.hpp"
-#include "platform/PlatformLifecycleAdapter.hpp"
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -10,9 +9,7 @@
 namespace efd {
 
 StudyWorkflowTracker::StudyWorkflowTracker(const std::string& configPath)
-    : m_configPath(configPath.empty() || configPath == "efd_study_config.json"
-        ? PlatformLifecycleAdapter::resolveAppPath("efd_study_config.json")
-        : configPath) {
+    : m_configPath(configPath) {
 }
 
 bool StudyWorkflowTracker::initialize() {
@@ -24,6 +21,9 @@ bool StudyWorkflowTracker::initialize() {
             std::chrono::system_clock::now().time_since_epoch()).count();
         m_currentDay = 1;
         m_status = StudyStatus::ActiveMonitoring;
+    }
+    if (m_cloudSyncEndpoint.empty() || m_cloudSyncEndpoint.find("AKfycb...") != std::string::npos) {
+        m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbyGXGJz2Xnv-PsBnwW0ycxtlKEcJD5q2bB5_gM-s_Xwl-_VupzlqcQy64jAgDL1uByM/exec";
     }
     m_launchCount++;
     saveConfigUnlocked();

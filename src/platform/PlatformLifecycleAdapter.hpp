@@ -67,10 +67,6 @@ public:
     bool isAutoStartEnabled() const;
     bool setAutoStartEnabled(bool enable);
 
-    // 路徑解析工具 (取得執行檔所在絕對目錄，確保開機啟動與各工作目錄下皆能正確讀寫設定與資料庫)
-    static std::string getExecutableDir();
-    static std::string resolveAppPath(const std::string& relativeFileName);
-
     // 格式化當前平台狀態摘要
     std::string getStatusSummary() const;
 

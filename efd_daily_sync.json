@@ -1,4 +1,14 @@
 {
+  "syncType": "Daily_Fatigue_Sync",
+  "subjectUuid": "SUBJ-SYNC-101",
+  "studyDay": 14,
+  "syncTimestamp": "2026-10-03 21:25:21",
+  "timestampMs": 1791033921253,
+  "recordCount": 3,
+  "questionnaireResponse": "Q1:5,Q2:VerySatisfied",
+  "dataChecksum": "544231fafe330cb2924969e33fbfc249",
+  "unlockToken": "EFD-14D-1566-71FC",
+  "data": {
   "recordCount": 3,
   "records": [
     {
@@ -29,4 +39,5 @@
       "alertLevel": 0
     }
   ]
+}
 }

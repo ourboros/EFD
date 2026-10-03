@@ -175,6 +175,17 @@ int runCliSimulation() {
 
 int main(int argc, char* argv[]) {
 #ifdef _WIN32
+    // 鎖定工作目錄至執行檔目錄
+    WCHAR exePath[MAX_PATH] = { 0 };
+    if (GetModuleFileNameW(NULL, exePath, MAX_PATH) > 0) {
+        std::wstring exeDir = exePath;
+        size_t lastSlash = exeDir.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            exeDir = exeDir.substr(0, lastSlash);
+            SetCurrentDirectoryW(exeDir.c_str());
+        }
+    }
+
     // 設定 Windows 終端機為 UTF-8 編碼 (字碼頁 65001)，消除繁體中文亂碼
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
