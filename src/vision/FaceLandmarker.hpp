@@ -21,13 +21,15 @@ public:
 
     struct PresenceDiagnostic {
         bool rawPersonInFrame = false;
-        bool rawFacingCamera = false;
+        bool isFacingCamera = false;
+        bool isRecognitionActive = false;
         bool isFaceConfirmed = false;
         int skinPixels = 0;
         int minSkinRequired = 0;
         float fillDensity = 0.0f;
         float aspectRatio = 0.0f;
         float symmetryRatio = 0.0f;
+        float eyeFeatureConfidence = 0.0f;
         int boxX = 0;
         int boxY = 0;
         int boxW = 0;

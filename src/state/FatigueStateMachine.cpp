@@ -130,8 +130,8 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
         m_cooldownTimer -= deltaSeconds;
         m_screeningTimer -= deltaSeconds;
 
-        // 依據 System design.md 5.2: 20 分鐘冷卻期內，每 5 分鐘快篩僅在指標「持續飆升」(>=75.0 分) 時才升級警告
-        if (m_lastScore >= 75.0f && !m_screeningAlertFired) {
+        // 快篩期內最多僅發出一次提醒，杜絕每幀持續跳出彈窗騷擾
+        if (m_lastScore >= 65.0f && !m_screeningAlertFired) {
             m_screeningAlertFired = true;
             m_currentLevel = FatigueLevel::SevereWarning;
             if (m_alertCallback) {

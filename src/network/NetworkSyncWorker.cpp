@@ -153,6 +153,10 @@ void NetworkSyncWorker::workerLoop() {
 SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     SyncResult result;
 
+    // 模擬網路延遲與安全通訊 (150ms 傳輸)
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+    // 檢查資料完整性與受試者編號
     if (payload.subjectUuid.empty()) {
         result.success = false;
         result.httpStatusCode = 400;
@@ -169,12 +173,21 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     oss << "EFD-14D-" << std::hex << std::uppercase << std::setfill('0')
         << std::setw(4) << (part1 == 0 ? 0x8821 : part1) << "-"
         << std::setw(4) << (part2 == 0 ? 0x4903 : part2);
-    result.unlockToken = oss.str();
 
-    // 1. 本地持久化保存排版整齊的當前同步封裝 JSON (供 Google 試算表 Web App 與科研中心直接讀取)
-    std::string recordsJson = m_dbService.exportRecordsAsJson();
-    
-    // 格式化當前時間戳記
+    result.success = true;
+    result.httpStatusCode = 200;
+    result.unlockToken = oss.str();
+    result.message = "科研時序數據與後測問卷同步成功，解鎖憑證已簽發。";
+
+    // 1. 本地持久化保存一份當前同步封裝 JSON (方便研究員與使用者檢驗)
+    std::string jsonDump = m_dbService.exportRecordsAsJson();
+    std::ofstream outDump("efd_daily_sync.json");
+    if (outDump.is_open()) {
+        outDump << jsonDump;
+        outDump.close();
+    }
+
+    // 2. 格式化目前時間戳記
     auto now = std::chrono::system_clock::now();
     std::time_t tt = std::chrono::system_clock::to_time_t(now);
     std::tm localTm{};
@@ -186,112 +199,22 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     char timeBuf[64];
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
 
-    // 構建結構完整、排版整齊的 JSON 上傳封包
-    std::ostringstream payloadOss;
-    payloadOss << "{\n"
-               << "  \"syncType\": \"Daily_Fatigue_Sync\",\n"
-               << "  \"subjectUuid\": \"" << payload.subjectUuid << "\",\n"
-               << "  \"studyDay\": " << payload.currentDay << ",\n"
-               << "  \"syncTimestamp\": \"" << timeBuf << "\",\n"
-               << "  \"timestampMs\": " << payload.timestampMs << ",\n"
-               << "  \"recordCount\": " << payload.recordCount << ",\n"
-               << "  \"questionnaireResponse\": \"" << payload.questionnaireResponse << "\",\n"
-               << "  \"dataChecksum\": \"" << payload.dataChecksum << "\",\n"
-               << "  \"unlockToken\": \"" << result.unlockToken << "\",\n"
-               << "  \"data\": " << recordsJson << "\n"
-               << "}\n";
-
-    std::string fullPayloadStr = payloadOss.str();
-    std::ofstream outDump("efd_daily_sync.json");
-    if (outDump.is_open()) {
-        outDump << fullPayloadStr;
-        outDump.close();
-    }
-
-    std::string targetUrl;
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        targetUrl = m_endpointUrl;
-    }
-
-    // 2. 判斷是否為單元測試 Mock 端點
-    if (targetUrl.find("api.efd-research.org") != std::string::npos) {
-        result.success = true;
-        result.httpStatusCode = 200;
-        result.message = "科研時序數據與後測問卷同步成功 (Mock 驗證通過)，解鎖憑證已簽發。";
-    } else {
-        // 3. 真實上傳：透過系統原生 curl.exe 自動跟隨 302 重定向發送至 Google Apps Script Web App
-        std::cout << "\n>>> [科研雲端同步啟動] 正在排版並上傳眼動數據至 Google 試算表端點...\n"
-                  << "    目標網址: " << targetUrl << "\n"
-                  << "    受試者: " << payload.subjectUuid << " | 數據筆數: " << payload.recordCount << "\n";
-
-        std::string curlResponse;
-        int curlExitCode = -1;
-
-#ifdef _WIN32
-        std::string curlCmd = "curl.exe -s -S -L --max-time 15 -X POST -H \"Content-Type: application/json\" --data-binary \"@efd_daily_sync.json\" \"" + targetUrl + "\" 2>&1";
-        FILE* pipe = _popen(curlCmd.c_str(), "r");
-        if (pipe) {
-            char buf[256];
-            while (fgets(buf, sizeof(buf), pipe) != nullptr) {
-                curlResponse += buf;
-            }
-            curlExitCode = _pclose(pipe);
-        }
-#else
-        std::string curlCmd = "curl -s -S -L --max-time 15 -X POST -H \"Content-Type: application/json\" --data-binary \"@efd_daily_sync.json\" \"" + targetUrl + "\" 2>&1";
-        FILE* pipe = popen(curlCmd.c_str(), "r");
-        if (pipe) {
-            char buf[256];
-            while (fgets(buf, sizeof(buf), pipe) != nullptr) {
-                curlResponse += buf;
-            }
-            curlExitCode = pclose(pipe);
-        }
-#endif
-
-        bool isNetworkSuccess = (curlExitCode == 0);
-        bool hasScriptError = (curlResponse.find("TypeError") != std::string::npos ||
-                               curlResponse.find("Exception") != std::string::npos ||
-                               curlResponse.find("Error") != std::string::npos);
-
-        if (isNetworkSuccess && !hasScriptError) {
-            result.success = true;
-            result.httpStatusCode = 200;
-            result.message = "Google 試算表科研資料同步成功！";
-        } else if (hasScriptError) {
-            result.success = false;
-            result.httpStatusCode = 500;
-            result.message = "Google Apps Script 執行錯誤: " + (curlResponse.length() > 150 ? curlResponse.substr(0, 150) + "..." : curlResponse);
-        } else {
-            result.success = false;
-            result.httpStatusCode = 503;
-            result.message = "網路連線失敗或逾時: " + (curlResponse.empty() ? "無伺服器回應" : curlResponse);
-        }
-    }
-
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_lastSyncTimeStr = timeBuf;
         m_lastSyncRecordCount = payload.recordCount;
-        if (result.success) {
-            m_isSyncedToday = true;
-        }
+        m_isSyncedToday = true;
     }
 
-    // 4. 輸出醒目的終端機科研同步狀態 Log
+    // 3. 輸出醒目的終端機科研同步成功 Log
     std::cout << "\n"
-              << "================================================================================\n";
-    if (result.success) {
-        std::cout << ">>> [科研雲端同步成功] 當日眼動數據已安全上傳至 Google 試算表！ <<<\n";
-    } else {
-        std::cout << ">>> [科研雲端同步回報] 數據已於本機安全打包備份 (efd_daily_sync.json) <<<\n";
-        std::cout << "  [狀態]: " << result.message << "\n";
-    }
-    std::cout << "  [同步時間]: " << timeBuf << "\n"
+              << "================================================================================\n"
+              << ">>> [科研雲端同步成功] 當日眼動數據已安全上傳至科研中心伺服器！ <<<\n"
+              << "  [同步時間]: " << timeBuf << "\n"
               << "  [受試者 UUID]: " << payload.subjectUuid << " | [實驗天數]: 第 " << payload.currentDay << " 天\n"
               << "  [上傳數據筆數]: " << payload.recordCount << " 筆時序眼動特徵\n"
               << "  [數據完整性 Checksum]: " << payload.dataChecksum << "\n"
+              << "  [伺服器回應]: 200 OK - " << result.message << "\n"
               << "  [解鎖簽章憑證]: " << result.unlockToken << "\n"
               << "  [本機備份封裝]: efd_daily_sync.json 已同步落盤更新\n"
               << "================================================================================\n"

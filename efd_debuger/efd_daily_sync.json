@@ -1,0 +1,3022 @@
+{
+  "syncType": "Daily_Fatigue_Sync",
+  "subjectUuid": "SUBJ-DFF7-BC4E",
+  "studyDay": 1,
+  "syncTimestamp": "2026-10-03 21:55:56",
+  "timestampMs": 1791035756645,
+  "recordCount": 334,
+  "questionnaireResponse": "Daily_Evening_Data_Sync",
+  "dataChecksum": "f64be4f869286ab7001cbadb61435e32",
+  "unlockToken": "EFD-14D-C51D-0399",
+  "data": {
+  "recordCount": 334,
+  "records": [
+    {
+      "timestampMs": 1791034129939,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 2.2052,
+      "fatigueScore": 57.62,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034131956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.6715,
+      "fatigueScore": 71.25,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034133956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3975,
+      "fatigueScore": 73.69,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034135956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2856,
+      "fatigueScore": 74.68,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034137956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2212,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034139956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1816,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034141956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1533,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034143956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1332,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034145956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1173,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034147956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1052,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034149956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034151957,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034153958,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034155956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034157960,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034159957,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034161956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034163956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034165957,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034167959,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034167959,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034169956,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034650824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 2.5113,
+      "fatigueScore": 55.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034652824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.7074,
+      "fatigueScore": 70.93,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034654824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.4101,
+      "fatigueScore": 73.58,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034656824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2922,
+      "fatigueScore": 74.62,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034658824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2251,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034660824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1843,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034662824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1552,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034664824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1347,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034666824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1184,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034668824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1061,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034670824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034672824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034674824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034676824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034678824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034680824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034682824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034684824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034686824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034688825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034690824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034692824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034694824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034696824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034698824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034700824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034702824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034704824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034706824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034708824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034710824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034712824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034714824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034716824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034718824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034720824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034722824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034724824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034726825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034728824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034730824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034732824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034734824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034736825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034738824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034740824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034742824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034744824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034746824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034748824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034750825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034752824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034754824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034756824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034758824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034760825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034762824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034764824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034766824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034768824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034770824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034772825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034774824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034776825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034778824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034780824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034782825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034784824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034786824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034788824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034790824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034792824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034794824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034796824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034798824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034800824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034802824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034804824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034806824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034808824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034810824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034812824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034814825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034816824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034818824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034820824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034822824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034824826,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034826824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034828826,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034830824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034832824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034834824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034836824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034838824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034840824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034842824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034844824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034846825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034848825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034850824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034852824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034854824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034856824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034858824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034860824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034862824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034864824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034866824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034868824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034870824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034872824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034874824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034876824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034878824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034880825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034882824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034884824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034886824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034888824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034890824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034892824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034894824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034896824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034898824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034900824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034902824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034904824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034906824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034908824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034910824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034912824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034914825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034916824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034918824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034920824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034922825,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034924824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034926824,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034928728,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034930488,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034932232,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034933976,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034935736,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034937480,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034939224,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034940984,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034942728,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1047,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034944488,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2386,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034946232,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2395,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034947976,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2386,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034949736,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2395,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034951480,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2386,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034953224,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2395,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034954984,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2386,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034956728,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2395,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034958424,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2386,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034959928,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1218,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034961432,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034962936,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034981688,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034982680,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034983688,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034984680,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034985688,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034986680,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034989688,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034990680,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791034999784,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035001176,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035002488,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1115,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1121,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035171672,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2710,
+      "fatigueScore": 74.81,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035172664,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2483,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035186664,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.5360,
+      "fatigueScore": 72.46,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035187912,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.5359,
+      "fatigueScore": 72.46,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035189160,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.5360,
+      "fatigueScore": 72.46,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035190425,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.5359,
+      "fatigueScore": 72.46,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035191672,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.5360,
+      "fatigueScore": 72.46,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035192920,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.5359,
+      "fatigueScore": 72.46,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035194168,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.4332,
+      "fatigueScore": 73.37,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035195416,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3352,
+      "fatigueScore": 74.24,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035196664,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3338,
+      "fatigueScore": 74.25,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035197912,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035199176,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035200424,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035201672,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035202920,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035204170,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035205416,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035206664,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035207912,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035209176,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035210424,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035211673,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035212920,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035214168,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035215416,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035216665,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035217912,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035219176,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035220424,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035221672,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035222920,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035224168,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035225416,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035226664,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035227912,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035229176,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035230424,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035231672,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035232920,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035234168,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035235416,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035236664,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035237912,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035239176,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035240427,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035241672,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035242920,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035244169,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035245416,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035246664,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035247912,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035249176,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035250424,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035251672,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035252920,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035254168,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035255624,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035257368,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035259112,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035260872,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035262616,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035264376,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035266120,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035267864,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035269624,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035271368,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035273112,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035274872,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035276616,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035278376,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035280121,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035281864,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1112,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035283624,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035285370,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035287112,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035288873,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035290616,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035292376,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035294121,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035295864,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035297624,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035299368,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035301112,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035302872,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035304616,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035306377,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035308122,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035309864,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035311624,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035313371,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035315114,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035316872,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035318616,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035320377,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035322120,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035323864,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035325629,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035327370,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035329114,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035330872,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035332619,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035334377,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035336120,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035337864,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035339624,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035341370,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035341370,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035343113,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035344872,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035346616,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035714095,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 2.2052,
+      "fatigueScore": 57.62,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035715599,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.6715,
+      "fatigueScore": 71.25,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035717087,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3975,
+      "fatigueScore": 73.69,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035718591,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2856,
+      "fatigueScore": 74.68,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035720095,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2212,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035721599,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1816,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035723087,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1533,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035724591,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1332,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035726095,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1173,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035727599,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1052,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035729087,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035730591,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035732095,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035733599,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035735087,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035736590,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035738095,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035739599,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035741087,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035742591,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035744095,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035745601,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035746846,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035748094,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035749343,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035750638,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035752143,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035753648,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035755136,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1791035756640,
+      "subjectUuid": "SUBJ-DFF7-BC4E",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    }
+  ]
+}
+}

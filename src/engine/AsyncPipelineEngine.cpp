@@ -305,6 +305,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             EngineTelemetry telemetry;
             telemetry.latestFrame = std::move(package.frame);
             telemetry.detection = std::move(package.detection);
+            telemetry.presenceDiagnostic = m_landmarker->getLatestPresenceDiagnostic();
             telemetry.eyeMetrics = eyeMetrics;
             telemetry.complexityMetrics = m_cachedComplexity;
             telemetry.systemState = state;
