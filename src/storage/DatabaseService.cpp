@@ -1,4 +1,5 @@
 #include "DatabaseService.hpp"
+#include "platform/PlatformLifecycleAdapter.hpp"
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -8,7 +9,12 @@
 namespace efd {
 
 DatabaseService::DatabaseService(const std::string& dbPath)
-    : m_dbPath(dbPath), m_walPath(dbPath + ".wal") {
+    : m_dbPath(dbPath.empty() || dbPath == "efd_study_data.dat"
+        ? PlatformLifecycleAdapter::resolveAppPath("efd_study_data.dat")
+        : dbPath),
+      m_walPath((dbPath.empty() || dbPath == "efd_study_data.dat"
+        ? PlatformLifecycleAdapter::resolveAppPath("efd_study_data.dat")
+        : dbPath) + ".wal") {
 }
 
 DatabaseService::~DatabaseService() {

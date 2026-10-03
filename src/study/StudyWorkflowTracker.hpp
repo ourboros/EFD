@@ -57,7 +57,7 @@ private:
     int64_t m_studyStartTimestamp = 0;
     int m_launchCount = 0;
     bool m_hasCompletedInitialSetup = false;
-    std::string m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycb.../exec";
+    std::string m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbyGXGJz2Xnv-PsBnwW0ycxtlKEcJD5q2bB5_gM-s_Xwl-_VupzlqcQy64jAgDL1uByM/exec";
     mutable std::mutex m_mutex;
 
     void saveConfigUnlocked();

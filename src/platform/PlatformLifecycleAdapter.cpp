@@ -156,6 +156,46 @@ bool PlatformLifecycleAdapter::setAutoStartEnabled(bool enable) {
 #endif
 }
 
+std::string PlatformLifecycleAdapter::getExecutableDir() {
+#ifdef _WIN32
+    wchar_t path[MAX_PATH] = { 0 };
+    DWORD len = GetModuleFileNameW(NULL, path, MAX_PATH);
+    if (len > 0) {
+        std::wstring ws(path);
+        size_t pos = ws.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) {
+            ws = ws.substr(0, pos);
+        }
+        int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, NULL, 0, NULL, NULL);
+        if (sizeNeeded > 1) {
+            std::string dir(sizeNeeded - 1, 0);
+            WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &dir[0], sizeNeeded, NULL, NULL);
+            return dir;
+        }
+    }
+    return ".";
+#else
+    return ".";
+#endif
+}
+
+std::string PlatformLifecycleAdapter::resolveAppPath(const std::string& relativeFileName) {
+    if (relativeFileName.empty()) return "";
+    // 若已是絕對路徑則直接返回
+#ifdef _WIN32
+    if (relativeFileName.size() >= 2 && relativeFileName[1] == ':') {
+        return relativeFileName;
+    }
+    std::string dir = getExecutableDir();
+    return dir + "\\" + relativeFileName;
+#else
+    if (!relativeFileName.empty() && relativeFileName[0] == '/') {
+        return relativeFileName;
+    }
+    return getExecutableDir() + "/" + relativeFileName;
+#endif
+}
+
 std::string PlatformLifecycleAdapter::getStatusSummary() const {
     std::ostringstream oss;
     oss << "[" << getPlatformName() << "] State: ";

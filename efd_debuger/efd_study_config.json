@@ -3,5 +3,8 @@
   "currentDay": 1,
   "status": 0,
   "unlockToken": "",
-  "studyStartTimestamp": 1790869786
+  "studyStartTimestamp": 1790869786,
+  "launchCount": 2,
+  "hasCompletedInitialSetup": true,
+  "cloudSyncEndpoint": "https://script.google.com/macros/s/AKfycb.../exec"
 }

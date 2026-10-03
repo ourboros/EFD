@@ -40,7 +40,7 @@ class NetworkSyncWorker {
 public:
     using SyncCallback = std::function<void(const SyncResult& result)>;
 
-    explicit NetworkSyncWorker(DatabaseService& dbService, const std::string& endpointUrl = "https://api.efd-research.org/v1/sync");
+    explicit NetworkSyncWorker(DatabaseService& dbService, const std::string& endpointUrl = "https://script.google.com/macros/s/AKfycbyGXGJz2Xnv-PsBnwW0ycxtlKEcJD5q2bB5_gM-s_Xwl-_VupzlqcQy64jAgDL1uByM/exec");
     ~NetworkSyncWorker();
 
     // 設定科研雲端端點

@@ -1,5 +1,5 @@
 {
-  "recordCount": 1224,
+  "recordCount": 1449,
   "records": [
     {
       "timestampMs": 1790869797067,
@@ -11010,6 +11010,2031 @@
     },
     {
       "timestampMs": 1790952082704,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952084472,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952086208,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952087969,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952089714,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952091457,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952093217,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952094961,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952096720,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952098474,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952100208,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952101970,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952103712,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952105456,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952107216,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952108960,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952110725,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952112464,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952114208,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952115969,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952117601,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952119088,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952120592,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952122097,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952123601,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952125088,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952126592,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952128096,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952129601,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952131088,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952132592,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952134096,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952135600,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952137104,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952138592,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952140097,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952141601,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952143104,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952144592,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952146097,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952147648,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952149152,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952150641,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952152144,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952153648,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952155200,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952156705,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952158192,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952159696,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952161200,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952162704,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952164197,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952165746,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952167250,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952168802,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952170319,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952171793,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952173296,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952174898,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952176498,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952178002,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952179560,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952181042,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952182547,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952184144,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952185699,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952187202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952188709,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952190199,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952191696,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952193206,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952194710,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952196199,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952197696,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952199202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952200705,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952202241,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952203745,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952205248,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952206753,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952208240,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952209745,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952211296,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952212800,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952214305,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952215792,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952217296,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952218800,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952220308,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952221792,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952223296,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952224800,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952226306,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952227792,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952229296,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952230848,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952232401,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952233904,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952235393,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952236896,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952238498,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952240001,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952241504,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952242992,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952244544,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952246048,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952247606,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952249104,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952250594,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952252096,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952253600,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952255104,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952256593,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952258097,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952259600,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952261105,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952262593,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952264098,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952265601,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952267104,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952268592,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952270144,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952271650,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952273200,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952274704,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952276192,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952277697,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952279200,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952280706,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952282194,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952283698,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952285200,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952286704,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952288193,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952289697,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952291201,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952292706,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952294192,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952295697,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952297200,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952298704,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952300194,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952301697,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952303202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952304705,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952306194,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952307698,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952309202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952310705,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952312193,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952313696,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952315202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952316706,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952318194,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952319697,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952321202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952322705,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952324193,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952325697,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952327202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952328706,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952330194,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952331701,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952333202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3331,
+      "fatigueScore": 74.26,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952334706,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3331,
+      "fatigueScore": 74.26,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952336194,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3331,
+      "fatigueScore": 74.26,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952337698,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3331,
+      "fatigueScore": 74.26,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952339205,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3331,
+      "fatigueScore": 74.26,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952340706,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2636,
+      "fatigueScore": 74.88,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952342193,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952343698,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952345202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952346706,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2146,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952348194,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952349700,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952351202,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952352707,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952352707,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952354259,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952355748,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952357250,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952358755,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952360258,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952361746,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952363251,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952364754,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952366257,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952367745,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952369250,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952370754,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952372305,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952373792,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952375345,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952376848,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952378354,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790952379907,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790955984488,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 2.2052,
+      "fatigueScore": 57.62,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790955986487,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.6715,
+      "fatigueScore": 71.25,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790955988487,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.3975,
+      "fatigueScore": 73.69,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790955990488,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2856,
+      "fatigueScore": 74.68,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790955992490,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.2212,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790955994489,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1816,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790955996552,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1533,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790955998551,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1332,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956000551,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1173,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956002615,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1052,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956004619,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956006617,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956008619,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956010617,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956012616,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956014617,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956016615,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956018616,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956020614,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956022617,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956024616,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956026616,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956028616,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956030679,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956032680,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956034680,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956036680,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956038680,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956040679,
+      "subjectUuid": "SUBJ-4245-6C90",
+      "ear": 0.1110,
+      "perclos": 1.0000,
+      "complexityIndex": 0.1038,
+      "fatigueScore": 75.00,
+      "alertLevel": 1
+    },
+    {
+      "timestampMs": 1790956042681,
       "subjectUuid": "SUBJ-4245-6C90",
       "ear": 0.1110,
       "perclos": 1.0000,

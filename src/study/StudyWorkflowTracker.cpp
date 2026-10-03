@@ -1,4 +1,5 @@
 #include "StudyWorkflowTracker.hpp"
+#include "platform/PlatformLifecycleAdapter.hpp"
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -9,7 +10,9 @@
 namespace efd {
 
 StudyWorkflowTracker::StudyWorkflowTracker(const std::string& configPath)
-    : m_configPath(configPath) {
+    : m_configPath(configPath.empty() || configPath == "efd_study_config.json"
+        ? PlatformLifecycleAdapter::resolveAppPath("efd_study_config.json")
+        : configPath) {
 }
 
 bool StudyWorkflowTracker::initialize() {

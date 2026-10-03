@@ -269,8 +269,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         auto now = std::chrono::steady_clock::now();
         auto elapsedSinceLastAlert = std::chrono::duration_cast<std::chrono::seconds>(now - this->m_lastAlertNotificationTime).count();
 
-        // 智能防打擾節流：若距離上次提醒未滿 300 秒 (5 分鐘) 則靜默，不重複彈窗騷擾
-        if (elapsedSinceLastAlert < 300 && this->m_lastAlertNotificationTime.time_since_epoch().count() > 0) {
+        // 智能防打擾節流：若距離上次提醒未滿 1200 秒 (20 分鐘冷卻期) 則靜默，不重複彈窗騷擾
+        if (elapsedSinceLastAlert < 1200 && this->m_lastAlertNotificationTime.time_since_epoch().count() > 0) {
             return;
         }
 
@@ -519,6 +519,7 @@ void NativeWelcomeWindow::onTimerTick() {
                           << m_calibratedUserBiasY << ")\n";
             }
             m_engine.calibrate(3.0f);
+            m_engine.getStudyTracker().setInitialSetupCompleted(true);
             setStage(UIStage::CalibrationResult);
         }
 
@@ -541,6 +542,14 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
     }
 
     switch (msg) {
+    case WM_USER + 201: // 自訂喚醒訊息 (外部新實例請求只顯示系統介面)
+        pThis->showMainWindow();
+        if (pThis->m_currentStage == UIStage::Welcome && 
+            (pThis->m_engine.getStudyTracker().isSecondOrSubsequentLaunch() || pThis->m_engine.getStudyTracker().isInitialSetupCompleted())) {
+            pThis->setStage(UIStage::SettingsPanel);
+        }
+        return 0;
+
     case WM_PAINT:
         pThis->onPaint(hwnd);
         return 0;

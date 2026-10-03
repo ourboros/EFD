@@ -29,9 +29,10 @@ New-Item -ItemType Directory -Path $DistDir -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $DistDir "assets") -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $DistDir "design\1x") -Force | Out-Null
 
-# 3. 複製主執行檔 (命名為乾淨的 EFD.exe)
-Write-Host " -> 複製主程式: EFD.exe" -ForegroundColor Green
+# 3. 複製主執行檔 (命名為 EFD.exe 與 efd_debuger.exe)
+Write-Host " -> 複製主程式: EFD.exe 與 efd_debuger.exe" -ForegroundColor Green
 Copy-Item $ExeSource (Join-Path $DistDir "EFD.exe") -Force
+Copy-Item $ExeSource (Join-Path $DistDir "efd_debuger.exe") -Force
 
 # 4. 複製 MSVC 執行庫 DLL (保證在任何乾淨 Windows 系統上隨插即用免安裝)
 Write-Host " -> 複製獨立執行庫 DLL (msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll)..." -ForegroundColor Green
@@ -98,7 +99,7 @@ $enableAutoStartBatLines = @(
     'echo ==================================================================',
     'echo   正在啟用 EFD 眼睛疲勞監測系統 - 開機自動啟動...',
     'echo ==================================================================',
-    'reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "EFD_FatigueMonitor" /t REG_SZ /d "\"%~dp0EFD.exe\"" /f >nul',
+    'reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "EFD_FatigueMonitor" /t REG_SZ /d "\"%~dp0EFD.exe\" --background" /f >nul',
     'if %ERRORLEVEL% equ 0 (',
     '    echo [成功] 已成功加入 Windows 開機自動啟動！系統將於開機登入時自動在背景守護。',
     ') else (',

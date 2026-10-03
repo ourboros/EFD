@@ -39,6 +39,26 @@ int main(int argc, char* argv[]) {
         }
     }
 
+#ifdef _WIN32
+    // 單一實例檢測 (Single-Instance Detection via Named Mutex)
+    HANDLE hMutex = CreateMutexW(NULL, FALSE, L"Global\\EFD_FatigueMonitor_SingleInstance_Mutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        // 背景程序已在執行中，只開啟/喚醒現有操作介面
+        HWND existingHwnd = FindWindowW(L"EFD_FullNativeWindow", NULL);
+        if (existingHwnd) {
+            std::cout << "[系統提示] 偵測到 EFD 核心監控程序已在背景常駐執行中。\n";
+            std::cout << "[系統提示] 正在喚醒現有程序操作介面，不重複啟動攝影機硬體...\n";
+            PostMessageW(existingHwnd, WM_USER + 201, 0, 0);
+            ShowWindow(existingHwnd, SW_RESTORE);
+            SetForegroundWindow(existingHwnd);
+        } else {
+            std::cout << "[系統提示] 偵測到 EFD 核心監控程序已在背景執行中。\n";
+        }
+        if (hMutex) CloseHandle(hMutex);
+        return 0; // 新進程自動退出，避免多重實例搶佔攝影機
+    }
+#endif
+
     std::cout << "====================================================\n";
     std::cout << "  EFD 七階段視覺校準、疲勞監控與科研後測系統\n";
     std::cout << "  EFD 視覺校準、疲勞監控與科研後測系統\n";
