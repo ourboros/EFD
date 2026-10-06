@@ -133,10 +133,13 @@ void AsyncPipelineEngine::setAlertCallback(AlertCallback callback) {
 }
 
 void AsyncPipelineEngine::calibrate(float durationSeconds) {
-    std::vector<float> sampleList;
+    std::vector<float> sampleList = m_extractor.getEarHistory();
     int samples = static_cast<int>(durationSeconds * 30.0f);
-    for (int i = 0; i < samples; ++i) {
-        sampleList.push_back(0.31f);
+    if (sampleList.size() > static_cast<size_t>(samples)) {
+        sampleList.erase(sampleList.begin(), sampleList.begin() + (sampleList.size() - samples));
+    }
+    if (sampleList.empty()) {
+        sampleList.assign(samples > 0 ? samples : 30, 0.31f);
     }
     m_baseline.calibrate(sampleList);
     m_extractor.setEyeClosedThreshold(m_baseline.getCurrentThreshold());
@@ -160,7 +163,13 @@ bool AsyncPipelineEngine::triggerManualDataSync() {
 void AsyncPipelineEngine::handleLifecycleEvent(const LifecycleEvent& event) {
     if (event.currentState == AppLifecycleState::Resumed) {
         // 改良點 3: 熱重啟快速基準再校準 (1 秒內快速重同步光線與姿勢)
-        std::vector<float> resumeSamples(30, 0.31f);
+        std::vector<float> resumeSamples = m_extractor.getEarHistory();
+        if (resumeSamples.size() > 30) {
+            resumeSamples.erase(resumeSamples.begin(), resumeSamples.begin() + (resumeSamples.size() - 30));
+        }
+        if (resumeSamples.empty()) {
+            resumeSamples.assign(30, 0.31f);
+        }
         m_baseline.fastRecalibrate(resumeSamples);
         m_extractor.setEyeClosedThreshold(m_baseline.getCurrentThreshold());
 
@@ -198,7 +207,7 @@ void AsyncPipelineEngine::inferenceWorkerLoop() {
             while (m_inferenceQueue.size() >= MAX_INFERENCE_QUEUE) {
                 m_inferenceQueue.pop();
             }
-            m_inferenceQueue.push(InferencePackage{std::move(frame), std::move(detection)});
+            m_inferenceQueue.push(InferencePackage{std::move(frame), std::move(detection), m_landmarker->getLatestPresenceDiagnostic()});
             m_inferenceQueueCv.notify_one();
         }
     }
@@ -305,7 +314,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             EngineTelemetry telemetry;
             telemetry.latestFrame = std::move(package.frame);
             telemetry.detection = std::move(package.detection);
-            telemetry.presenceDiagnostic = m_landmarker->getLatestPresenceDiagnostic();
+            telemetry.presenceDiagnostic = std::move(package.presenceDiagnostic);
             telemetry.eyeMetrics = eyeMetrics;
             telemetry.complexityMetrics = m_cachedComplexity;
             telemetry.systemState = state;

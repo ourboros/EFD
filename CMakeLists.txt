@@ -99,7 +99,7 @@ add_library(efd_core STATIC
 )
 
 if(WIN32)
-    target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib gdi32 user32 shell32 gdiplus)
+    target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib gdi32 user32 shell32 gdiplus winhttp.lib)
 endif()
 
 target_include_directories(efd_core PUBLIC
@@ -162,7 +162,7 @@ elseif(APPLE AND NOT IOS)
     )
 endif()
 
-add_executable(efd_gui
+add_executable(efd_gui WIN32
     ${EFD_GUI_SOURCES}
 )
 

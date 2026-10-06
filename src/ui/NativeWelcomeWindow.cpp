@@ -145,7 +145,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
             this->setStage(UIStage::StudyCompletedGate);
             break;
         case TrayMenuAction::ExitApp:
-            if (this->m_hwnd) PostMessage(this->m_hwnd, WM_CLOSE, 0, 0);
+            if (this->m_hwnd) PostMessage(this->m_hwnd, WM_DESTROY, 0, 0);
             break;
         }
     });
@@ -210,7 +210,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         int count = ++s_telemetryLogCount;
         if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
             bool isPresent = (t.detection.hasFace && t.systemState.userPresent);
-            bool inCooldown = (t.systemState.cooldownState == CooldownState::InCooldown);
+            bool inCooldown = (t.systemState.cooldownState == CooldownState::InCooldown || t.systemState.cooldownState == CooldownState::FastScreening);
             int cdRemaining = t.systemState.cooldownRemainingSeconds;
             int cdMins = cdRemaining / 60;
             int cdSecs = cdRemaining % 60;
@@ -242,7 +242,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
 
                 std::cout << " | 【疲勞依據: EAR=" << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
                           << (t.eyeMetrics.isEyeClosed ? " (閉眼)" : " (睜眼)")
-                          << " (基準閾值 0.217), PERCLOS=" << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
+                          << " (基準閾值 " << std::fixed << std::setprecision(3) << t.currentThreshold << "), PERCLOS=" << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
                           << ", 眨眼=" << std::setprecision(1) << t.eyeMetrics.blinkRatePerMin << "次/分"
                           << ", MSE CI=" << std::setprecision(2) << t.complexityMetrics.complexityIndex
                           << ", 疲勞分=" << std::setprecision(1) << t.systemState.currentFatigueScore << "/65.0"
@@ -269,12 +269,9 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         }
 
         auto now = std::chrono::steady_clock::now();
-        auto elapsedSinceLastAlert = std::chrono::duration_cast<std::chrono::seconds>(now - this->m_lastAlertNotificationTime).count();
 
-        // 嚴格遵守 System design.md 5.2 規範：觸發警報後啟動 20 分鐘 (1200 秒) 絕對靜默防打擾冷卻期
-        if (elapsedSinceLastAlert < 1200 && this->m_lastAlertNotificationTime.time_since_epoch().count() > 0) {
-            return;
-        }
+        // 狀態機 (FatigueStateMachine) 已具備完整的 20/5/5 冷卻防打擾邏輯
+        // 此處不應再做強制 1200 秒攔截，否則會導致快篩期的「主動升級提醒」無法彈出
 
         if (level == FatigueLevel::SevereWarning || score >= 65.0f) {
             this->m_lastAlertNotificationTime = now;
@@ -471,7 +468,7 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
         }
     } else if (m_currentStage == UIStage::QuestionnaireSubmitted) {
         if (PtInRect(&m_exitAppBtnRect, pt)) {
-            PostMessage(m_hwnd, WM_CLOSE, 0, 0);
+            PostMessage(m_hwnd, WM_DESTROY, 0, 0);
         } else if (PtInRect(&m_returnDashboardBtnRect, pt)) {
             setStage(UIStage::MainDashboard);
         }
@@ -580,12 +577,7 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         pThis->m_trayManager.handleTrayMessage(lParam);
         return 0;
 
-    case WM_SYSCOMMAND:
-        if ((wParam & 0xFFF0) == SC_MINIMIZE) {
-            pThis->minimizeToTray();
-            return 0;
-        }
-        break;
+    case WM_SYSCOMMAND: break;
 
     case WM_MOUSEMOVE: {
         int x = GET_X_LPARAM(lParam);
@@ -674,6 +666,10 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         pThis->handleMouseClick(x, y);
         return 0;
     }
+
+    case WM_CLOSE:
+        ShowWindow(hwnd, SW_HIDE);
+        return 0;
 
     case WM_DESTROY:
         KillTimer(hwnd, 1);
@@ -1391,7 +1387,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     bool isPresent = (m_latestTelemetry.detection.hasFace && m_latestTelemetry.systemState.userPresent);
     FatigueLevel level = m_latestTelemetry.systemState.fatigueLevel;
     float fatigueScore = m_latestTelemetry.systemState.currentFatigueScore;
-    bool inCooldown = (m_latestTelemetry.systemState.cooldownState == CooldownState::InCooldown);
+    bool inCooldown = (m_latestTelemetry.systemState.cooldownState == CooldownState::InCooldown || m_latestTelemetry.systemState.cooldownState == CooldownState::FastScreening);
     int cdRemaining = m_latestTelemetry.systemState.cooldownRemainingSeconds;
     int cdMins = cdRemaining / 60;
     int cdSecs = cdRemaining % 60;
@@ -1512,8 +1508,10 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         int bw = m_latestTelemetry.presenceDiagnostic.boxW;
         int bh = m_latestTelemetry.presenceDiagnostic.boxH;
 
-        if (isPresent && bw > 0 && bh > 0) {
-            // 使用者在場：高亮翡翠綠動態追隨方框
+        if (inCooldown) {
+            // 冷卻中隱藏方框 (依據使用者要求)
+        } else if (bw > 0 && bh > 0) {
+            // 有偵測到人臉特徵，隨時追蹤方框 (即便未達在場標準也追蹤)
             int drawBoxX = leftX + 4 + static_cast<int>(bx * sx);
             int drawBoxY = viewY + 4 + static_cast<int>(by * sy);
             int drawBoxW = static_cast<int>(bw * sx);
@@ -1524,7 +1522,9 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
             drawBoxW = std::clamp(drawBoxW, 30, leftX + leftW - drawBoxX - 8);
             drawBoxH = std::clamp(drawBoxH, 30, viewY + viewH - drawBoxY - 8);
 
-            Gdiplus::Pen boxPen(Gdiplus::Color(255, 30, 220, 140), 2.5f);
+            // 若符合在場條件顯示綠框，否則顯示黃框/紅框
+            Gdiplus::Color boxColor = isPresent ? Gdiplus::Color(255, 30, 220, 140) : Gdiplus::Color(255, 235, 180, 87);
+            Gdiplus::Pen boxPen(boxColor, 2.5f);
             g.DrawRectangle(&boxPen, drawBoxX, drawBoxY, drawBoxW, drawBoxH);
 
             // 四角鎖定錨點 (Corner Reticle Brackets)
@@ -1540,7 +1540,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
             g.DrawLine(&cornerPen, drawBoxX + drawBoxW, drawBoxY + drawBoxH, drawBoxX + drawBoxW, drawBoxY + drawBoxH - cLen);
 
             // 方形框上方標籤
-            Gdiplus::SolidBrush tagBg(Gdiplus::Color(220, 30, 177, 138));
+            Gdiplus::SolidBrush tagBg(isPresent ? Gdiplus::Color(220, 30, 177, 138) : Gdiplus::Color(220, 235, 180, 87));
             int tagH = 18;
             int tagW = 140;
             int tagY = std::max(viewY + 6, drawBoxY - tagH - 2);
@@ -1548,7 +1548,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
             Gdiplus::Font tagFont(&fontFamily, 10, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
             Gdiplus::SolidBrush tagText(Gdiplus::Color(255, 255, 255, 255));
             Gdiplus::RectF tagRect(static_cast<float>(drawBoxX), static_cast<float>(tagY), static_cast<float>(tagW), static_cast<float>(tagH));
-            g.DrawString(L"使用者在場 (動態跟隨中)", -1, &tagFont, tagRect, &centerFormat, &tagText);
+            g.DrawString(isPresent ? L"使用者在場 (動態跟隨中)" : L"特徵捕捉中...", -1, &tagFont, tagRect, &centerFormat, &tagText);
         } else {
             // 離座狀態：視野中央提示方框
             Gdiplus::Pen redDashedPen(Gdiplus::Color(200, 235, 87, 87), 2.0f);

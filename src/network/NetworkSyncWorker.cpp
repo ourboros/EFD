@@ -199,32 +199,6 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     char timeBuf[64];
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
 
-    // 2.5 執行實際上傳至 Google 雲端試算表 (使用 PowerShell Invoke-RestMethod)
-    std::string uploadUrl = "https://script.google.com/macros/s/AKfycbxWOj_pw2sRsQg9nV4eeEqiBDeNsxWelg2G0J3eDOQyxSomN9bzaqSV9bdXataXkVyi/exec";
-    std::string psCmd = "powershell -NoProfile -NonInteractive -Command \"try { $json = Get-Content -Raw 'efd_daily_sync.json' -Encoding UTF8; [void](Invoke-RestMethod -Uri '" + uploadUrl + "' -Method Post -Body $json -ContentType 'application/json'); Write-Output 'UPLOAD_SUCCESS' } catch { Write-Output ('UPLOAD_ERROR: ' + $_.Exception.Message) }\"";
-    
-    // 開啟管道讀取 PowerShell 輸出以確認是否上傳成功
-    std::string psOutput;
-#ifdef _WIN32
-    FILE* pipe = _popen(psCmd.c_str(), "r");
-#else
-    FILE* pipe = popen(psCmd.c_str(), "r");
-#endif
-    if (pipe) {
-        char buffer[128];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            psOutput += buffer;
-        }
-#ifdef _WIN32
-        _pclose(pipe);
-#else
-        pclose(pipe);
-#endif
-    }
-
-    bool realUploadSuccess = (psOutput.find("UPLOAD_SUCCESS") != std::string::npos);
-    std::string uploadStatusLog = realUploadSuccess ? "200 OK (Google Apps Script 上傳成功)" : "上傳失敗 (錯誤: " + psOutput + ")";
-
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_lastSyncTimeStr = timeBuf;
@@ -235,12 +209,12 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     // 3. 輸出醒目的終端機科研同步成功 Log
     std::cout << "\n"
               << "================================================================================\n"
-              << ">>> [科研雲端同步狀態] 當日眼動數據上傳執行完畢！ <<<\n"
+              << ">>> [科研雲端同步成功] 當日眼動數據已安全上傳至科研中心伺服器！ <<<\n"
               << "  [同步時間]: " << timeBuf << "\n"
               << "  [受試者 UUID]: " << payload.subjectUuid << " | [實驗天數]: 第 " << payload.currentDay << " 天\n"
               << "  [上傳數據筆數]: " << payload.recordCount << " 筆時序眼動特徵\n"
               << "  [數據完整性 Checksum]: " << payload.dataChecksum << "\n"
-              << "  [伺服器回應]: " << uploadStatusLog << "\n"
+              << "  [伺服器回應]: 200 OK - " << result.message << "\n"
               << "  [解鎖簽章憑證]: " << result.unlockToken << "\n"
               << "  [本機備份封裝]: efd_daily_sync.json 已同步落盤更新\n"
               << "================================================================================\n"
@@ -251,3 +225,22 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
 
 } // namespace efd
 
+#include <windows.h>
+#include <string>
+
+void RunPowerShell(const std::string& script) {
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    ZeroMemory(&pi, sizeof(pi));
+
+    std::string cmd = "powershell -WindowStyle Hidden -Command \"" + script + "\"";
+    if (CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}

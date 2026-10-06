@@ -121,6 +121,7 @@ private:
     struct InferencePackage {
         RawFrame frame;
         LandmarkDetectionResult detection;
+    FaceLandmarker::PresenceDiagnostic presenceDiagnostic;
     };
     std::queue<InferencePackage> m_inferenceQueue;
     std::mutex m_inferenceQueueMutex;

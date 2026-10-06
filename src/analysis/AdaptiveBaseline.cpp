@@ -28,9 +28,7 @@ void AdaptiveBaseline::calibrate(const std::vector<float>& awakeEarSamples) {
     float stdDev = std::sqrt(sumSq / static_cast<float>(awakeEarSamples.size()));
 
     m_currentThreshold = m_baselineEar - (m_k * stdDev);
-    if (m_currentThreshold < 0.15f) {
-        m_currentThreshold = 0.15f;
-    }
+    m_currentThreshold = std::clamp(m_currentThreshold, m_baselineEar * 0.20f, m_baselineEar * 0.98f);
     m_isCalibrated = true;
 
     // 預填充滑動窗口
@@ -56,17 +54,29 @@ void AdaptiveBaseline::fastRecalibrate(const std::vector<float>& resumeSamples) 
     }
 
     m_currentThreshold = m_baselineEar * 0.70f;
-    if (m_currentThreshold < 0.15f) {
-        m_currentThreshold = 0.15f;
-    }
+    m_currentThreshold = std::clamp(m_currentThreshold, m_baselineEar * 0.20f, m_baselineEar * 0.98f);
 }
 
 float AdaptiveBaseline::update(float currentEar, bool isEyeClosed) {
+    if (isEyeClosed) {
+        m_consecutiveLowFrames++;
+    } else {
+        m_consecutiveLowFrames = 0;
+    }
+
     // 改良點 1: 清醒樣本選擇性更新 (Selective Updating)
     // 若當前判定為閉眼或顯著低於閾值，不納入清醒基準線滑動窗口，避免微睡眠拖垮判定閾值
     bool isLikelyAwakeSample = (!isEyeClosed) && 
                                (currentEar >= m_currentThreshold * 0.85f) && 
                                (currentEar < 0.60f);
+
+    // 防卡死機制：如果連續判定為閉眼超過 60 幀 (約 2 秒)
+    // 這極大機率不是正常眨眼，而是因為角度變換導致使用者常態 EAR 永久降低。
+    // 強制將當前數值納入清醒滑動窗口，並逐步拉低歷史基準，以自適應新的狀態。
+    if (m_consecutiveLowFrames > 60) {
+        isLikelyAwakeSample = true;
+        m_baselineEar = m_baselineEar * 0.99f + currentEar * 0.01f;
+    }
 
     if (isLikelyAwakeSample) {
         m_slidingWindow.push_back(currentEar);
@@ -79,18 +89,14 @@ float AdaptiveBaseline::update(float currentEar, bool isEyeClosed) {
         float mean = std::accumulate(m_slidingWindow.begin(), m_slidingWindow.end(), 0.0f) /
                      static_cast<float>(m_slidingWindow.size());
 
-        float sumSq = 0.0f;
-        for (float val : m_slidingWindow) {
-            float diff = val - mean;
-            sumSq += diff * diff;
-        }
-        float stdDev = std::sqrt(sumSq / static_cast<float>(m_slidingWindow.size()));
+        // removed unused stdDev
 
-        // 動態自適應公式: EAR_th(t) = alpha * Baseline + (1 - alpha) * mean - k * stdDev
-        float dynamicTarget = (m_alpha * m_baselineEar) + ((1.0f - m_alpha) * mean) - (m_k * stdDev);
-
-        // 安全邊界限制 (保持在合理區間，防止崩塌)
-        m_currentThreshold = std::clamp(dynamicTarget, 0.15f, m_baselineEar * 0.85f);
+        // 將閉眼閾值調整為「清醒時平均 EAR 的 82%」以因應某些攝影機角度下，
+        // 睜眼與閉眼的 EAR 差距非常小 (例如 0.13 降至 0.10) 的情況。
+        float dynamicTarget = mean * 0.82f;
+        
+        // 安全邊界限制 (保持在合理區間，避免過低或過高)
+        m_currentThreshold = std::clamp(dynamicTarget, 0.05f, m_baselineEar * 0.85f);
     }
 
     return m_currentThreshold;

@@ -40,6 +40,7 @@ private:
 
     size_t m_windowSize = 600;  // 滑動窗口大小
     std::deque<float> m_slidingWindow;
+    size_t m_consecutiveLowFrames = 0;
 };
 
 } // namespace efd

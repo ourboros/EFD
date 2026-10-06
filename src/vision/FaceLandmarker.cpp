@@ -448,7 +448,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             }
 
             float avgGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 18.0f;
-            effectiveOpenness = std::clamp((avgGrad - 6.0f) / 16.0f, 0.05f, 1.0f);
+            effectiveOpenness = std::clamp((avgGrad - 2.0f) / 10.0f, 0.15f, 1.0f);
         }
 
         // 依據跟隨的位置動態生成臉部特徵網格
