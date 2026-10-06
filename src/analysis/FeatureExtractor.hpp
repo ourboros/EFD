@@ -40,6 +40,7 @@ private:
     int  m_currentClosedFrames = 0;
     int  m_totalBlinks = 0;
     float m_totalBlinkDurationMs = 0.0f;
+    float m_smoothedPerclos = 0.0f;
 };
 
 } // namespace efd

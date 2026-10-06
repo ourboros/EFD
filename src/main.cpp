@@ -18,6 +18,7 @@
 #include "engine/AsyncPipelineEngine.hpp"
 
 #ifdef _WIN32
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif

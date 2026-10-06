@@ -54,6 +54,7 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
 }
 
 SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds) {
+    m_userPresent = faceDetected;
     if (!faceDetected) {
         m_awayTimer += deltaSeconds;
         if (m_awayTimer >= static_cast<float>(m_awayResetThreshold)) {
@@ -172,6 +173,7 @@ SystemState FatigueStateMachine::getState() const {
     state.awaySeconds = static_cast<int>(m_awayTimer);
     state.studyDay = m_studyDay;
     state.isStudyLocked = m_isStudyLocked;
+    state.userPresent = m_userPresent;
     state.timestamp = std::chrono::system_clock::now();
     return state;
 }
