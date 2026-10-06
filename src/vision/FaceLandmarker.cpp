@@ -251,8 +251,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             float avgContrast = totalContrast * 0.5f;
 
             // 真人眼部必然存在瞳孔/睫毛與眼眶的反差；空木椅或牆面無此特徵
-            // 放寬門檻：適應低光源或距離較遠的場景
-            if (avgContrast < 8.0f && avgEyeGrad < 1.0f) {
+            if (avgContrast < 18.0f && avgEyeGrad < 4.0f) {
                 diag.unconfirmedReason = "候選區域缺乏人臉眼部特徵反差 (判定為背景家具非真人)";
             } else {
                 personInFrame = true;

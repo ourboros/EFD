@@ -754,6 +754,9 @@ void NativeWelcomeWindow::onPaint(HWND hwnd) {
 // 頂部全局快速導覽列 (Top Navigation Tab Bar - 方便隨時預覽各階段 UI)
 // -----------------------------------------------------------------------------
 void NativeWelcomeWindow::drawTopNavigationBar(Gdiplus::Graphics& g, int w, int /*h*/) {
+    m_navTabRects.clear(); // 清除點擊區域，防止隱形導覽列被點擊
+    return; // 使用者要求隱藏上方導覽列
+
     bool isNarrow = (w < 680);
     int navH = isNarrow ? 56 : 34;
     Gdiplus::SolidBrush navBg(Gdiplus::Color(210, 24, 28, 18));
