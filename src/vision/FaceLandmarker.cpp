@@ -409,10 +409,10 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 effectiveOpenness = std::clamp(m_simulatedOpenness * blinkFactor + tremor, 0.02f, 1.05f);
             }
         } else {
-            // 實體相機：依據跟隨追蹤的使用者位置提取雙眼動態梯度
+            // 實體相機：依據眼睛興趣區域 (AOI) 二值化後計算黑色像素比例 (Black Pixels Ratio)
             float eyeDist = m_trackedScale * 0.28f;
             float eyeYOffset = m_trackedScale * 0.10f;
-            int eyeBoxRadius = std::max(6, static_cast<int>(m_trackedScale * 0.08f));
+            int eyeBoxRadius = std::max(8, static_cast<int>(m_trackedScale * 0.10f));
 
             int eyeCentersX[2] = {
                 static_cast<int>(m_trackedCx - eyeDist),
@@ -420,35 +420,65 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             };
             int eyeCenterY = static_cast<int>(m_trackedCy - eyeYOffset);
 
-            float totalGrad = 0.0f;
-            int gradSamples = 0;
+            float totalDarkRatio = 0.0f;
 
             for (int e = 0; e < 2; ++e) {
                 int ecx = eyeCentersX[e];
                 int ecy = eyeCenterY;
 
-                for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
+                long long totalLuma = 0;
+                int pixelCount = 0;
+                std::vector<int> lumas;
+                lumas.reserve((eyeBoxRadius * 2 + 1) * (eyeBoxRadius * 2 + 1));
+
+                for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius; dy++) {
                     int py = ecy + dy;
-                    if (py <= 1 || py >= height - 2) continue;
+                    if (py < 0 || py >= height) continue;
 
-                    for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
+                    for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx++) {
                         int px = ecx + dx;
-                        if (px <= 0 || px >= width) continue;
+                        if (px < 0 || px >= width) continue;
 
-                        int idxTop = ((py - 1) * width + px) * 3;
-                        int idxBot = ((py + 1) * width + px) * 3;
-
-                        int lumTop = (pixelData[idxTop] * 299 + pixelData[idxTop + 1] * 587 + pixelData[idxTop + 2] * 114) / 1000;
-                        int lumBot = (pixelData[idxBot] * 299 + pixelData[idxBot + 1] * 587 + pixelData[idxBot + 2] * 114) / 1000;
-
-                        totalGrad += std::abs(lumBot - lumTop);
-                        gradSamples++;
+                        int idx = (py * width + px) * 3;
+                        int lum = (pixelData[idx] * 299 + pixelData[idx + 1] * 587 + pixelData[idx + 2] * 114) / 1000;
+                        totalLuma += lum;
+                        lumas.push_back(lum);
+                        pixelCount++;
                     }
+                }
+
+                if (pixelCount > 0) {
+                    int avgLuma = totalLuma / pixelCount;
+                    // 將像素值低於(平均亮度 * 0.75)視為瞳孔/睫毛等黑色像素
+                    int darkThreshold = static_cast<int>(avgLuma * 0.75f);
+                    int darkPixels = 0;
+                    for (int lum : lumas) {
+                        if (lum < darkThreshold) {
+                            darkPixels++;
+                        }
+                    }
+                    float darkRatio = static_cast<float>(darkPixels) / pixelCount;
+                    totalDarkRatio += darkRatio;
                 }
             }
 
-            float avgGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 18.0f;
-            effectiveOpenness = std::clamp((avgGrad - 2.0f) / 10.0f, 0.15f, 1.0f);
+            float avgDarkRatio = totalDarkRatio / 2.0f;
+            // 睜眼時暗部比例通常較高（例如 0.15~0.30），閉眼時只剩膚色（例如 < 0.05）
+            // 將 darkRatio 映射到 0.0 ~ 1.0 的 effectiveOpenness
+            // [修正 C] 自適應動態映射：追蹤個人「睜眼基準暗度」解決不同光源差異
+            // 睜眼時瞳孔/睫毛形成暗色區域（darkRatio 較高），閉眼時膚色覆蓋（darkRatio 下降）
+            static float s_openEyeDarkBaseline = 0.18f; // 初始預設基準（可自動收斂）
+            static float s_emaAlpha = 0.015f;           // 緩慢追蹤（約每 67 幀更新一次基準）
+            // 只在高暗度幀（推測為睜眼）時更新基準，避免基準被閉眼拉低
+            if (avgDarkRatio > s_openEyeDarkBaseline * 0.65f) {
+                s_openEyeDarkBaseline = s_openEyeDarkBaseline * (1.0f - s_emaAlpha) + avgDarkRatio * s_emaAlpha;
+                s_openEyeDarkBaseline = std::clamp(s_openEyeDarkBaseline, 0.08f, 0.55f);
+            }
+            // 閉眼閾值 = 基準的 30%（眼瞼覆蓋後暗色像素大幅減少）
+            float closedThreshRatio = s_openEyeDarkBaseline * 0.30f;
+            float opennessRange = s_openEyeDarkBaseline - closedThreshRatio;
+            if (opennessRange < 0.02f) opennessRange = 0.02f;
+            effectiveOpenness = std::clamp((avgDarkRatio - closedThreshRatio) / opennessRange, 0.0f, 1.0f);
         }
 
         // 依據跟隨的位置動態生成臉部特徵網格

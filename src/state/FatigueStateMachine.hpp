@@ -47,6 +47,7 @@ private:
     bool  m_isStudyLocked = false;
     bool  m_userPresent = false;
     bool  m_screeningAlertFired = false;
+    bool  m_fatigueTriggered = false;
 
     AlertCallback m_alertCallback;
 };

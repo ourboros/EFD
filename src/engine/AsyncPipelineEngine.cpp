@@ -1,5 +1,6 @@
 #include "AsyncPipelineEngine.hpp"
 #include <chrono>
+#include <algorithm>
 
 namespace efd {
 
@@ -217,6 +218,9 @@ void AsyncPipelineEngine::inferenceWorkerLoop() {
 // Thread 3: 訊號分析與狀態機推進迴圈 (Signal & State Processing Worker Loop)
 // -----------------------------------------------------------------------------
 void AsyncPipelineEngine::signalProcessingWorkerLoop() {
+    // [修正 B] 記錄上一幀處理時刻，確保 deltaSec 是真實時間間隔
+    auto lastFrameTime = std::chrono::steady_clock::now();
+
     while (m_isRunning.load()) {
         InferencePackage package;
         {
@@ -267,7 +271,12 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         }
 
         // 4. 20/5/5 防打擾狀態機推進 (傳入即時人臉在場與正視狀態)
-        float deltaSec = 1.0f / m_camera->getFps();
+        // [修正 B] 計算真實時間增量（而非固定 1/FPS 估算值）
+        auto nowFrameTime = std::chrono::steady_clock::now();
+        float deltaSec = std::chrono::duration<float>(nowFrameTime - lastFrameTime).count();
+        // 防止初始化或長時間暫停後的時間跳躍（限制在合理範圍 0.001s ~ 0.5s）
+        deltaSec = std::clamp(deltaSec, 0.001f, 0.5f);
+        lastFrameTime = nowFrameTime;
         SystemState state = m_stateMachine.update(
             package.detection.hasFace,
             eyeMetrics.perclos,

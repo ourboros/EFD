@@ -245,7 +245,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
                           << " (基準閾值 " << std::fixed << std::setprecision(3) << t.currentThreshold << "), PERCLOS=" << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
                           << ", 眨眼=" << std::setprecision(1) << t.eyeMetrics.blinkRatePerMin << "次/分"
                           << ", MSE CI=" << std::setprecision(2) << t.complexityMetrics.complexityIndex
-                          << ", 疲勞分=" << std::setprecision(1) << t.systemState.currentFatigueScore << "/65.0"
+                          << ", 疲勞分=" << std::setprecision(1) << t.systemState.currentFatigueScore << "/100.0 (警戒閾值 65.0)"
                           << ", 狀態: ";
                 if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) std::cout << "嚴重疲勞警告 (SevereWarning)";
                 else if (t.systemState.fatigueLevel == FatigueLevel::Attention) std::cout << "注意力提醒 (Attention)";
@@ -301,7 +301,6 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         if (hasTested) {
             // 開機背景啟動模式且已測試過：在背景運行 (常駐托盤不彈窗)，自動連線攝影機開始即時記錄眼動數據與疲勞監控
             m_currentStage = UIStage::MainDashboard;
-            m_engine.start();
             std::cout << "[開機啟動模式] 已載入受試者資料，系統已在背景運行，攝影機已自動連線並即時記錄眼動數據 (常駐系統托盤)\n";
         } else {
             // 開機背景啟動模式但尚未進行過初次測試：解除背景隱藏，直接呈現歡迎畫面引導使用者完成初次校準
@@ -314,7 +313,6 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         if (hasTested) {
             // 已有受試者測試紀錄：直接進入設定畫面，同時自動連線攝影機開始即時記錄眼動數據
             m_currentStage = UIStage::SettingsPanel;
-            m_engine.start();
             std::cout << "[手動開啟系統] 成功載入受試者資料，直接進入設定介面，攝影機已自動連線並記錄眼動數據\n";
         } else {
             // 尚未進行過測試：顯示歡迎畫面引導校準
@@ -322,6 +320,9 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
             std::cout << "[手動開啟系統] 首次使用或尚未完成初次測試，進入歡迎介面引導流程\n";
         }
     }
+    
+    // 無條件立即啟動核心引擎，確保背景追蹤與離座判定立刻生效
+    m_engine.start();
 }
 
 NativeWelcomeWindow::~NativeWelcomeWindow() {
@@ -1659,7 +1660,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
             diagLine4 = L"【疲勞依據】: 暫停特徵計算 (離座防誤報)";
         } else {
             wchar_t fatBuf[256];
-            swprintf_s(fatBuf, 256, L"【疲勞依據】: EAR=%.3f (%s), PERCLOS=%.1f%%, 眨眼=%.1f次/分, MSE CI=%.2f, 疲勞分=%.1f/65.0",
+            swprintf_s(fatBuf, 256, L"【疲勞依據】: EAR=%.3f (%s), PERCLOS=%.1f%%, 眨眼=%.1f次/分, MSE CI=%.2f, 疲勞分=%.1f/100.0 (警戒閾值: 65.0)",
                        static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg),
                        m_latestTelemetry.eyeMetrics.isEyeClosed ? L"閉眼" : L"睜眼",
                        static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f),

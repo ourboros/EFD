@@ -92,12 +92,25 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         perclos = static_cast<float>(closedCount) / static_cast<float>(m_closedHistory.size());
     }
 
-    // 計算估計眨眼率 (次/分鐘)
+    // [修正 D] 計算眨眼率：使用滑動窗口內的眨眼次數（而非累積總次數）
+    // 累積總次數 m_totalBlinks 若不清零，會導致眨眼率隨時間持續飆高到不合理數值。
+    // 改用「窗口內的閉眼事件計數」：計算 m_closedHistory 中閉眼段落的數量。
+    int windowBlinkCount = 0;
+    {
+        bool prevWasClosed = false;
+        for (bool c : m_closedHistory) {
+            if (c && !prevWasClosed) {
+                windowBlinkCount++; // 偵測到一個新的閉眼段落起始
+            }
+            prevWasClosed = c;
+        }
+    }
     float windowDurationSec = (m_closedHistory.size() > 0 && fps > 0.0f)
                                   ? (static_cast<float>(m_closedHistory.size()) / fps)
                                   : 1.0f;
-    float blinkRatePerMin = (windowDurationSec > 0.0f)
-                                ? ((static_cast<float>(m_totalBlinks) / windowDurationSec) * 60.0f)
+    // 只有窗口累積到 >= 5 秒才開始計算，避免初始短窗口產生誇大的眨眼率
+    float blinkRatePerMin = (windowDurationSec >= 5.0f)
+                                ? ((static_cast<float>(windowBlinkCount) / windowDurationSec) * 60.0f)
                                 : 0.0f;
 
     float avgDurationMs = (m_totalBlinks > 0)

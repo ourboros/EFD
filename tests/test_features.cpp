@@ -154,7 +154,27 @@ void testFatigueStateMachineFullCycle() {
     assert(s6.fatigueLevel == efd::FatigueLevel::Relaxed);
     assert(s6.cooldownState == efd::CooldownState::NormalTracking);
 
-    std::cout << " [PASS] (涵蓋 Attention -> Cooldown -> Screening -> SevereWarning -> AwayReset)\n";
+    // 7. 測試冷卻結束後不會立刻重新進入冷卻 (防無窮冷卻循環)
+    // 觸發提醒進入冷卻
+    fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
+    assert(fsm.getState().cooldownState == efd::CooldownState::InCooldown);
+    // 模擬 20 分鐘冷卻期滿結束
+    fsm.update(true, 0.30f, 6.0f, 2.0f, 1205.0f);
+    assert(fsm.getState().cooldownState == efd::CooldownState::NormalTracking);
+    // 下一幀若尚未回到放鬆狀態，狀態機應維持 NormalTracking，不再重複發送新彈窗或立刻重新計時冷卻
+    alertTriggered = false;
+    fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
+    assert(fsm.getState().cooldownState == efd::CooldownState::NormalTracking);
+    assert(!alertTriggered);
+    // 使用者恢復清醒放鬆狀態
+    fsm.update(true, 0.02f, 15.0f, 4.0f, 1.0f);
+    assert(fsm.getState().fatigueLevel == efd::FatigueLevel::Relaxed);
+    // 再次出現疲勞，順利觸發新一輪提醒
+    fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
+    assert(fsm.getState().cooldownState == efd::CooldownState::InCooldown);
+    assert(alertTriggered);
+
+    std::cout << " [PASS] (涵蓋 Attention -> Cooldown -> Screening -> SevereWarning -> AwayReset -> Non-reentrant Cooldown)\n";
 }
 
 void testPlatformLifecycleAdapter() {
