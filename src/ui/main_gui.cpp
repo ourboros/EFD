@@ -42,7 +42,6 @@ int main(int argc, char* argv[]) {
     // 2. 單一實例互斥鎖檢查 (Single Instance Mutex)：若背景已有程序在執行，僅喚醒介面並退出，杜絕重複開啟多個程序與搶佔攝影機
     HANDLE hSingleMutex = CreateMutexW(NULL, TRUE, L"Local\\EFD_FatigueMonitor_SingleInstance_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        std::cout << "[EFD 實例檢查] 偵測到 EFD 系統已在背景執行中，正在喚醒系統操作介面...\n";
         HWND existingHwnd = FindWindowW(L"EFD_FullNativeWindow", NULL);
         if (existingHwnd) {
             UINT msgShowUI = RegisterWindowMessageW(L"WM_EFD_SHOW_UI_MSG");
@@ -53,6 +52,7 @@ int main(int argc, char* argv[]) {
         if (hSingleMutex) {
             CloseHandle(hSingleMutex);
         }
+        std::cout << "[EFD 實例檢查] 偵測到 EFD 系統已在背景執行中，已喚醒現有視窗並退出。\n" << std::flush;
         return 0; // 新行程直接安靜退出
     }
 #endif
@@ -76,28 +76,22 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "====================================================\n";
-    std::cout << "  EFD 七階段視覺校準、疲勞監控與科研後測系統\n";
-    std::cout << "  EFD 視覺校準、疲勞監控與科研後測系統\n";
-    if (isMobileMode) {
-        std::cout << "  [模式] 智慧型手機模擬器 (390 x 844 直立視窗)\n";
-    } else {
-        std::cout << "  [模式] 桌面寬螢幕模式 (960 x 640 橫向視窗)\n";
-    }
-    std::cout << "  - 階段一: 歡迎介面 (Logo + 感謝協助測試EFD)\n";
-    std::cout << "  - 階段二: 特徵提取說明 (DEMO 演示預覽 + 相機狀態)\n";
-    std::cout << "  - 階段三: 3 秒倒數計時等待 (3 -> 2 -> 1)\n";
-    std::cout << "  - 階段四: 多點動態眼動特徵提取 (動態黃點採樣)\n";
-    std::cout << "  - 階段五: 即時眼睛疲勞監控中心 (動態數據跳動)\n";
-    std::cout << "  - 階段六: 施測結束門禁 (資產 5: 後測問卷引導)\n";
-    std::cout << "  - 階段七: 問卷提交完成 (資產 6: 解鎖授權與解除安裝)\n";
-    std::cout << "  - 階段五: 基準校準完成結果提示\n";
-    std::cout << "  - 階段六: 即時眼睛疲勞監控中心 (動態數據跳動)\n";
-    std::cout << "  - 階段七: 系統設定介面\n";
-    std::cout << "  - 階段八: 施測結束後測介面 (後測問卷引導)\n";
-    std::cout << "  - 階段九: 問卷提交完成 (科研憑證與解除鎖定)\n";
-    std::cout << "====================================================\n";
-
+    std::string modeStr = isMobileMode ? "智慧型手機模擬器 (390 x 844 直立視窗)" : "桌面寬螢幕模式 (960 x 640 橫向視窗)";
+    std::string banner = 
+        "====================================================\n"
+        "  EFD 視覺校準、疲勞監控與科研後測系統\n"
+        "  [模式] " + modeStr + "\n"
+        "  - 階段一: 歡迎介面 (Logo + 感謝協助測試EFD)\n"
+        "  - 階段二: 特徵提取說明 (DEMO 演示預覽 + 相機狀態)\n"
+        "  - 階段三: 3 秒倒數計時等待 (3 -> 2 -> 1)\n"
+        "  - 階段四: 多點動態眼動特徵提取 (動態黃點採樣)\n"
+        "  - 階段五: 基準校準完成結果提示\n"
+        "  - 階段六: 即時眼睛疲勞監控中心 (動態數據跳動)\n"
+        "  - 階段七: 系統設定介面\n"
+        "  - 階段八: 施測結束後測介面 (後測問卷引導)\n"
+        "  - 階段九: 問卷提交完成 (科研憑證與解除鎖定)\n"
+        "====================================================\n";
+    std::cout << banner << std::flush;
 #ifdef _WIN32
     efd::NativeWelcomeWindow window(winWidth, winHeight, isBackgroundMode);
     int exitCode = window.run();

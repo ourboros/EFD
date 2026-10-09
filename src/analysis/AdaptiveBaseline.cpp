@@ -70,12 +70,15 @@ float AdaptiveBaseline::update(float currentEar, bool isEyeClosed) {
                                (currentEar >= m_currentThreshold * 0.85f) && 
                                (currentEar < 0.60f);
 
-    // 防卡死機制：如果連續判定為閉眼超過 60 幀 (約 2 秒)
-    // 這極大機率不是正常眨眼，而是因為角度變換導致使用者常態 EAR 永久降低。
-    // 強制將當前數值納入清醒滑動窗口，並逐步拉低歷史基準，以自適應新的狀態。
-    if (m_consecutiveLowFrames > 60) {
-        isLikelyAwakeSample = true;
-        m_baselineEar = m_baselineEar * 0.99f + currentEar * 0.01f;
+    // 防卡死與抗微睡眠污染機制：
+    // 若長時間判定為閉眼 (例如沉睡、閉目養神或姿勢大幅移動)，不得無限制拉垮基準線。
+    // 即使角度改變，m_baselineEar 衰減下限保護在至少 0.18f (或初始校準之 65%)，
+    // 杜絕閾值下陷至 0.103 導致閉眼無法被偵測的致命缺陷。
+    if (m_consecutiveLowFrames > 90) { // 延長至 3 秒才緩慢微調
+        if (currentEar >= 0.18f) {
+            isLikelyAwakeSample = true;
+            m_baselineEar = std::max(0.18f, m_baselineEar * 0.995f + currentEar * 0.005f);
+        }
     }
 
     if (isLikelyAwakeSample) {
@@ -89,15 +92,12 @@ float AdaptiveBaseline::update(float currentEar, bool isEyeClosed) {
         float mean = std::accumulate(m_slidingWindow.begin(), m_slidingWindow.end(), 0.0f) /
                      static_cast<float>(m_slidingWindow.size());
 
-        // removed unused stdDev
-
-        // 將閉眼閾值調整為「清醒時平均 EAR 的 82%」以因應某些攝影機角度下，
-        // 將閉眼閾值調整為「清醒時平均 EAR 的 92%」以因應某些攝影機角度下，
-        // 睜眼與閉眼的 EAR 差距非常小 (例如 0.13 降至 0.10) 的情況。
-        float dynamicTarget = mean * 0.92f;
+        // 將閉眼閾值自適應設定在清醒時平均 EAR 的 80% (標準文獻常見之 EAR 萎縮比 75%~85%)
+        float dynamicTarget = mean * 0.80f;
         
-        // 安全邊界限制 (保持在合理區間，避免過低或過高)
-        m_currentThreshold = std::clamp(dynamicTarget, 0.05f, m_baselineEar * 0.95f);
+        // 安全邊界限制：嚴格限制閉眼閾值下限 >= 0.18f，上限 <= m_baselineEar * 0.90f
+        // 確保永遠與閉眼下限 (0.100) 保持至少 0.08 的辨別餘裕，杜絕閾值下陷癱瘓閉眼判定
+        m_currentThreshold = std::clamp(dynamicTarget, 0.18f, std::max(0.20f, m_baselineEar * 0.90f));
     }
 
     return m_currentThreshold;

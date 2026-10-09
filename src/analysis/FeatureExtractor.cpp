@@ -1,6 +1,7 @@
 #include "FeatureExtractor.hpp"
 #include <cmath>
 #include <numeric>
+#include <algorithm>
 
 namespace efd {
 
@@ -92,26 +93,31 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         perclos = static_cast<float>(closedCount) / static_cast<float>(m_closedHistory.size());
     }
 
-    // [修正 D] 計算眨眼率：使用滑動窗口內的眨眼次數（而非累積總次數）
-    // 累積總次數 m_totalBlinks 若不清零，會導致眨眼率隨時間持續飆高到不合理數值。
-    // 改用「窗口內的閉眼事件計數」：計算 m_closedHistory 中閉眼段落的數量。
+    // [修正 D & 生理學約束] 計算眨眼率：
+    // 使用滑動窗口內的完整眨眼段落計數 (要求閉眼持續 2~25 幀，約 67ms~800ms，符合眨眼生理學特徵)
     int windowBlinkCount = 0;
     {
-        bool prevWasClosed = false;
+        int segLen = 0;
         for (bool c : m_closedHistory) {
-            if (c && !prevWasClosed) {
-                windowBlinkCount++; // 偵測到一個新的閉眼段落起始
+            if (c) {
+                segLen++;
+            } else {
+                if (segLen >= 2 && segLen <= 25) {
+                    windowBlinkCount++;
+                }
+                segLen = 0;
             }
-            prevWasClosed = c;
         }
     }
     float windowDurationSec = (m_closedHistory.size() > 0 && fps > 0.0f)
                                   ? (static_cast<float>(m_closedHistory.size()) / fps)
                                   : 1.0f;
     // 只有窗口累積到 >= 5 秒才開始計算，避免初始短窗口產生誇大的眨眼率
-    float blinkRatePerMin = (windowDurationSec >= 5.0f)
-                                ? ((static_cast<float>(windowBlinkCount) / windowDurationSec) * 60.0f)
-                                : 0.0f;
+    // 同時加入生理學合理性上限 (正常人類最大眨眼頻率不超過 60 次/分)
+    float rawRate = (windowDurationSec >= 5.0f)
+                        ? ((static_cast<float>(windowBlinkCount) / windowDurationSec) * 60.0f)
+                        : 0.0f;
+    float blinkRatePerMin = std::clamp(rawRate, 0.0f, 60.0f);
 
     float avgDurationMs = (m_totalBlinks > 0)
                               ? (m_totalBlinkDurationMs / static_cast<float>(m_totalBlinks))

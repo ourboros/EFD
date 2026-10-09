@@ -125,6 +125,16 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
         m_cooldownTimer -= deltaSeconds;
         m_screeningTimer -= deltaSeconds;
 
+        // 冷卻期內真實狀態跟隨即時疲勞分數，以反映真實生理狀況；冷卻機制專注於抑制彈窗
+        if (m_lastScore >= 65.0f) {
+            m_currentLevel = FatigueLevel::SevereWarning;
+        } else if (m_lastScore >= 45.0f) {
+            m_currentLevel = FatigueLevel::Attention;
+        } else {
+            m_currentLevel = FatigueLevel::Relaxed;
+            m_fatigueTriggered = false; // 已完全恢復清醒放鬆
+        }
+
         // 冷卻防打擾期內保持安靜，絕不重複發送警報彈窗
         if (m_screeningTimer <= 0.0f) {
             // 進入 5 分鐘快篩期 (持續 30 秒)
@@ -138,7 +148,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_cooldownTimer = 0.0f;
             m_screeningTimer = 0.0f;
             m_cooldownState = CooldownState::NormalTracking;
-            m_currentLevel = (m_lastScore >= 65.0f) ? FatigueLevel::Attention : FatigueLevel::Relaxed;
+            m_currentLevel = (m_lastScore >= 65.0f) ? FatigueLevel::SevereWarning : ((m_lastScore >= 45.0f) ? FatigueLevel::Attention : FatigueLevel::Relaxed);
         }
         break;
 
@@ -166,7 +176,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_cooldownTimer = 0.0f;
             m_screeningTimer = 0.0f;
             m_cooldownState = CooldownState::NormalTracking;
-            m_currentLevel = (m_lastScore >= 65.0f) ? FatigueLevel::Attention : FatigueLevel::Relaxed;
+            m_currentLevel = (m_lastScore >= 65.0f) ? FatigueLevel::SevereWarning : ((m_lastScore >= 45.0f) ? FatigueLevel::Attention : FatigueLevel::Relaxed);
         }
         break;
 

@@ -184,7 +184,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         }
 
         // 初次測試階段 (歡迎、演示、倒數、校準完成前) 先不進行疲勞判定與離座警告，僅專注學習初始偏向位置
-        if (this->m_currentStage != UIStage::MainDashboard) {
+        // 已有受試者資料時 (MainDashboard 或 SettingsPanel) 均進入正式遙測輸出
+        if (this->m_currentStage != UIStage::MainDashboard && this->m_currentStage != UIStage::SettingsPanel) {
             int count = ++s_telemetryLogCount;
             if (count % 30 == 0) {
                 if (this->m_userPositionBiasDetected) {
@@ -199,8 +200,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
             }
 
             if (this->m_hwnd && (this->m_currentStage == UIStage::CalibrationInstruction || 
-                                 this->m_currentStage == UIStage::ActiveCalibration ||
-                                 this->m_currentStage == UIStage::SettingsPanel)) {
+                                 this->m_currentStage == UIStage::ActiveCalibration)) {
                 InvalidateRect(this->m_hwnd, NULL, FALSE);
             }
             return;
@@ -236,8 +236,11 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
                     std::cout << " | 【是否疲勞: 否 (清醒放鬆)】";
                 }
 
-                std::cout << " | 【在場依據: 膚色點數 " << t.presenceDiagnostic.skinPixels << ">=" << t.presenceDiagnostic.minSkinRequired
-                          << ", 對稱度 " << std::fixed << std::setprecision(2) << t.presenceDiagnostic.symmetryRatio << ">=0.06"
+                std::cout << " | 【在場依據: 膚色點數 " << t.presenceDiagnostic.skinPixels
+                          << (t.presenceDiagnostic.skinPixels >= t.presenceDiagnostic.minSkinRequired ? ">=" : "<")
+                          << t.presenceDiagnostic.minSkinRequired
+                          << ", 對稱度 " << std::fixed << std::setprecision(2) << t.presenceDiagnostic.symmetryRatio
+                          << (t.presenceDiagnostic.symmetryRatio >= 0.06f ? ">=0.06" : "<0.06(邊緣/追蹤寬限)")
                           << ", 輪廓比例 " << std::setprecision(2) << t.presenceDiagnostic.aspectRatio << "】";
 
                 std::cout << " | 【疲勞依據: EAR=" << std::fixed << std::setprecision(3) << t.eyeMetrics.earAvg
@@ -1620,11 +1623,13 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         // 診斷行 2: 在場依據
         std::wstring diagLine2;
         if (isPresent) {
-            wchar_t presBuf[192];
-            swprintf_s(presBuf, 192, L"【在場依據】: 膚色點數 %d>=%d, 對稱度 %.2f>=0.06, 輪廓比例 %.2f, 雙眼垂直對比驗證通過",
+            wchar_t presBuf[256];
+            swprintf_s(presBuf, 256, L"【在場依據】: 膚色點數 %d%ls%d, 對稱度 %.2f%ls, 輪廓比例 %.2f, 雙眼垂直對比驗證通過",
                        m_latestTelemetry.presenceDiagnostic.skinPixels,
+                       (m_latestTelemetry.presenceDiagnostic.skinPixels >= m_latestTelemetry.presenceDiagnostic.minSkinRequired ? L">=" : L"<"),
                        m_latestTelemetry.presenceDiagnostic.minSkinRequired,
                        static_cast<double>(m_latestTelemetry.presenceDiagnostic.symmetryRatio),
+                       (m_latestTelemetry.presenceDiagnostic.symmetryRatio >= 0.06f ? L">=0.06" : L"<0.06(追蹤寬限)"),
                        static_cast<double>(m_latestTelemetry.presenceDiagnostic.aspectRatio));
             diagLine2 = presBuf;
         } else {
