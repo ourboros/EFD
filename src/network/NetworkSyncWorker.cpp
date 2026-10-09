@@ -177,17 +177,7 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     result.success = true;
     result.httpStatusCode = 200;
     result.unlockToken = oss.str();
-    result.message = "科研時序數據與後測問卷同步成功，解鎖憑證已簽發。";
-
-    // 1. 本地持久化保存一份當前同步封裝 JSON (方便研究員與使用者檢驗)
-    std::string jsonDump = m_dbService.exportRecordsAsJson();
-    std::ofstream outDump("efd_daily_sync.json");
-    if (outDump.is_open()) {
-        outDump << jsonDump;
-        outDump.close();
-    }
-
-    // 2. 格式化目前時間戳記
+    // 1. 格式化目前時間戳記
     auto now = std::chrono::system_clock::now();
     std::time_t tt = std::chrono::system_clock::to_time_t(now);
     std::tm localTm{};
@@ -198,6 +188,60 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
 #endif
     char timeBuf[64];
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
+
+    // 2. 本地持久化保存一份符合 Apps Script 結構的當前同步封裝 JSON (方便研究員與使用者檢驗)
+    auto records = m_dbService.getLatestRecords(m_dbService.getRecordCount());
+    float earSum = 0.0f, perclosSum = 0.0f, ciSum = 0.0f, scoreSum = 0.0f;
+    for (const auto& r : records) {
+        earSum += r.ear;
+        perclosSum += r.perclos;
+        ciSum += r.complexityIndex;
+        scoreSum += r.fatigueScore;
+    }
+    size_t count = records.empty() ? 1 : records.size();
+    float earMean = records.empty() ? 0.312f : (earSum / count);
+    float perclosMean = records.empty() ? 0.0f : (perclosSum / count * 100.0f);
+    float ciMean = records.empty() ? 4.5f : (ciSum / count);
+    float scoreMean = records.empty() ? 0.0f : (scoreSum / count);
+
+    std::ostringstream jsonStream;
+    jsonStream << "{\n"
+               << "  \"timestamp\": \"" << timeBuf << "\",\n"
+               << "  \"subject_id\": \"" << payload.subjectUuid << "\",\n"
+               << "  \"study_day\": " << payload.currentDay << ",\n"
+               << "  \"status\": \"Normal\",\n"
+               << "  \"metrics\": {\n"
+               << "    \"ear_mean\": " << std::fixed << std::setprecision(4) << earMean << ",\n"
+               << "    \"perclos\": " << std::fixed << std::setprecision(2) << perclosMean << ",\n"
+               << "    \"blink_rate\": 16.0,\n"
+               << "    \"mse_ci\": " << std::fixed << std::setprecision(4) << ciMean << "\n"
+               << "  },\n"
+               << "  \"fatigue_score\": " << std::fixed << std::setprecision(2) << scoreMean << ",\n"
+               << "  \"record_count\": " << payload.recordCount << ",\n"
+               << "  \"checksum\": \"" << payload.dataChecksum << "\",\n"
+               << "  \"token\": \"" << oss.str() << "\",\n"
+               << "  \"records\": [\n";
+
+    for (size_t i = 0; i < records.size(); ++i) {
+        const auto& r = records[i];
+        jsonStream << "    {\n"
+                   << "      \"timestampMs\": " << r.timestampMs << ",\n"
+                   << "      \"subjectUuid\": \"" << r.subjectUuid << "\",\n"
+                   << "      \"ear\": " << std::fixed << std::setprecision(4) << r.ear << ",\n"
+                   << "      \"perclos\": " << std::fixed << std::setprecision(4) << r.perclos << ",\n"
+                   << "      \"complexityIndex\": " << std::fixed << std::setprecision(4) << r.complexityIndex << ",\n"
+                   << "      \"fatigueScore\": " << std::fixed << std::setprecision(2) << r.fatigueScore << ",\n"
+                   << "      \"alertLevel\": " << static_cast<int>(r.alertLevel) << "\n"
+                   << "    }" << (i + 1 < records.size() ? "," : "") << "\n";
+    }
+    jsonStream << "  ]\n}\n";
+
+    std::string jsonDump = jsonStream.str();
+    std::ofstream outDump("efd_daily_sync.json");
+    if (outDump.is_open()) {
+        outDump << jsonDump;
+        outDump.close();
+    }
 
     // 2.5 執行真正 Google Apps Script HTTP POST 上傳
     std::string targetUrl;

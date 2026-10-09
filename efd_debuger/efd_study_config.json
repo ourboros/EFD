@@ -1,10 +1,10 @@
 {
-  "subjectUuid": "SUBJ-1E60-BD36",
+  "subjectUuid": "SUBJ-2CAE-BAA4",
   "currentDay": 1,
   "status": 0,
   "unlockToken": "",
-  "studyStartTimestamp": 1791295180,
-  "launchCount": 1,
+  "studyStartTimestamp": 1791344430,
+  "launchCount": 2,
   "hasCompletedInitialSetup": true,
-  "cloudSyncEndpoint": "https://script.google.com/macros/s/AKfycbyGXGJz2Xnv-PsBnwW0ycxtlKEcJD5q2bB5_gM-s_Xwl-_VupzlqcQy64jAgDL1uByM/exec"
+  "cloudSyncEndpoint": "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec"
 }
