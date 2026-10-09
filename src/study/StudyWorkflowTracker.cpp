@@ -22,8 +22,8 @@ bool StudyWorkflowTracker::initialize() {
         m_currentDay = 1;
         m_status = StudyStatus::ActiveMonitoring;
     }
-    if (m_cloudSyncEndpoint.empty() || m_cloudSyncEndpoint.find("AKfycb...") != std::string::npos) {
-        m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbyGXGJz2Xnv-PsBnwW0ycxtlKEcJD5q2bB5_gM-s_Xwl-_VupzlqcQy64jAgDL1uByM/exec";
+    if (m_cloudSyncEndpoint.empty() || m_cloudSyncEndpoint.find("AKfycb...") != std::string::npos || m_cloudSyncEndpoint.find("AKfycbyGXGJz") != std::string::npos) {
+        m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbxWOj_pw2sRsQg9nV4eeEqiBDeNsxWelg2G0J3eDOQyxSomN9bzaqSV9bdXataXkVyi/exec";
     }
     m_launchCount++;
     saveConfigUnlocked();

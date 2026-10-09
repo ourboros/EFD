@@ -199,23 +199,82 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     char timeBuf[64];
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
 
+    // 2.5 執行真正 Google Apps Script HTTP POST 上傳
+    std::string targetUrl;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        targetUrl = m_endpointUrl;
+    }
+
+    bool realUploadSuccess = false;
+    std::string uploadServerResponse;
+
+#ifdef _WIN32
+    std::string psCmd = "powershell -NoProfile -NonInteractive -Command \"try { "
+                        "$json = Get-Content -Raw 'efd_daily_sync.json' -Encoding UTF8; "
+                        "$resp = Invoke-RestMethod -Uri '" + targetUrl + "' -Method Post -Body $json -ContentType 'application/json' -TimeoutSec 20; "
+                        "Write-Output ('GAS_RESP:' + ($resp | ConvertTo-Json -Compress)) "
+                        "} catch { Write-Output ('GAS_ERR:' + $_.Exception.Message) }\"";
+
+    FILE* pipe = _popen(psCmd.c_str(), "r");
+    if (pipe) {
+        char buffer[256];
+        std::string rawOutput;
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            rawOutput += buffer;
+        }
+        _pclose(pipe);
+
+        if (rawOutput.find("GAS_RESP:") != std::string::npos) {
+            uploadServerResponse = rawOutput.substr(rawOutput.find("GAS_RESP:") + 9);
+            // 檢查回應內容是否包含 success
+            if (uploadServerResponse.find("\"success\"") != std::string::npos ||
+                uploadServerResponse.find("success") != std::string::npos ||
+                uploadServerResponse.find("OK") != std::string::npos) {
+                realUploadSuccess = true;
+            } else {
+                // Apps Script 返回了 JSON 但 status 非 success (例如試算表權限或 doGet 錯誤)
+                realUploadSuccess = false;
+            }
+        } else if (rawOutput.find("GAS_ERR:") != std::string::npos) {
+            uploadServerResponse = rawOutput.substr(rawOutput.find("GAS_ERR:"));
+            realUploadSuccess = false;
+        } else {
+            uploadServerResponse = rawOutput;
+            realUploadSuccess = false;
+        }
+    }
+#endif
+
+    if (!realUploadSuccess) {
+        result.success = false;
+        result.httpStatusCode = 502;
+        result.message = "Google Apps Script 同步未完成: " + uploadServerResponse;
+    } else {
+        result.success = true;
+        result.httpStatusCode = 200;
+        result.unlockToken = oss.str();
+        result.message = "Google 試算表寫入成功！伺服器回應: " + uploadServerResponse;
+    }
+
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_lastSyncTimeStr = timeBuf;
         m_lastSyncRecordCount = payload.recordCount;
-        m_isSyncedToday = true;
+        m_isSyncedToday = realUploadSuccess;
     }
 
-    // 3. 輸出醒目的終端機科研同步成功 Log
+    // 3. 輸出真實的終端機科研同步狀態 Log
     std::cout << "\n"
               << "================================================================================\n"
-              << ">>> [科研雲端同步成功] 當日眼動數據已安全上傳至科研中心伺服器！ <<<\n"
+              << (realUploadSuccess ? ">>> [科研雲端同步成功] 當日眼動數據已安全上傳至科研中心試算表！ <<<\n"
+                                    : ">>> [科研雲端同步回報] 資料已導出但雲端伺服器回應異常！ <<<\n")
               << "  [同步時間]: " << timeBuf << "\n"
               << "  [受試者 UUID]: " << payload.subjectUuid << " | [實驗天數]: 第 " << payload.currentDay << " 天\n"
               << "  [上傳數據筆數]: " << payload.recordCount << " 筆時序眼動特徵\n"
               << "  [數據完整性 Checksum]: " << payload.dataChecksum << "\n"
-              << "  [伺服器回應]: 200 OK - " << result.message << "\n"
-              << "  [解鎖簽章憑證]: " << result.unlockToken << "\n"
+              << "  [雲端伺服器回應]: " << result.message << "\n"
+              << "  [解鎖簽章憑證]: " << (realUploadSuccess ? result.unlockToken : "尚未簽發 (等待伺服器寫入)") << "\n"
               << "  [本機備份封裝]: efd_daily_sync.json 已同步落盤更新\n"
               << "================================================================================\n"
               << std::endl;

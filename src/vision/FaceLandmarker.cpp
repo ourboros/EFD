@@ -418,7 +418,38 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 static_cast<int>(m_trackedCx - eyeDist),
                 static_cast<int>(m_trackedCx + eyeDist)
             };
-            int eyeCenterY = static_cast<int>(m_trackedCy - eyeYOffset);
+            int nominalEyeCenterY = static_cast<int>(m_trackedCy - eyeYOffset);
+            int searchVerticalRange = std::max(3, static_cast<int>(eyeBoxRadius * 0.50f));
+            int bestEyeCenterY = nominalEyeCenterY;
+            float maxRowContrast = -1.0f;
+
+            for (int dy = -searchVerticalRange; dy <= searchVerticalRange; dy += 2) {
+                int testY = nominalEyeCenterY + dy;
+                if (testY <= 1 || testY >= height - 2) continue;
+
+                float rowContrastSum = 0.0f;
+                int rowSampleCount = 0;
+                for (int e = 0; e < 2; ++e) {
+                    int ecx = eyeCentersX[e];
+                    for (int dx = -eyeBoxRadius / 2; dx <= eyeBoxRadius / 2; dx += 2) {
+                        int px = ecx + dx;
+                        if (px <= 0 || px >= width) continue;
+                        int idxTop = ((testY - 1) * width + px) * 3;
+                        int idxBot = ((testY + 1) * width + px) * 3;
+                        int lTop = (pixelData[idxTop] * 299 + pixelData[idxTop + 1] * 587 + pixelData[idxTop + 2] * 114) / 1000;
+                        int lBot = (pixelData[idxBot] * 299 + pixelData[idxBot + 1] * 587 + pixelData[idxBot + 2] * 114) / 1000;
+                        rowContrastSum += std::abs(lBot - lTop);
+                        rowSampleCount++;
+                    }
+                }
+                float avgContrastRow = (rowSampleCount > 0) ? (rowContrastSum / rowSampleCount) : 0.0f;
+                if (avgContrastRow > maxRowContrast) {
+                    maxRowContrast = avgContrastRow;
+                    bestEyeCenterY = testY;
+                }
+            }
+
+            int eyeCenterY = bestEyeCenterY;
 
             float totalDarkRatio = 0.0f;
 
@@ -450,7 +481,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 if (pixelCount > 0) {
                     int avgLuma = totalLuma / pixelCount;
                     // 將像素值低於(平均亮度 * 0.75)視為瞳孔/睫毛等黑色像素
-                    int darkThreshold = static_cast<int>(avgLuma * 0.75f);
+                    int darkThreshold = static_cast<int>(avgLuma * 0.78f);
                     int darkPixels = 0;
                     for (int lum : lumas) {
                         if (lum < darkThreshold) {
