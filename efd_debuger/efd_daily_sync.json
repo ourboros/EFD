@@ -1,266 +1,45 @@
 {
-  "recordCount": 29,
+  "timestamp": "2026-10-09 22:57:42",
+  "subject_id": "SUBJ-SYNC-101",
+  "study_day": 14,
+  "status": "Normal",
+  "metrics": {
+    "ear_mean": 0.3000,
+    "perclos": 0.00,
+    "blink_rate": 16.0,
+    "mse_ci": 0.0000
+  },
+  "fatigue_score": 12.00,
+  "record_count": 3,
+  "checksum": "544231fafe330cb2924969e33fbfc249",
+  "token": "EFD-14D-7619-2683",
   "records": [
     {
-      "timestampMs": 1791295185058,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 1.0000,
-      "complexityIndex": 2.2052,
-      "fatigueScore": 57.62,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295188321,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 1.0000,
-      "complexityIndex": 0.6715,
-      "fatigueScore": 71.25,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295190987,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 1.0000,
-      "complexityIndex": 0.3975,
-      "fatigueScore": 73.69,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295193234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 1.0000,
-      "complexityIndex": 0.2856,
-      "fatigueScore": 74.68,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295195233,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.9799,
-      "complexityIndex": 0.2212,
-      "fatigueScore": 75.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295197236,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.8156,
-      "complexityIndex": 0.1816,
-      "fatigueScore": 75.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295199234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.6986,
-      "complexityIndex": 0.1533,
-      "fatigueScore": 75.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295201234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.6109,
-      "complexityIndex": 0.1332,
-      "fatigueScore": 75.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295203234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.5428,
-      "complexityIndex": 0.1173,
-      "fatigueScore": 75.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295205234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.4883,
-      "complexityIndex": 0.1052,
-      "fatigueScore": 75.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295209234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.3900,
-      "complexityIndex": 0.1038,
-      "fatigueScore": 75.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295211235,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.2900,
-      "complexityIndex": 0.1521,
-      "fatigueScore": 75.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295213234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.1900,
-      "complexityIndex": 0.2681,
-      "fatigueScore": 67.41,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295215234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.0900,
-      "complexityIndex": 0.3445,
-      "fatigueScore": 43.45,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295217234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
+      "timestampMs": 1700000000000,
+      "subjectUuid": "SUBJ-SYNC-101",
+      "ear": 0.3100,
       "perclos": 0.0000,
-      "complexityIndex": 0.3440,
-      "fatigueScore": 19.16,
-      "alertLevel": 1
+      "complexityIndex": 0.0000,
+      "fatigueScore": 12.00,
+      "alertLevel": 0
     },
     {
-      "timestampMs": 1791295219234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
+      "timestampMs": 1700000001000,
+      "subjectUuid": "SUBJ-SYNC-101",
+      "ear": 0.3000,
       "perclos": 0.0000,
-      "complexityIndex": 0.3445,
-      "fatigueScore": 19.16,
-      "alertLevel": 1
+      "complexityIndex": 0.0000,
+      "fatigueScore": 12.00,
+      "alertLevel": 0
     },
     {
-      "timestampMs": 1791295221234,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
+      "timestampMs": 1700000002000,
+      "subjectUuid": "SUBJ-SYNC-101",
+      "ear": 0.2900,
       "perclos": 0.0000,
-      "complexityIndex": 0.3440,
-      "fatigueScore": 19.16,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295223239,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.0000,
-      "complexityIndex": 0.3445,
-      "fatigueScore": 19.16,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295225236,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.0000,
-      "complexityIndex": 0.3440,
-      "fatigueScore": 19.16,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295227236,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.0000,
-      "complexityIndex": 0.3445,
-      "fatigueScore": 19.16,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295229236,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1465,
-      "perclos": 0.0000,
-      "complexityIndex": 0.3867,
-      "fatigueScore": 18.78,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295231241,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1629,
-      "perclos": 0.0000,
-      "complexityIndex": 0.2029,
-      "fatigueScore": 20.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295233236,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1577,
-      "perclos": 0.0000,
-      "complexityIndex": 0.1583,
-      "fatigueScore": 20.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295235235,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1678,
-      "perclos": 0.0000,
-      "complexityIndex": 0.2078,
-      "fatigueScore": 20.00,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295237235,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.0000,
-      "complexityIndex": 0.3379,
-      "fatigueScore": 19.22,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295239135,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1368,
-      "perclos": 0.0000,
-      "complexityIndex": 0.5330,
-      "fatigueScore": 17.48,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295240883,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1551,
-      "perclos": 0.0000,
-      "complexityIndex": 0.7520,
-      "fatigueScore": 15.54,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295242675,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.0000,
-      "complexityIndex": 1.1004,
-      "fatigueScore": 12.44,
-      "alertLevel": 1
-    },
-    {
-      "timestampMs": 1791295244386,
-      "subjectUuid": "SUBJ-1E60-BD36",
-      "ear": 0.1330,
-      "perclos": 0.0000,
-      "complexityIndex": 1.1111,
-      "fatigueScore": 12.35,
-      "alertLevel": 1
+      "complexityIndex": 0.0000,
+      "fatigueScore": 12.00,
+      "alertLevel": 0
     }
   ]
 }

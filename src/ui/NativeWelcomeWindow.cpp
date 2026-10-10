@@ -125,6 +125,21 @@ static void drawToggleSwitch(Gdiplus::Graphics& g, int x, int y, int w, int h, b
     }
 }
 
+// 繪製 20px 圓角邊框按鈕工具函式
+static void drawRoundedButton(Gdiplus::Graphics& g, int x, int y, int w, int h, int radius, Gdiplus::Brush* brush, Gdiplus::Pen* pen = nullptr) {
+    int d = radius * 2;
+    if (d > w) d = w;
+    if (d > h) d = h;
+    Gdiplus::GraphicsPath path;
+    path.AddArc(x, y, d, d, 180, 90);
+    path.AddArc(x + w - d, y, d, d, 270, 90);
+    path.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+    path.AddArc(x, y + h - d, d, d, 90, 90);
+    path.CloseFigure();
+    if (brush) g.FillPath(brush, &path);
+    if (pen) g.DrawPath(pen, &path);
+}
+
 } // anonymous namespace
 
 static const UINT WM_EFD_SHOW_UI = RegisterWindowMessageW(L"WM_EFD_SHOW_UI_MSG");
