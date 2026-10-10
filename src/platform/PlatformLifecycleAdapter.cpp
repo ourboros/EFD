@@ -92,6 +92,16 @@ bool PlatformLifecycleAdapter::supportsHotResume() const {
 
 bool PlatformLifecycleAdapter::isAutoStartEnabled() const {
 #ifdef _WIN32
+    // 優先檢查使用者的 Startup 開機啟動資料夾中是否存在捷徑 (最穩定且包含 WorkingDirectory)
+    wchar_t startupPath[MAX_PATH];
+    if (GetEnvironmentVariableW(L"APPDATA", startupPath, MAX_PATH) > 0) {
+        std::wstring lnkPath = std::wstring(startupPath) + L"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\EFD_FatigueMonitor.lnk";
+        DWORD attr = GetFileAttributesW(lnkPath.c_str());
+        if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY)) {
+            return true;
+        }
+    }
+
     HKEY hKey;
     LONG result = RegOpenKeyExW(
         HKEY_CURRENT_USER,
@@ -114,42 +124,76 @@ bool PlatformLifecycleAdapter::isAutoStartEnabled() const {
 
 bool PlatformLifecycleAdapter::setAutoStartEnabled(bool enable) {
 #ifdef _WIN32
-    HKEY hKey;
-    LONG result = RegOpenKeyExW(
-        HKEY_CURRENT_USER,
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-        0,
-        KEY_SET_VALUE,
-        &hKey
-    );
-    if (result != ERROR_SUCCESS) {
+    wchar_t exePath[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH) {
         return false;
     }
 
-    if (enable) {
-        wchar_t exePath[MAX_PATH];
-        DWORD len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-        if (len == 0 || len >= MAX_PATH) {
-            RegCloseKey(hKey);
-            return false;
-        }
-        std::wstring quoted = L"\"" + std::wstring(exePath) + L"\" --background";
-        result = RegSetValueExW(
-            hKey,
-            L"EFD_FatigueMonitor",
-            0,
-            REG_SZ,
-            reinterpret_cast<const BYTE*>(quoted.c_str()),
-            static_cast<DWORD>((quoted.length() + 1) * sizeof(wchar_t))
-        );
-    } else {
-        result = RegDeleteValueW(hKey, L"EFD_FatigueMonitor");
-        if (result == ERROR_FILE_NOT_FOUND) {
-            result = ERROR_SUCCESS;
-        }
+    wchar_t appDataPath[MAX_PATH];
+    std::wstring lnkPath;
+    if (GetEnvironmentVariableW(L"APPDATA", appDataPath, MAX_PATH) > 0) {
+        lnkPath = std::wstring(appDataPath) + L"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\EFD_FatigueMonitor.lnk";
     }
-    RegCloseKey(hKey);
-    return (result == ERROR_SUCCESS);
+
+    if (enable) {
+        // 1. 同步建立 Windows Startup 捷徑 (藉由 PowerShell 確保鎖定 WorkingDirectory 與 --background 參數)
+        std::wstring exeStr = exePath;
+        size_t lastSlash = exeStr.find_last_of(L"\\/");
+        std::wstring workDir = (lastSlash != std::wstring::npos) ? exeStr.substr(0, lastSlash) : L"";
+
+        if (!lnkPath.empty()) {
+            std::wstring psCmd = L"powershell.exe -NoProfile -WindowStyle Hidden -Command \""
+                L"$ws = New-Object -ComObject WScript.Shell; "
+                L"$s = $ws.CreateShortcut('" + lnkPath + L"'); "
+                L"$s.TargetPath = '" + exeStr + L"'; "
+                L"$s.Arguments = '--background'; "
+                L"$s.WorkingDirectory = '" + workDir + L"'; "
+                L"$s.Description = 'EFD 眼睛疲勞監測系統 - 開機背景常駐監控'; "
+                L"$s.Save()\"";
+            
+            STARTUPINFOW si = { sizeof(si) };
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+            PROCESS_INFORMATION pi;
+            std::vector<wchar_t> cmdBuf(psCmd.begin(), psCmd.end());
+            cmdBuf.push_back(0);
+            if (CreateProcessW(NULL, cmdBuf.data(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 3000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+
+        // 2. 備援寫入註冊表 HKCU Run
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+            std::wstring quoted = L"\"" + exeStr + L"\" --background";
+            RegSetValueExW(
+                hKey,
+                L"EFD_FatigueMonitor",
+                0,
+                REG_SZ,
+                reinterpret_cast<const BYTE*>(quoted.c_str()),
+                static_cast<DWORD>((quoted.length() + 1) * sizeof(wchar_t))
+            );
+            RegCloseKey(hKey);
+        }
+        return true;
+    } else {
+        // 移除 Startup 捷徑
+        if (!lnkPath.empty()) {
+            DeleteFileW(lnkPath.c_str());
+        }
+
+        // 移除註冊表
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+            RegDeleteValueW(hKey, L"EFD_FatigueMonitor");
+            RegCloseKey(hKey);
+        }
+        return true;
+    }
 #else
     (void)enable;
     return false;

@@ -1,15 +1,17 @@
-﻿@echo off
+@echo off
+setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-echo ==================================================================
-echo   正在啟用 EFD 眼睛疲勞監測系統 - 開機自動啟動...
-echo ==================================================================
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "EFD_FatigueMonitor" /t REG_SZ /d "\"%~dp0EFD.exe\"" /f >nul
-if %ERRORLEVEL% equ 0 (
-    echo [成功] 已成功加入 Windows 開機自動啟動！系統將於開機登入時自動在背景守護。
-) else (
-    echo [失敗] 設定失敗，請嘗試手動在軟體「設定」介面中開啟。
-)
-echo 視窗將在 3 秒後自動關閉...
-timeout /t 3 >nul
-exit
+
+set "TARGET_EXE=%~dp0EFD.exe"
+set "WORK_DIR=%~dp0"
+
+echo [1/2] Setting up Windows Startup Shortcut...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$startup = [Environment]::GetFolderPath('Startup'); $ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut([System.IO.Path]::Combine($startup, 'EFD_FatigueMonitor.lnk')); $s.TargetPath = '%TARGET_EXE%'; $s.Arguments = '--background'; $s.WorkingDirectory = '%WORK_DIR%'; $s.Description = 'EFD Fatigue Monitor AutoStart'; $s.Save();"
+
+echo [2/2] Setting up Registry Backup...
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "EFD_FatigueMonitor" /t REG_SZ /d "\"%TARGET_EXE%\" --background" /f >nul 2>&1
+
+echo Done!
+timeout /t 2 >nul
+exit /b 0

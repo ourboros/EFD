@@ -1,11 +1,13 @@
-﻿@echo off
+@echo off
+setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-echo ==================================================================
-echo   正在停用 EFD 眼睛疲勞監測系統 - 開機自動啟動...
-echo ==================================================================
+
+echo [1/2] Removing Windows Startup Shortcut...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$startup = [Environment]::GetFolderPath('Startup'); $lnk = [System.IO.Path]::Combine($startup, 'EFD_FatigueMonitor.lnk'); if (Test-Path $lnk) { Remove-Item -Force $lnk }"
+
+echo [2/2] Removing Registry Backup...
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "EFD_FatigueMonitor" /f >nul 2>&1
-echo [完成] 已移除開機自動啟動設定。
-echo 視窗將在 3 秒後自動關閉...
-timeout /t 3 >nul
-exit
+
+echo Done!
+exit /b 0

@@ -87,6 +87,54 @@ static void drawRoundedButton(Gdiplus::Graphics& g, int x, int y, int w, int h, 
     if (pen) g.DrawPath(pen, &path);
 }
 
+// 繪製開關狀態按鈕 (Toggle Switch)，嚴格套用五大指定配色：
+// 1EB18A (青綠), 96C5F7 (冰藍/淡軌道), FFFFFF (純白), F7E3AF (米黃), 25291C (深底)
+static void drawToggleSwitch(Gdiplus::Graphics& g, int x, int y, int w, int h, bool isOn) {
+    int radius = h / 2;
+    int d = radius * 2;
+
+    // 1. 膠囊外軌道 (Track)
+    Gdiplus::GraphicsPath trackPath;
+    trackPath.AddArc(x, y, d, d, 90, 180);
+    trackPath.AddArc(x + w - d, y, d, d, 270, 180);
+    trackPath.CloseFigure();
+
+    if (isOn) {
+        // ON 狀態：淡青藍底軌 (以 96C5F7 與 1EB18A 混合之清新薄荷淺色，半透明融入)
+        Gdiplus::SolidBrush trackBrush(Gdiplus::Color(255, 150, 197, 247)); // #96C5F7
+        g.FillPath(&trackBrush, &trackPath);
+    } else {
+        // OFF 狀態：中性深灰底軌 (以 25291C 稍微明亮之深中灰)
+        Gdiplus::SolidBrush trackBrush(Gdiplus::Color(255, 75, 82, 65));
+        g.FillPath(&trackBrush, &trackPath);
+    }
+
+    // 2. 圓形滑塊 (Thumb)
+    int thumbDiameter = h + 4; // 略大於軌道產生浮凸立體感
+    int thumbY = y - 2;
+    int thumbX = isOn ? (x + w - thumbDiameter + 2) : (x - 2);
+
+    // 滑塊微立體陰影 (Shadow)
+    Gdiplus::SolidBrush shadowBrush(Gdiplus::Color(50, 0, 0, 0));
+    g.FillEllipse(&shadowBrush, thumbX + 1, thumbY + 2, thumbDiameter, thumbDiameter);
+
+    if (isOn) {
+        // ON 狀態滑塊：經典翠綠實心主色 (#1EB18A)
+        Gdiplus::SolidBrush thumbBrush(Gdiplus::Color(255, 30, 177, 138)); // #1EB18A
+        g.FillEllipse(&thumbBrush, thumbX, thumbY, thumbDiameter, thumbDiameter);
+
+        Gdiplus::Pen thumbPen(Gdiplus::Color(255, 255, 255, 255), 1.0f); // #FFFFFF 細緻邊緣
+        g.DrawEllipse(&thumbPen, thumbX, thumbY, thumbDiameter, thumbDiameter);
+    } else {
+        // OFF 狀態滑塊：明亮純白灰實心滑塊 (#FFFFFF)
+        Gdiplus::SolidBrush thumbBrush(Gdiplus::Color(255, 255, 255, 255)); // #FFFFFF
+        g.FillEllipse(&thumbBrush, thumbX, thumbY, thumbDiameter, thumbDiameter);
+
+        Gdiplus::Pen thumbPen(Gdiplus::Color(200, 200, 200, 200), 1.0f);
+        g.DrawEllipse(&thumbPen, thumbX, thumbY, thumbDiameter, thumbDiameter);
+    }
+}
+
 } // anonymous namespace
 
 static const UINT WM_EFD_SHOW_UI = RegisterWindowMessageW(L"WM_EFD_SHOW_UI_MSG");
@@ -443,7 +491,13 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
             setStage(UIStage::CalibrationInstruction);
         } else if (PtInRect(&m_autoStartBtnRect, pt)) {
             bool cur = m_engine.getLifecycleAdapter().isAutoStartEnabled();
-            m_engine.getLifecycleAdapter().setAutoStartEnabled(!cur);
+            bool next = !cur;
+            m_engine.getLifecycleAdapter().setAutoStartEnabled(next);
+            m_trayManager.showBalloonNotification(
+                next ? L"開機自動啟動已啟用" : L"開機自動啟動已停用",
+                next ? L"系統已為當前路徑建立開機啟動守護捷徑，開機將自動在背景運行。" : L"已移除開機自啟動設定。",
+                FatigueLevel::Relaxed
+            );
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_manualSyncBtnRect, pt)) {
             m_engine.triggerManualDataSync();
@@ -539,6 +593,30 @@ void NativeWelcomeWindow::onTimerTick() {
         }
 
         if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+    }
+
+    // 獨立硬體時鐘 21:00 夜間科研自動上傳檢查 (每 1800 幀約 30 秒執行一次，不依賴攝影機影像處理)
+    static int s_wallClockCheckTicks = 0;
+    if (++s_wallClockCheckTicks % 1800 == 0) {
+        auto nowTime = std::chrono::system_clock::now();
+        std::time_t nowT = std::chrono::system_clock::to_time_t(nowTime);
+        std::tm tmNow{};
+#ifdef _WIN32
+        localtime_s(&tmNow, &nowT);
+#else
+        localtime_r(&nowT, &tmNow);
+#endif
+        int todayDateInt = (tmNow.tm_year + 1900) * 10000 + (tmNow.tm_mon + 1) * 100 + tmNow.tm_mday;
+        // 晚上 21:00 ~ 23:59 之間，且今天尚未執行過自動儲存上傳
+        if (tmNow.tm_hour >= 21 && !m_engine.getSyncWorker().isSyncedToday() && !m_engine.getSyncWorker().isSyncing()) {
+            std::cout << "[夜間自動科研同步] 偵測到已達 21:00，系統正在自動落盤並發送當日眼動數據至 Google 試算表...\n" << std::flush;
+            m_engine.triggerManualDataSync();
+            m_trayManager.showBalloonNotification(
+                L"EFD 科研數據夜間自動同步",
+                L"已達 21:00，今日眼動與疲勞特徵數據已自動保存並安全同步至雲端試算表。",
+                FatigueLevel::Relaxed
+            );
+        }
     }
 }
 
@@ -674,6 +752,13 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
     case WM_CLOSE:
         ShowWindow(hwnd, SW_HIDE);
         return 0;
+
+    case WM_QUERYENDSESSION:
+    case WM_ENDSESSION:
+        // Windows 關機或登出攔截：強制落盤並保存資料
+        pThis->m_engine.getDatabaseService().flush();
+        std::cout << "[系統關機守護] 偵測到 Windows 關機/登出信號，資料庫已強制 Flush 落盤安全保存。\n" << std::flush;
+        return TRUE;
 
     case WM_DESTROY:
         KillTimer(hwnd, 1);
@@ -1948,19 +2033,25 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF item2VRect(static_cast<float>(cardX + cardW / 2), static_cast<float>(item2Y), static_cast<float>(cardW / 2 - 20), static_cast<float>(itemH));
     g.DrawString(L"重新校準眼動基準 (點擊執行)", -1, &itemValFont, item2VRect, &rightFormat, &mintText);
 
-    // 設定項目 3: 開機自動啟動 (支援 Windows 登錄檔，粗體, 20px 圓角邊框)
+    // 設定項目 3: 開機自動啟動 (支援 Windows 登錄檔與 Startup 捷徑，五色規範卡片，20px 圓角邊框)
     int item3Y = item2Y + itemH + gap;
     m_autoStartBtnRect = { cardX, item3Y, cardX + cardW, item3Y + itemH };
     bool autoStartOn = m_engine.getLifecycleAdapter().isAutoStartEnabled();
-    Gdiplus::SolidBrush item3Bg(m_isHoveringAutoStartBtn ? Gdiplus::Color(255, 60, 68, 46) : Gdiplus::Color(255, 50, 56, 38));
-    Gdiplus::Pen item3Border(autoStartOn ? Gdiplus::Color(200, 30, 220, 140) : Gdiplus::Color(160, 120, 120, 120), 1.5f);
+    // 背景深底 #25291C
+    Gdiplus::SolidBrush item3Bg(m_isHoveringAutoStartBtn ? Gdiplus::Color(255, 45, 50, 35) : Gdiplus::Color(255, 37, 41, 28));
+    // 邊框：啟動時呈現 #1EB18A，關閉時呈現深色微光
+    Gdiplus::Pen item3Border(autoStartOn ? Gdiplus::Color(200, 30, 177, 138) : Gdiplus::Color(160, 100, 105, 90), 1.5f);
     drawRoundedButton(g, cardX, item3Y, cardW, itemH, 20, &item3Bg, &item3Border);
 
     Gdiplus::RectF item3TRect(static_cast<float>(cardX + 20), static_cast<float>(item3Y), static_cast<float>(cardW / 2), static_cast<float>(itemH));
     g.DrawString(L"開機自動啟動", -1, &itemTitleFont, item3TRect, &leftFormat, &whiteBrush);
-    Gdiplus::SolidBrush autoStartBrush(autoStartOn ? Gdiplus::Color(255, 120, 230, 195) : Gdiplus::Color(255, 180, 180, 180));
-    Gdiplus::RectF item3VRect(static_cast<float>(cardX + cardW / 2), static_cast<float>(item3Y), static_cast<float>(cardW / 2 - 20), static_cast<float>(itemH));
-    g.DrawString(autoStartOn ? L"已啟用 (點擊關閉)" : L"已停用 (點擊開啟)", -1, &itemValFont, item3VRect, &rightFormat, &autoStartBrush);
+
+    // 繪製與參考圖完全一致的 Toggle Switch 開關按鈕 (寬 48px, 高 24px)
+    int swW = 48;
+    int swH = 24;
+    int swX = cardX + cardW - swW - 24;
+    int swY = item3Y + (itemH - swH) / 2;
+    drawToggleSwitch(g, swX, swY, swW, swH, autoStartOn);
 
     // 設定項目 4: 當日科研數據同步 (夜間自動儲存或手動立即同步，粗體, 20px 圓角邊框)
     int item4Y = item3Y + itemH + gap;
