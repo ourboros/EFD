@@ -89,7 +89,7 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         for (bool c : m_closedHistory) {
             if (c) closedCount++;
         }
-        perclos = static_cast<float>(closedCount) / static_cast<float>(m_closedHistory.size());
+        perclos = static_cast<float>(closedCount) / static_cast<float>(m_maxHistorySize);
     }
 
     // 計算估計眨眼率 (次/分鐘)

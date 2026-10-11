@@ -225,9 +225,12 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
 
 } // namespace efd
 
+#ifdef _WIN32
 #include <windows.h>
+#endif
 #include <string>
 
+#ifdef _WIN32
 void RunPowerShell(const std::string& script) {
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -244,3 +247,5 @@ void RunPowerShell(const std::string& script) {
         CloseHandle(pi.hThread);
     }
 }
+
+#endif

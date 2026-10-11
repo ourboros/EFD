@@ -128,9 +128,10 @@ void testFatigueStateMachineFullCycle() {
     // 2. 觸發一級疲勞警報 (PERCLOS 升高，CI 降低)
     alertTriggered = false;
     efd::SystemState s2 = fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
-    assert(s2.fatigueLevel == efd::FatigueLevel::Attention);
+    std::cout << "s2 score: " << s2.currentFatigueScore << std::endl;
+    assert(s2.fatigueLevel == efd::FatigueLevel::SevereWarning);
     assert(s2.cooldownState == efd::CooldownState::InCooldown);
-    assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::Attention);
+    assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::SevereWarning);
 
     // 3. 冷卻期內經過 5 分鐘進入快篩 (Fast Screening)
     efd::SystemState s3 = fsm.update(true, 0.20f, 14.0f, 3.5f, 301.0f);

@@ -28,7 +28,11 @@ public:
     ~FatigueFloatingIndicator();
 
     // 建立並顯示原生置頂懸浮視窗
+#ifdef _WIN32
     bool create(HWND parentHwnd = nullptr);
+#else
+    bool create();
+#endif
     void show();
     void hide();
     void toggle();

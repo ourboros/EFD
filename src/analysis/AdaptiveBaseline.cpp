@@ -95,10 +95,10 @@ float AdaptiveBaseline::update(float currentEar, bool isEyeClosed) {
         // 將閉眼閾值調整為「清醒時平均 EAR 的 92%」以因應某些攝影機角度下，
         // 睜眼與閉眼的 EAR 差距非常小 (例如 0.13 降至 0.10) 的情況。
         float dynamicTarget = mean * 0.82f;
-        float dynamicTarget = mean * 0.92f;
+        dynamicTarget = mean * 0.92f;
         
         // 安全邊界限制 (保持在合理區間，避免過低或過高)
-        m_currentThreshold = std::clamp(dynamicTarget, 0.05f, m_baselineEar * 0.85f);
+        m_currentThreshold = std::clamp(dynamicTarget, 0.05f, m_baselineEar * 0.95f);
     }
 
     return m_currentThreshold;
