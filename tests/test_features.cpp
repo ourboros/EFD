@@ -108,7 +108,7 @@ void testEmdDecomposition() {
 }
 
 void testFatigueStateMachineFullCycle() {
-    std::cout << "[TEST] 5. 測試 20/5/5 防打擾與警報升級全週期狀態機...";
+    std::cout << "[TEST] 5. 測試 20/5/5 智能冷卻、快篩與離座重置狀態機...";
     efd::FatigueStateMachine fsm(1200, 300, 300);
 
     bool alertTriggered = false;
@@ -121,60 +121,42 @@ void testFatigueStateMachineFullCycle() {
     });
 
     // 1. 正常清醒狀態
-    efd::SystemState s1 = fsm.update(true, 0.05f, 16.0f, 4.5f, 1.0f);
+    efd::SystemState s1 = fsm.update(true, 0.02f, 16.0f, 4.5f, 1.0f);
     assert(s1.fatigueLevel == efd::FatigueLevel::Relaxed);
     assert(s1.cooldownState == efd::CooldownState::NormalTracking);
 
-    // 2. 觸發一級疲勞警報 (PERCLOS 升高，CI 降低)
+    // 2. 觸發嚴重疲勞警報 (PERCLOS 升高，CI 降低) -> 進入 20 分鐘絕對靜默冷卻期
     alertTriggered = false;
-    efd::SystemState s2 = fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
-    assert(s2.fatigueLevel == efd::FatigueLevel::Attention);
+    efd::SystemState s2 = fsm.update(true, 0.30f, 6.0f, 1.2f, 1.0f);
+    assert(s2.fatigueLevel == efd::FatigueLevel::SevereWarning);
     assert(s2.cooldownState == efd::CooldownState::InCooldown);
-    assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::Attention);
-
-    // 3. 冷卻期內經過 5 分鐘進入快篩 (Fast Screening)
-    efd::SystemState s3 = fsm.update(true, 0.20f, 14.0f, 3.5f, 301.0f);
-    assert(s3.cooldownState == efd::CooldownState::FastScreening);
-
-    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning
-    // 4. 快篩期內疲勞持續惡化 (PERCLOS 0.35, CI 1.5) -> 警報升級至 SevereWarning (紅色危險狀態)
-    alertTriggered = false;
-    efd::SystemState s4 = fsm.update(true, 0.35f, 4.0f, 1.5f, 1.0f);
-    assert(s4.fatigueLevel == efd::FatigueLevel::SevereWarning);
     assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::SevereWarning);
     assert(lastAlertMsg == "你的眼睛處於疲勞狀態，請適當休息");
 
-    // 5. 離座 5 分鐘自動清零重置
-    efd::SystemState s5 = fsm.update(false, 0.0f, 0.0f, 0.0f, 305.0f);
-    assert(s5.fatigueLevel == efd::FatigueLevel::UserAway);
-    assert(s5.cooldownState == efd::CooldownState::AwayPaused);
-
-    // 6. 使用者回座，自動重啟正常追蹤
-    efd::SystemState s6 = fsm.update(true, 0.05f, 16.0f, 4.5f, 1.0f);
-    assert(s6.fatigueLevel == efd::FatigueLevel::Relaxed);
-    assert(s6.cooldownState == efd::CooldownState::NormalTracking);
-
-    // 7. 測試冷卻結束後不會立刻重新進入冷卻 (防無窮冷卻循環)
-    // 觸發提醒進入冷卻
-    fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
-    assert(fsm.getState().cooldownState == efd::CooldownState::InCooldown);
-    // 模擬 20 分鐘冷卻期滿結束
-    fsm.update(true, 0.30f, 6.0f, 2.0f, 1205.0f);
-    assert(fsm.getState().cooldownState == efd::CooldownState::NormalTracking);
-    // 下一幀若尚未回到放鬆狀態，狀態機應維持 NormalTracking，不再重複發送新彈窗或立刻重新計時冷卻
+    // 3. 20 分鐘冷卻期間內 (如第 10 分鐘)，絕對靜默不彈窗
     alertTriggered = false;
-    fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
-    assert(fsm.getState().cooldownState == efd::CooldownState::NormalTracking);
-    assert(!alertTriggered);
-    // 使用者恢復清醒放鬆狀態
-    fsm.update(true, 0.02f, 15.0f, 4.0f, 1.0f);
-    assert(fsm.getState().fatigueLevel == efd::FatigueLevel::Relaxed);
-    // 再次出現疲勞，順利觸發新一輪提醒
-    fsm.update(true, 0.30f, 6.0f, 2.0f, 1.0f);
-    assert(fsm.getState().cooldownState == efd::CooldownState::InCooldown);
-    assert(alertTriggered);
+    efd::SystemState s3 = fsm.update(true, 0.35f, 5.0f, 1.0f, 600.0f);
+    assert(s3.cooldownState == efd::CooldownState::InCooldown);
+    assert(!alertTriggered); // 絕對靜默，不重複彈窗
 
-    std::cout << " [PASS] (涵蓋 Attention -> Cooldown -> Screening -> SevereWarning -> AwayReset -> Non-reentrant Cooldown)\n";
+    // 4. 20 分鐘冷卻期滿 (再經過 601 秒)，自動切換至 5 分鐘快篩期 (Fast Screening)
+    efd::SystemState s4 = fsm.update(true, 0.20f, 14.0f, 3.5f, 601.0f);
+    assert(s4.cooldownState == efd::CooldownState::FastScreening);
+
+    // 5. 快篩期內若偵測到仍為嚴重疲勞 -> 發送升級提醒並立刻重置 20 分鐘冷卻
+    alertTriggered = false;
+    efd::SystemState s5 = fsm.update(true, 0.35f, 4.0f, 1.0f, 1.0f);
+    assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::SevereWarning);
+    assert(s5.cooldownState == efd::CooldownState::InCooldown);
+    assert(s5.cooldownRemainingSeconds >= 1199);
+
+    // 6. 離座達 5 分鐘 (300 秒)，自動跳回 20 分鐘冷卻保護
+    efd::SystemState s6 = fsm.update(false, 0.0f, 0.0f, 0.0f, 305.0f);
+    assert(s6.fatigueLevel == efd::FatigueLevel::UserAway);
+    assert(s6.cooldownState == efd::CooldownState::InCooldown);
+    assert(s6.cooldownRemainingSeconds >= 1199);
+
+    std::cout << " [PASS] (涵蓋 20分鐘絕對靜默 -> 5分鐘快篩總評 -> 嚴重疲勞重鎖20分 -> 離座5分跳回20分冷卻)\n";
 }
 
 void testPlatformLifecycleAdapter() {

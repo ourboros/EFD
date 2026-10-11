@@ -262,7 +262,6 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         int count = ++s_telemetryLogCount;
         if (count % 15 == 0 || t.eyeMetrics.isEyeClosed) {
             bool isPresent = (t.detection.hasFace && t.systemState.userPresent);
-            bool inCooldown = (t.systemState.cooldownState == CooldownState::InCooldown || t.systemState.cooldownState == CooldownState::FastScreening);
             int cdRemaining = t.systemState.cooldownRemainingSeconds;
             int cdMins = cdRemaining / 60;
             int cdSecs = cdRemaining % 60;
@@ -278,8 +277,10 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
             } else {
                 std::cout << " | 【是否在場: 是 (動態跟隨)】";
 
-                if (inCooldown) {
-                    std::cout << " | 【是否疲勞: 20/5/5 冷卻暫停提醒中 (剩餘 " << cdMins << "分" << std::setw(2) << std::setfill('0') << cdSecs << "秒)】" << std::setfill(' ');
+                if (t.systemState.cooldownState == CooldownState::InCooldown) {
+                    std::cout << " | 【是否疲勞: 20分鐘冷卻靜默暫停提醒中 (剩餘 " << cdMins << "分" << std::setw(2) << std::setfill('0') << cdSecs << "秒)】" << std::setfill(' ');
+                } else if (t.systemState.cooldownState == CooldownState::FastScreening) {
+                    std::cout << " | 【是否疲勞: 5分鐘輕量快篩追蹤中 (總體分數: " << std::fixed << std::setprecision(1) << t.systemState.currentFatigueScore << ")】";
                 } else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning || t.systemState.currentFatigueScore >= 65.0f) {
                     std::cout << " | 【是否疲勞: 是 (超標警報)】";
                 } else if (t.systemState.fatigueLevel == FatigueLevel::Attention) {
@@ -1535,9 +1536,13 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     if (!isPresent) {
         statusColor = Gdiplus::Color(255, 70, 80, 70); // 離座深灰
         statusText = L"生理狀態：未偵測到人臉 / 離座中 (暫停計算)";
-    } else if (inCooldown) {
+    } else if (m_latestTelemetry.systemState.cooldownState == CooldownState::InCooldown) {
         statusColor = Gdiplus::Color(255, 60, 115, 145); // 舒緩冷卻藍
-        swprintf_s(statusBuf, 128, L"生理狀態：疲勞提醒冷卻中 (%d分%02d秒) - 20/5/5\n智能靜默暫停提醒", cdMins, cdSecs);
+        swprintf_s(statusBuf, 128, L"生理狀態：疲勞提醒冷卻中 (%d分%02d秒)\n20分鐘智能靜默暫停提醒", cdMins, cdSecs);
+        statusText = statusBuf;
+    } else if (m_latestTelemetry.systemState.cooldownState == CooldownState::FastScreening) {
+        statusColor = Gdiplus::Color(255, 120, 170, 200); // 快篩藍
+        swprintf_s(statusBuf, 128, L"生理狀態：5分鐘輕量快篩追蹤中\n即時總體疲勞分: %.1f", fatigueScore);
         statusText = statusBuf;
     } else if (level == FatigueLevel::Attention) {
         statusColor = Gdiplus::Color(255, 190, 150, 60); // 注意黃

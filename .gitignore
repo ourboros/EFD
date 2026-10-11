@@ -1,11 +1,16 @@
-# Build artifacts
+# Build artifacts & packages
 build/
 bin/
 out/
 dist/
+*.zip
+*.7z
+*.tar.gz
+*.apk
 
 # Visual Studio & VS Code temporary files
 .vs/
+.vscode/
 *.user
 *.suo
 *.userosscache
@@ -37,11 +42,18 @@ ehthumbs.db
 Desktop.ini
 .DS_Store
 
-# Runtime data & test databases
+# Runtime data, logs & local participant profiles (嚴格排除測試與執行期資料)
+*.log
 *.dat
 *.dat.wal
 *.wal
-*.apk
+efd_system.log
+efd_study_config.json
+efd_daily_sync.json
+efd_debuger/efd_system.log
+efd_debuger/efd_study_config.json
+efd_debuger/efd_daily_sync.json
+efd_debuger/*.log
+efd_debuger/*.dat*
 test_study_config.json
 EFD-v2.0.0-Windows/
-
