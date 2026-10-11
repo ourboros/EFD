@@ -510,9 +510,6 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
                 );
             }
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
-        } else if (PtInRect(&m_manualSyncBtnRect, pt)) {
-            m_autoSyncNightly = !m_autoSyncNightly;
-            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_saveSettingsBtnRect, pt)) {
             setStage(UIStage::MainDashboard);
         }
@@ -1022,7 +1019,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
 
     // 2. 標題文字: "感謝協助測試EFD" (純白 #FFFFFF, 響應式字體大小, 純文字無前綴符號)
     Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
-    int titleFontSize = isNarrow ? std::clamp(w / 18, 18, 26) : 30;
+    int titleFontSize = isNarrow ? std::clamp(static_cast<int>(w / 15), 22, 32) : 36;
     Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
 
@@ -1031,20 +1028,20 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 
     float titleY = static_cast<float>(logoY + logoH + (isNarrow ? 20 : 30));
-    Gdiplus::RectF titleRect(0.0f, titleY, static_cast<float>(w), 40.0f);
+    Gdiplus::RectF titleRect(0.0f, titleY, static_cast<float>(w), 48.0f);
     g.DrawString(L"感謝協助測試EFD", -1, &titleFont, titleRect, &format, &textBrush);
 
     // 副標題 (粗體)
     Gdiplus::Font subFont(&fontFamily, static_cast<Gdiplus::REAL>(isNarrow ? 12 : 14), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush subBrush(Gdiplus::Color(230, 247, 227, 175));
-    Gdiplus::RectF subRect(0.0f, titleY + 38.0f, static_cast<float>(w), 24.0f);
+    Gdiplus::RectF subRect(0.0f, titleY + 44.0f, static_cast<float>(w), 24.0f);
     g.DrawString(L"AI 驅動眼睛特徵提取與即時疲勞監控研究系統", -1, &subFont, subRect, &format, &subBrush);
 
     // 3. 進入測試說明按鈕 (粗體字體、20px 圓角邊框)
     int btnWidth = isNarrow ? std::clamp(w - 80, 180, 240) : 240;
     int btnHeight = isNarrow ? 48 : 52;
     int btnX = (w - btnWidth) / 2;
-    int btnY = isNarrow ? static_cast<int>(titleY + 75) : std::max(h / 2 + 75, static_cast<int>(titleY + 75));
+    int btnY = isNarrow ? static_cast<int>(titleY + 80) : std::max(h / 2 + 75, static_cast<int>(titleY + 80));
     m_startBtnRect = { btnX, btnY, btnX + btnWidth, btnY + btnHeight };
 
     Gdiplus::Color btnColor = m_isHoveringStartBtn ? Gdiplus::Color(255, 245, 245, 245) : Gdiplus::Color(255, 255, 255, 255);
@@ -1079,12 +1076,12 @@ void NativeWelcomeWindow::drawCalibrationInstruction(Gdiplus::Graphics& g, int w
 
     bool isNarrow = (w < 720 || (static_cast<float>(h) / static_cast<float>(w)) > 0.95f);
 
-    // 1. 頂部大標題
-    int titleFontSize = isNarrow ? std::clamp(w / 22, 16, 22) : 25;
+    // 1. 頂部大標題 (增大 20%)
+    int titleFontSize = isNarrow ? std::clamp(static_cast<int>(w / 18), 20, 26) : 30;
     Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
     float titleY = 40.0f;
-    Gdiplus::RectF titleRect(0.0f, titleY, static_cast<float>(w), 30.0f);
+    Gdiplus::RectF titleRect(0.0f, titleY, static_cast<float>(w), 36.0f);
     g.DrawString(L"眼動特徵提取與校準說明", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
 
     // 2. 即時相機連線狀態標籤 (Camera Hardware Status Bar)
@@ -1095,7 +1092,7 @@ void NativeWelcomeWindow::drawCalibrationInstruction(Gdiplus::Graphics& g, int w
     std::wstring wCamStatus = utf8ToWide(camStatusStr);
     Gdiplus::Font camStatusFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush camStatusBrush(Gdiplus::Color(255, 247, 227, 175)); // 金黃
-    Gdiplus::RectF camStatusRect(0.0f, titleY + 30.0f, static_cast<float>(w), 18.0f);
+    Gdiplus::RectF camStatusRect(0.0f, titleY + 34.0f, static_cast<float>(w), 18.0f);
     g.DrawString(wCamStatus.c_str(), -1, &camStatusFont, camStatusRect, &centerFormat, &camStatusBrush);
 
     int btnW = isNarrow ? std::clamp(w - 60, 180, 240) : 240;
@@ -1271,11 +1268,11 @@ void NativeWelcomeWindow::drawCountdownWait(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF numRect(static_cast<float>(w / 2 - circleRadius), static_cast<float>(centerY - circleRadius), static_cast<float>(circleRadius * 2), static_cast<float>(circleRadius * 2));
     g.DrawString(countStr.c_str(), -1, &numFont, numRect, &centerFormat, &numBrush);
 
-    // 提示文字
-    int hintFontSize = std::clamp(w / 28, 14, 20);
+    // 提示文字 (增大 20%)
+    int hintFontSize = std::clamp(static_cast<int>(w / 24), 17, 24);
     Gdiplus::Font hintFont(&fontFamily, static_cast<Gdiplus::REAL>(hintFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
-    Gdiplus::RectF hintRect(0.0f, static_cast<float>(centerY + circleRadius + 18), static_cast<float>(w), 35.0f);
+    Gdiplus::RectF hintRect(0.0f, static_cast<float>(centerY + circleRadius + 18), static_cast<float>(w), 38.0f);
     g.DrawString(L"請做好準備，即將開始眼動追蹤校準...", -1, &hintFont, hintRect, &centerFormat, &whiteBrush);
 }
 
@@ -1351,14 +1348,14 @@ void NativeWelcomeWindow::drawCalibrationResult(Gdiplus::Graphics& g, int w, int
 
     bool isNarrow = (w < 680 || h > w);
 
-    // 1. 成功大標題
+    // 1. 成功大標題 (增大 20%)
     float titleY = isNarrow ? 45.0f : static_cast<float>(h / 2 - 180);
     if (titleY < 42.0f) titleY = 42.0f;
-    int titleFontSize = isNarrow ? std::clamp(w / 18, 18, 24) : 28;
+    int titleFontSize = isNarrow ? std::clamp(static_cast<int>(w / 15), 22, 29) : 34;
     Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
 
-    Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 40.0f);
+    Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 46.0f);
     g.DrawString(L"眼動特徵提取與基準校準完成！", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
 
     // 2. 個人化基準數據卡片 (20px 圓角邊框)
@@ -1480,12 +1477,12 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
     bool isNarrow = (w < 720 || h > w);
 
-    // 1. 頂部大標題 (純白文字 0xFFFFFF)
-    int headerFontSize = isNarrow ? std::clamp(w / 25, 16, 20) : 22;
+    // 1. 頂部大標題 (純白文字 0xFFFFFF，增大 20%)
+    int headerFontSize = isNarrow ? std::clamp(static_cast<int>(w / 20), 20, 24) : 26;
     Gdiplus::Font headerFont(&fontFamily, static_cast<Gdiplus::REAL>(headerFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
     float headerY = 28.0f;
-    Gdiplus::RectF headerRect(0.0f, headerY, static_cast<float>(w), 26.0f);
+    Gdiplus::RectF headerRect(0.0f, headerY, static_cast<float>(w), 32.0f);
     g.DrawString(L"EFD 即時眼睛疲勞監控中心", -1, &headerFont, headerRect, &centerFormat, &whiteBrush);
 
     // 2. 即時相機連線狀態指示條 (Hardware Status Banner, 輔助色 0xF7E3AF)
@@ -1496,7 +1493,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     std::wstring wCamStatus = utf8ToWide(camStatusStr);
     Gdiplus::Font camStatusFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush camStatusBrush(Gdiplus::Color(255, 247, 227, 175)); // 輔助色: 鵝黃 F7E3AF
-    Gdiplus::RectF camStatusRect(0.0f, headerY + 24.0f, static_cast<float>(w), 16.0f);
+    Gdiplus::RectF camStatusRect(0.0f, headerY + 28.0f, static_cast<float>(w), 16.0f);
     g.DrawString(wCamStatus.c_str(), -1, &camStatusFont, camStatusRect, &centerFormat, &camStatusBrush);
 
     // 判斷在場、冷卻與疲勞狀態
@@ -1572,7 +1569,6 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     if (!isNarrow) {
         // =========================================================================
         // 寬螢幕佈局：左側相機 Viewfinder + 右側生理狀態與 4 核心指標數值
-        // (依據使用者截圖，移除非必要之依據日誌與 SQLite 卡片，版面乾淨大氣)
         // =========================================================================
         int leftX = 24;
         int leftW = static_cast<int>(w * 0.54f);
@@ -1580,9 +1576,9 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         int bottomReserve = 68;
         int viewH = h - viewY - bottomReserve;
 
-        // A. 攝影機即時偵測視野外框容器 (Viewfinder Container)
-        Gdiplus::SolidBrush viewBg(Gdiplus::Color(255, 37, 41, 28)); // 0x25291C
-        drawRoundedButton(g, leftX, viewY, leftW, viewH, 16, &viewBg, &whiteCardPen);
+        // A. 攝影機即時偵測視野外框容器 (Viewfinder Container) - 白底黑字高對比
+        Gdiplus::SolidBrush viewBg(Gdiplus::Color(255, 255, 255, 255)); // 純白背景 0xFFFFFF
+        drawRoundedButton(g, leftX, viewY, leftW, viewH, 16, &viewBg, nullptr);
 
         // 依據相機真實感測器解析度動態計算等比例顯示區域 (Aspect Ratio Preservation - 不拉伸、不變形)
         int fw = m_latestTelemetry.latestFrame.isValid() ? m_latestTelemetry.latestFrame.width : 
@@ -1636,8 +1632,8 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
             Gdiplus::Bitmap bmp(fw, fh, fw * 4, PixelFormat32bppARGB, reinterpret_cast<BYTE*>(bgra.data()));
             g.DrawImage(&bmp, drawX, drawY, drawW, drawH);
         } else {
-            // 科技網格 (限制在等比例區域內)
-            Gdiplus::Pen gridPen(Gdiplus::Color(40, 255, 255, 255), 1.0f);
+            // 科技網格 (限制在等比例區域內，柔和翡翠綠網格)
+            Gdiplus::Pen gridPen(Gdiplus::Color(40, 30, 177, 138), 1.0f);
             for (int gx = drawX + 20; gx < drawX + drawW - 20; gx += 40) {
                 g.DrawLine(&gridPen, gx, drawY + 4, gx, drawY + drawH - 4);
             }
@@ -1646,8 +1642,8 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
             }
         }
 
-        // 視野四角科技邊框括號 (精確貼齊真實等比例影像四角)
-        Gdiplus::Pen cornerBracket(Gdiplus::Color(255, 255, 255, 255), 2.0f);
+        // 視野四角科技邊框括號 (翡翠綠高對比 0x1EB18A，精確貼齊真實等比例影像四角)
+        Gdiplus::Pen cornerBracket(Gdiplus::Color(255, 30, 177, 138), 2.0f);
         int bLen = 14;
         g.DrawLine(&cornerBracket, drawX + 2, drawY + 2, drawX + 2 + bLen, drawY + 2);
         g.DrawLine(&cornerBracket, drawX + 2, drawY + 2, drawX + 2, drawY + 2 + bLen);
@@ -1724,7 +1720,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         Gdiplus::RectF cardTextRect(static_cast<float>(rightX + 10), static_cast<float>(viewY), static_cast<float>(rightW - 20), static_cast<float>(statCardH));
         g.DrawString(statusText, -1, &cardFont, cardTextRect, &centerFormat, &cardTextBrush);
 
-        // 右欄下方：4 欄動態遙測數據 (2x2 網格，滿版縱向自適應)
+        // 右欄下方：4 欄動態遙測數據 (白底黑字，2x2 網格，滿版縱向自適應)
         int gridY = viewY + statCardH + 14;
         int gridH = viewH - statCardH - 14;
         int gap = 12;
@@ -1732,24 +1728,24 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         int mCardH = (gridH - gap) / 2;
 
         auto drawMetricCard = [&](int ix, int iy, int iw, int ih, const wchar_t* label, const wchar_t* val, const wchar_t* subtext) {
-            Gdiplus::SolidBrush boxBrush(Gdiplus::Color(255, 37, 41, 28)); // 0x25291C 深墨底
-            drawRoundedButton(g, ix, iy, iw, ih, 16, &boxBrush, &whiteCardPen);
+            Gdiplus::SolidBrush boxBrush(Gdiplus::Color(255, 255, 255, 255)); // 白底 0xFFFFFF
+            drawRoundedButton(g, ix, iy, iw, ih, 16, &boxBrush, nullptr);
 
-            // 項目標籤 (純白 0xFFFFFF)
+            // 項目標籤 (黑字 0x25291C)
             Gdiplus::Font lFont(&fontFamily, 12, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush lBrush(Gdiplus::Color(255, 255, 255, 255));
+            Gdiplus::SolidBrush lBrush(Gdiplus::Color(255, 37, 41, 28));
             Gdiplus::RectF lRect(static_cast<float>(ix), static_cast<float>(iy + 14), static_cast<float>(iw), 18.0f);
             g.DrawString(label, -1, &lFont, lRect, &centerFormat, &lBrush);
 
-            // 核心數值 (大字純白 0xFFFFFF)
+            // 核心數值 (大字深黑 0x25291C)
             Gdiplus::Font vFont(&fontFamily, 26, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush vBrush(Gdiplus::Color(255, 255, 255, 255));
+            Gdiplus::SolidBrush vBrush(Gdiplus::Color(255, 37, 41, 28));
             Gdiplus::RectF vRect(static_cast<float>(ix), static_cast<float>(iy + (ih - 32) / 2), static_cast<float>(iw), 32.0f);
             g.DrawString(val, -1, &vFont, vRect, &centerFormat, &vBrush);
 
-            // 輔助說明 (溫暖鵝黃 0xF7E3AF)
+            // 輔助說明 (高對比墨綠文字 0x5F8273，在純白底上清晰可讀)
             Gdiplus::Font sFont(&fontFamily, 11, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush sBrush(Gdiplus::Color(255, 247, 227, 175));
+            Gdiplus::SolidBrush sBrush(Gdiplus::Color(255, 95, 130, 115));
             Gdiplus::RectF sRect(static_cast<float>(ix), static_cast<float>(iy + ih - 26), static_cast<float>(iw), 16.0f);
             g.DrawString(subtext, -1, &sFont, sRect, &centerFormat, &sBrush);
         };
@@ -1777,8 +1773,8 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
         int viewY = cardY + cardH + 10;
         int viewH = 180;
-        Gdiplus::SolidBrush viewBg(Gdiplus::Color(255, 37, 41, 28));
-        drawRoundedButton(g, cardX, viewY, cardW, viewH, 14, &viewBg, &whiteCardPen);
+        Gdiplus::SolidBrush viewBg(Gdiplus::Color(255, 255, 255, 255)); // 白底
+        drawRoundedButton(g, cardX, viewY, cardW, viewH, 14, &viewBg, nullptr);
 
         // 窄螢幕等比例顯示相機
         int fw = m_latestTelemetry.latestFrame.isValid() ? m_latestTelemetry.latestFrame.width : 
@@ -1826,28 +1822,28 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
             g.DrawImage(&bmp, drawX, drawY, drawW, drawH);
         }
 
-        // 窄螢幕 2x2 指標
+        // 窄螢幕 2x2 指標 (白底黑字)
         int gridY = viewY + viewH + 10;
         int gap = 8;
         int mCardW = (cardW - gap) / 2;
         int mCardH = 65;
 
         auto drawMetricCard = [&](int ix, int iy, int iw, int ih, const wchar_t* label, const wchar_t* val, const wchar_t* subtext) {
-            Gdiplus::SolidBrush boxBrush(Gdiplus::Color(255, 37, 41, 28));
-            drawRoundedButton(g, ix, iy, iw, ih, 12, &boxBrush, &whiteCardPen);
+            Gdiplus::SolidBrush boxBrush(Gdiplus::Color(255, 255, 255, 255)); // 白底
+            drawRoundedButton(g, ix, iy, iw, ih, 12, &boxBrush, nullptr);
 
             Gdiplus::Font lFont(&fontFamily, 10, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush lBrush(Gdiplus::Color(255, 255, 255, 255));
+            Gdiplus::SolidBrush lBrush(Gdiplus::Color(255, 37, 41, 28)); // 黑字
             Gdiplus::RectF lRect(static_cast<float>(ix), static_cast<float>(iy + 6), static_cast<float>(iw), 14.0f);
             g.DrawString(label, -1, &lFont, lRect, &centerFormat, &lBrush);
 
             Gdiplus::Font vFont(&fontFamily, 18, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush vBrush(Gdiplus::Color(255, 255, 255, 255));
+            Gdiplus::SolidBrush vBrush(Gdiplus::Color(255, 37, 41, 28)); // 黑字
             Gdiplus::RectF vRect(static_cast<float>(ix), static_cast<float>(iy + 22), static_cast<float>(iw), 22.0f);
             g.DrawString(val, -1, &vFont, vRect, &centerFormat, &vBrush);
 
             Gdiplus::Font sFont(&fontFamily, 9, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-            Gdiplus::SolidBrush sBrush(Gdiplus::Color(255, 247, 227, 175));
+            Gdiplus::SolidBrush sBrush(Gdiplus::Color(255, 95, 130, 115)); // 墨綠
             Gdiplus::RectF sRect(static_cast<float>(ix), static_cast<float>(iy + 44), static_cast<float>(iw), 14.0f);
             g.DrawString(subtext, -1, &sFont, sRect, &centerFormat, &sBrush);
         };
@@ -1858,7 +1854,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         drawMetricCard(cardX + mCardW + gap, gridY + mCardH + gap, mCardW, mCardH, L"綜合疲勞分數", b4, inCooldown ? L"冷卻中" : L"綜合分");
     }
 
-    // 5. 底部控制按鈕：重新偵測疲勞數據、進入設定介面、關閉系統介面 (白底綠字，去掉白色框線)
+    // 5. 底部控制按鈕：重新偵測疲勞數據、進入設定介面、關閉系統介面 (白底綠字與關閉醒目強調色)
     int btnH = 44;
     int btnY = h - 60;
 
@@ -1877,7 +1873,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
         Gdiplus::Font btnFont(&fontFamily, 14, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
         Gdiplus::SolidBrush greenText(Gdiplus::Color(255, 30, 177, 138)); // 0x1EB18A
-        Gdiplus::SolidBrush darkText(Gdiplus::Color(255, 37, 41, 28));
+        Gdiplus::SolidBrush whiteBtnText(Gdiplus::Color(255, 255, 255, 255)); // 純白 0xFFFFFF
 
         // 按鈕 1: 重新偵測疲勞數據 (白底綠字，無外框，按下直接回到說明/介紹介面)
         Gdiplus::SolidBrush b1Brush(m_isHoveringRecalibBtn ? Gdiplus::Color(255, 240, 248, 245) : Gdiplus::Color(255, 255, 255, 255));
@@ -1891,11 +1887,12 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         Gdiplus::RectF b2Rect(static_cast<float>(b2X), static_cast<float>(btnY), static_cast<float>(btnW), static_cast<float>(btnH));
         g.DrawString(L"進入設定介面", -1, &btnFont, b2Rect, &centerFormat, &greenText);
 
-        // 按鈕 3: 關閉系統介面 (白底黑字，無外框)
-        Gdiplus::SolidBrush b3Brush(m_isHoveringMinimizeTrayBtn ? Gdiplus::Color(255, 240, 248, 245) : Gdiplus::Color(255, 255, 255, 255));
+        // 按鈕 3: 關閉系統介面 (特殊色彩突出顯眼：醒目珊瑚暖紅 #EB5757，搭配純白粗體文字，視覺高度凸顯)
+        Gdiplus::Color closeBg = m_isHoveringMinimizeTrayBtn ? Gdiplus::Color(255, 245, 105, 105) : Gdiplus::Color(255, 235, 87, 87);
+        Gdiplus::SolidBrush b3Brush(closeBg);
         drawRoundedButton(g, b3X, btnY, btnW, btnH, 20, &b3Brush, nullptr);
         Gdiplus::RectF b3Rect(static_cast<float>(b3X), static_cast<float>(btnY), static_cast<float>(btnW), static_cast<float>(btnH));
-        g.DrawString(L"關閉系統介面", -1, &btnFont, b3Rect, &centerFormat, &darkText);
+        g.DrawString(L"關閉系統介面", -1, &btnFont, b3Rect, &centerFormat, &whiteBtnText);
     } else {
         int btnW = std::min(w - 40, 280);
         int btnX = (w - btnW) / 2;
@@ -1909,7 +1906,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
         Gdiplus::Font btnFont(&fontFamily, 13, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
         Gdiplus::SolidBrush greenText(Gdiplus::Color(255, 30, 177, 138));
-        Gdiplus::SolidBrush darkText(Gdiplus::Color(255, 37, 41, 28));
+        Gdiplus::SolidBrush whiteBtnText(Gdiplus::Color(255, 255, 255, 255));
 
         Gdiplus::SolidBrush b1Brush(m_isHoveringRecalibBtn ? Gdiplus::Color(255, 240, 248, 245) : Gdiplus::Color(255, 255, 255, 255));
         drawRoundedButton(g, btnX, b1Y, btnW, 38, 18, &b1Brush, nullptr);
@@ -1921,10 +1918,11 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         Gdiplus::RectF b2Rect(static_cast<float>(btnX), static_cast<float>(b2Y), static_cast<float>(btnW), 38.0f);
         g.DrawString(L"進入設定介面", -1, &btnFont, b2Rect, &centerFormat, &greenText);
 
-        Gdiplus::SolidBrush b3Brush(m_isHoveringMinimizeTrayBtn ? Gdiplus::Color(255, 240, 248, 245) : Gdiplus::Color(255, 255, 255, 255));
+        Gdiplus::Color closeBg = m_isHoveringMinimizeTrayBtn ? Gdiplus::Color(255, 245, 105, 105) : Gdiplus::Color(255, 235, 87, 87);
+        Gdiplus::SolidBrush b3Brush(closeBg);
         drawRoundedButton(g, btnX, b3Y, btnW, 38, 18, &b3Brush, nullptr);
         Gdiplus::RectF b3Rect(static_cast<float>(btnX), static_cast<float>(b3Y), static_cast<float>(btnW), 38.0f);
-        g.DrawString(L"關閉系統介面", -1, &btnFont, b3Rect, &centerFormat, &darkText);
+        g.DrawString(L"關閉系統介面", -1, &btnFont, b3Rect, &centerFormat, &whiteBtnText);
     }
 }
 
@@ -1951,18 +1949,18 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
 
     bool isNarrow = (w < 700 || h > w);
 
-    // 1. 標題 (純白 0xFFFFFF)
+    // 1. 標題 (純白 0xFFFFFF，增大 20%)
     float titleY = 36.0f;
-    int titleFontSize = isNarrow ? 20 : 24;
+    int titleFontSize = isNarrow ? 24 : 29;
     Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
-    Gdiplus::RectF titleRect(0.0f, titleY, static_cast<float>(w), 30.0f);
+    Gdiplus::RectF titleRect(0.0f, titleY, static_cast<float>(w), 36.0f);
     g.DrawString(L"系統設定", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
 
     // 2. 設定選項卡片 (全數採用白底綠字顯示，去掉白色框線)
     int cardW = isNarrow ? (w - 30) : std::min(w - 120, 640);
     int cardX = (w - cardW) / 2;
-    int startY = static_cast<int>(titleY + (isNarrow ? 40 : 48));
+    int startY = static_cast<int>(titleY + (isNarrow ? 44 : 52));
     int itemH = isNarrow ? 56 : 64;
     int gap = isNarrow ? 10 : 12;
 
@@ -2016,17 +2014,13 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
         : L"已停用開機自動啟動 (僅在手動點擊執行檔時開啟)";
     drawSettingToggleItem(item3Y, m_autoStartBtnRect, m_isHoveringAutoStartBtn, L"開機自動背景啟動", s3Desc, autoStartOn);
 
-    // 設定項目 4: 夜間 21:00 自動科研同步
-    int item4Y = item3Y + itemH + gap;
-    const wchar_t* s4Desc = m_autoSyncNightly 
-        ? L"已啟用每晚 21:00 自動落盤並上傳當日數據至 Google 試算表" 
-        : L"已關閉定時自動同步 (數據仍安全封存於本機資料庫)";
-    drawSettingToggleItem(item4Y, m_manualSyncBtnRect, m_isHoveringManualSyncBtn, L"夜間 21:00 自動科研同步", s4Desc, m_autoSyncNightly);
+    // 自動科研同步設為系統預設恆定開啟 (不可關閉)，按鈕已從介面移除，重設 Hitbox
+    m_manualSyncBtnRect = { 0, 0, 0, 0 };
 
-    // 3. 底部動作按鈕：返回監控中心 (白底綠字，無外框)
+    // 3. 底部動作按鈕：返回監控中心 (緊接著項目 3 下方，白底綠字，無外框)
     int btnH = isNarrow ? 44 : 48;
     int btnW = isNarrow ? std::min(w - 40, 280) : 280;
-    int returnBtnY = item4Y + itemH + (isNarrow ? 18 : 24);
+    int returnBtnY = item3Y + itemH + (isNarrow ? 22 : 28);
     int returnBtnX = (w - btnW) / 2;
 
     m_saveSettingsBtnRect = { returnBtnX, returnBtnY, returnBtnX + btnW, returnBtnY + btnH };
@@ -2055,13 +2049,13 @@ void NativeWelcomeWindow::drawStudyCompletedGate(Gdiplus::Graphics& g, int w, in
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
     bool isNarrow = (w < 680 || h > w);
 
-    // 1. 滿版高對比向量大標題 (100% 還原資產 5.png 設計，名稱為後測介面)
+    // 1. 滿版高對比向量大標題 (增大 20%)
     float titleY = isNarrow ? 45.0f : static_cast<float>(h / 2 - 165);
     if (titleY < 42.0f) titleY = 42.0f;
-    int titleFontSize = isNarrow ? std::clamp(w / 18, 16, 22) : 26;
+    int titleFontSize = isNarrow ? std::clamp(static_cast<int>(w / 15), 20, 26) : 31;
     Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
 
-    Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 45.0f);
+    Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 50.0f);
     g.DrawString(L"後測介面", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
     titleY += (isNarrow ? 40.0f : 48.0f);
 
@@ -2134,13 +2128,13 @@ void NativeWelcomeWindow::drawQuestionnaireSubmitted(Gdiplus::Graphics& g, int w
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
     bool isNarrow = (w < 680 || h > w);
 
-    // 1. 滿版高對比向量大標題 (100% 還原資產 6.png 設計)
+    // 1. 滿版高對比向量大標題 (增大 20%)
     float titleY = isNarrow ? 45.0f : static_cast<float>(h / 2 - 165);
     if (titleY < 42.0f) titleY = 42.0f;
-    int titleFontSize = isNarrow ? std::clamp(w / 18, 18, 24) : 28;
+    int titleFontSize = isNarrow ? std::clamp(static_cast<int>(w / 15), 22, 29) : 34;
     Gdiplus::Font titleFont(&fontFamily, static_cast<Gdiplus::REAL>(titleFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
 
-    Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 45.0f);
+    Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 52.0f);
     g.DrawString(L"填寫成功!感謝您協助施測", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
     titleY += (isNarrow ? 40.0f : 48.0f);
 
