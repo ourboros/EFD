@@ -61,8 +61,10 @@ private:
     EngineTelemetry m_latestTelemetry;
     std::string m_dashboardMessage = "EFD 系統即時監控中...";
 
-    // 系統設定狀態
+    // 系統設定狀態 (全部支援 Toggle Switch 滑動開關模式)
     bool m_soundAlertEnabled = true;
+    bool m_highSensitivityMode = false;   // 靈敏度 Toggle: ON 為高靈敏度即時警報，OFF 為標準防誤報
+    bool m_autoSyncNightly = true;        // 每晚 21:00 自動上傳數據 Toggle
     int m_sensitivityLevel = 1; // 0: 低, 1: 標準, 2: 高
     bool m_syntheticCameraMode = false;
 
