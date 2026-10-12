@@ -82,6 +82,15 @@ public class EfdNativeBridge {
         }
     }
 
+    public static void sendFrame(byte[] frameData, int width, int height, int rotation) {
+        if (!sLibraryLoaded || frameData == null) return;
+        try {
+            nativeSendFrame(frameData, width, height, rotation);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeSendFrame failed: " + t.getMessage(), t);
+        }
+    }
+
     public static void stopEngine() {
         if (!sLibraryLoaded) return;
         try {
@@ -94,6 +103,7 @@ public class EfdNativeBridge {
     private static native boolean nativeInitEngine();
     private static native void nativeCalibrate(float durationSec);
     private static native void nativeSetSimulatedEyeOpenness(float openness);
+    private static native void nativeSendFrame(byte[] frameData, int width, int height, int rotation);
     private static native String nativeGetTelemetryJson();
     private static native String nativeSubmitQuestionnaire(String surveyData);
     private static native void nativeTriggerTestAlert();

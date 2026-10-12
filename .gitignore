@@ -8,9 +8,10 @@ dist/
 *.tar.gz
 *.apk
 
-# Visual Studio & VS Code temporary files
+# Visual Studio & IDE temporary files
 .vs/
 .vscode/
+.idea/
 *.user
 *.suo
 *.userosscache

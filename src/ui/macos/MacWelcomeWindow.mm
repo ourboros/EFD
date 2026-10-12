@@ -46,14 +46,22 @@ enum class MacUIStage : uint8_t {
     BOOL _isHoveringProceedDashboardBtn;
     BOOL _isHoveringCloseBgResultBtn;
     BOOL _isHoveringRestartCalibBtn;
+    BOOL _isHoveringRecalibBtn;
     BOOL _isHoveringSettingsBtn;
     BOOL _isHoveringMinimizeTrayBtn;
     BOOL _isHoveringSensitivityBtn;
+    BOOL _isHoveringToggleSoundBtn;
+    BOOL _isHoveringAutoStartBtn;
     BOOL _isHoveringRecalibFromSettingsBtn;
     BOOL _isHoveringSaveSettingsBtn;
     BOOL _isHoveringFillQuestionnaireBtn;
     BOOL _isHoveringReturnDashboardBtn;
     BOOL _isHoveringExitAppBtn;
+
+    // 設定值狀態
+    BOOL _soundAlertEnabled;
+    BOOL _highSensitivityMode;
+    BOOL _autoStartEnabled;
 
     // 按鈕 Rects (座標為頂部為原點, isFlipped = YES)
     NSRect _startBtnRect;
@@ -63,9 +71,12 @@ enum class MacUIStage : uint8_t {
     NSRect _proceedDashboardBtnRect;
     NSRect _closeBgResultBtnRect;
     NSRect _restartCalibBtnRect;
+    NSRect _recalibBtnRect;
     NSRect _settingsBtnRect;
     NSRect _minimizeTrayBtnRect;
     NSRect _sensitivityBtnRect;
+    NSRect _toggleSoundBtnRect;
+    NSRect _autoStartBtnRect;
     NSRect _recalibFromSettingsBtnRect;
     NSRect _saveSettingsBtnRect;
     NSRect _fillQuestionnaireBtnRect;
@@ -114,7 +125,17 @@ enum class MacUIStage : uint8_t {
         _targetDotY = 0.5f;
         _calibrationProgress = 0.0f;
         _sensitivityLevel = 1; // 標準靈敏度
+        _soundAlertEnabled = YES;
+        _highSensitivityMode = NO;
+        _autoStartEnabled = NO;
+        _isHoveringRecalibBtn = NO;
+        _isHoveringToggleSoundBtn = NO;
+        _isHoveringAutoStartBtn = NO;
         _hoveredNavTab = -1;
+
+        if (_engine && _engine->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest) {
+            _currentStage = efd::MacUIStage::StudyCompletedGate;
+        }
 
         // 載入資產 9 Logo
         _logoImage = [self loadAssetImage:@"資產 9.png"];
@@ -264,11 +285,50 @@ enum class MacUIStage : uint8_t {
     } else if (_currentStage == efd::MacUIStage::MainDashboard) {
         [self setNeedsDisplay:YES];
     }
+
+    // 檢查運行過程中是否到達第 14 天 (跨日進入第 14 天)
+    if (_engine && _engine->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest &&
+        _currentStage != efd::MacUIStage::StudyCompletedGate &&
+        _currentStage != efd::MacUIStage::QuestionnaireSubmitted) {
+        if (self.parentWindow) {
+            [self.parentWindow makeKeyAndOrderFront:nil];
+        }
+        [self setStage:efd::MacUIStage::StudyCompletedGate];
+    }
+
+    // 獨立系統時鐘夜間 21:00 定時科研同步與補傳檢查 (每 1800 tick / 約 30 秒)
+    static int s_wallClockTickCount = 0;
+    if (++s_wallClockTickCount >= 1800) {
+        s_wallClockTickCount = 0;
+        if (_engine) {
+            _engine->checkAndTriggerNightlySync();
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
 // 繪製工具函式 (Quartz 2D CoreGraphics)
 // -----------------------------------------------------------------------------
+static void drawToggleSwitch(NSRect rect, BOOL isOn) {
+    CGFloat radius = rect.size.height / 2.0;
+    NSBezierPath* pill = [NSBezierPath bezierPathWithRoundedRect:rect xRadius:radius yRadius:radius];
+    if (isOn) {
+        [[NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0] setFill];
+    } else {
+        [[NSColor colorWithCalibratedRed:200/255.0 green:205/255.0 blue:210/255.0 alpha:1.0] setFill];
+    }
+    [pill fill];
+
+    CGFloat knobPad = 3.0;
+    CGFloat knobDiam = rect.size.height - knobPad * 2.0;
+    CGFloat knobX = isOn ? (rect.origin.x + rect.size.width - knobPad - knobDiam) : (rect.origin.x + knobPad);
+    CGFloat knobY = rect.origin.y + knobPad;
+
+    NSBezierPath* knob = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(knobX, knobY, knobDiam, knobDiam)];
+    [[NSColor whiteColor] setFill];
+    [knob fill];
+}
+
 static void drawRoundedButton(NSRect rect, CGFloat radius, NSColor* bgColor, NSColor* borderColor = nil, CGFloat borderWidth = 1.5) {
     NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:rect xRadius:radius yRadius:radius];
     if (bgColor) {
@@ -452,20 +512,20 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
                       fraction:1.0];
     }
 
-    // 2. 標題: "感謝協助測試EFD" (粗體, 白色, 純文字無前綴)
+    // 2. 標題: "感謝協助測試EFD" (粗體, 白色, 純文字無前綴, 放大20%)
     CGFloat titleY = logoY + logoH + 28.0;
-    NSRect titleRect = NSMakeRect(0, titleY, w, 40.0);
-    drawCenteredText(@"感謝協助測試EFD", titleRect, [NSFont boldSystemFontOfSize:28], [NSColor whiteColor]);
+    NSRect titleRect = NSMakeRect(0, titleY, w, 44.0);
+    drawCenteredText(@"感謝協助測試EFD", titleRect, [NSFont boldSystemFontOfSize:34], [NSColor whiteColor]);
 
     // 副標題 (粗體, 金黃 #F7E3AF)
-    NSRect subRect = NSMakeRect(0, titleY + 38.0, w, 24.0);
+    NSRect subRect = NSMakeRect(0, titleY + 42.0, w, 24.0);
     drawCenteredText(@"AI 驅動眼睛特徵提取與即時疲勞監控研究系統", subRect, [NSFont boldSystemFontOfSize:14], [NSColor colorWithCalibratedRed:247/255.0 green:227/255.0 blue:175/255.0 alpha:1.0]);
 
     // 3. 進入測試說明按鈕 (粗體字體、20px 圓角邊框, 無表情貼)
     CGFloat btnW = 240.0;
     CGFloat btnH = 50.0;
     CGFloat btnX = (w - btnW) / 2.0;
-    CGFloat btnY = titleY + 80.0;
+    CGFloat btnY = titleY + 84.0;
     _startBtnRect = NSMakeRect(btnX, btnY, btnW, btnH);
 
     NSColor* btnBg = _isHoveringStartBtn ? [NSColor colorWithCalibratedWhite:0.96 alpha:1.0] : [NSColor whiteColor];
@@ -483,8 +543,8 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     NSRectFill(self.bounds);
 
     CGFloat titleY = 48.0;
-    NSRect titleRect = NSMakeRect(0, titleY, w, 36.0);
-    drawCenteredText(@"眼動特徵提取測驗說明", titleRect, [NSFont boldSystemFontOfSize:25], [NSColor whiteColor]);
+    NSRect titleRect = NSMakeRect(0, titleY, w, 42.0);
+    drawCenteredText(@"眼動特徵提取測驗說明", titleRect, [NSFont boldSystemFontOfSize:30], [NSColor whiteColor]);
 
     CGFloat contentW = std::min(w - 60.0, 840.0);
     CGFloat contentX = (w - contentW) / 2.0;
@@ -624,8 +684,8 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
 
     CGFloat titleY = h / 2.0 - 170.0;
     if (titleY < 45.0) titleY = 45.0;
-    NSRect titleRect = NSMakeRect(0, titleY, w, 36.0);
-    drawCenteredText(@"眼動特徵提取與基準校準完成！", titleRect, [NSFont boldSystemFontOfSize:26], [NSColor whiteColor]);
+    NSRect titleRect = NSMakeRect(0, titleY, w, 44.0);
+    drawCenteredText(@"眼動特徵提取與基準校準完成！", titleRect, [NSFont boldSystemFontOfSize:31], [NSColor whiteColor]);
 
     CGFloat cardW = std::min(w - 60.0, 560.0);
     CGFloat cardH = 145.0;
@@ -682,20 +742,14 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
 // 階段 6：即時眼動與疲勞監控中心 (Dashboard)
 // -----------------------------------------------------------------------------
 - (void)drawMainDashboardW:(CGFloat)w H:(CGFloat)h {
-    [[NSColor colorWithCalibratedRed:37/255.0 green:41/255.0 blue:28/255.0 alpha:1.0] setFill];
+    // 滿版薄荷綠背景 (#1EB18A)
+    [[NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0] setFill];
     NSRectFill(self.bounds);
 
-    CGFloat headerY = 46.0;
-    NSRect headerRect = NSMakeRect(0, headerY, w, 32.0);
-    drawCenteredText(@"即時眼動與疲勞監控中心", headerRect, [NSFont boldSystemFontOfSize:22], [NSColor whiteColor]);
-
-    // 核心狀態卡片
-    CGFloat cardW = std::min(w - 60.0, 720.0);
-    CGFloat cardH = 84.0;
-    CGFloat cardX = (w - cardW) / 2.0;
-    CGFloat cardY = headerY + 40.0;
-
-    drawRoundedButton(NSMakeRect(cardX, cardY, cardW, cardH), 16.0, [NSColor colorWithCalibratedRed:52/255.0 green:58/255.0 blue:38/255.0 alpha:1.0]);
+    CGFloat headerY = 36.0;
+    NSRect headerRect = NSMakeRect(0, headerY, w, 36.0);
+    // 標題放大 20%：28pt 粗體純白
+    drawCenteredText(@"EFD即時眼睛疲勞監控中心", headerRect, [NSFont boldSystemFontOfSize:28], [NSColor whiteColor]);
 
     BOOL hasFace = _hasTelemetry && _latestTelemetry.detection.hasFace && _latestTelemetry.systemState.userPresent && (_latestTelemetry.systemState.fatigueLevel != efd::FatigueLevel::UserAway);
 
@@ -703,6 +757,15 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     float curPerclos = hasFace ? (_latestTelemetry.eyeMetrics.perclos * 100.0f) : 0.0f;
     float curMse = hasFace ? _latestTelemetry.complexityMetrics.complexityIndex : 0.0f;
     float curScore = hasFace ? _latestTelemetry.systemState.currentFatigueScore : 0.0f;
+
+    // 1. 中央核心攝影機與狀態預覽卡片 (白底黑字)
+    CGFloat cardW = std::min(w - 60.0, 720.0);
+    CGFloat cardH = 140.0;
+    CGFloat cardX = (w - cardW) / 2.0;
+    CGFloat cardY = headerY + 48.0;
+
+    // 視訊卡片背景：純白 (#FFFFFF)，無外框
+    drawRoundedButton(NSMakeRect(cardX, cardY, cardW, cardH), 16.0, [NSColor whiteColor]);
 
     NSString* statusText = @"生理狀態：正常清醒 (Relaxed)";
     NSColor* statusColor = [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0];
@@ -715,106 +778,152 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
             statusColor = [NSColor colorWithCalibratedRed:235/255.0 green:87/255.0 blue:87/255.0 alpha:1.0];
         } else if (_latestTelemetry.systemState.fatigueLevel == efd::FatigueLevel::Attention) {
             statusText = [NSString stringWithFormat:@"生理狀態：注意力提醒 (Attention - 分數 %.1f)", curScore];
-            statusColor = [NSColor colorWithCalibratedRed:247/255.0 green:190/255.0 blue:70/255.0 alpha:1.0];
+            statusColor = [NSColor colorWithCalibratedRed:230/255.0 green:130/255.0 blue:30/255.0 alpha:1.0];
         } else {
             statusText = [NSString stringWithFormat:@"生理狀態：正常清醒 (Relaxed - 分數 %.1f)", curScore];
             statusColor = [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0];
         }
     }
-    drawCenteredText(statusText, NSMakeRect(cardX, cardY + 12.0, cardW, 24.0), [NSFont boldSystemFontOfSize:17], statusColor);
+    drawCenteredText(statusText, NSMakeRect(cardX, cardY + 16.0, cardW, 26.0), [NSFont boldSystemFontOfSize:17], statusColor);
 
-    drawCenteredText(@"相機串流: 運作中 (30 FPS) | 眼睛特徵提取與即時疲勞監測", NSMakeRect(cardX, cardY + 44.0, cardW, 20.0), [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedWhite:0.75 alpha:1.0]);
+    // 攝影機串流預覽區域 (等比例不拉伸相機畫面)
+    CGFloat camBoxW = 200.0;
+    CGFloat camBoxH = 68.0;
+    CGFloat camBoxX = cardX + (cardW - camBoxW) / 2.0;
+    CGFloat camBoxY = cardY + 48.0;
+    drawRoundedButton(NSMakeRect(camBoxX, camBoxY, camBoxW, camBoxH), 8.0, [NSColor colorWithCalibratedRed:240/255.0 green:245/255.0 blue:242/255.0 alpha:1.0]);
+    drawCenteredText(@"相機串流: 運作中 (30 FPS)\n維持原始畫面比例", NSMakeRect(camBoxX, camBoxY + 14.0, camBoxW, 40.0), [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedRed:37/255.0 green:41/255.0 blue:28/255.0 alpha:0.75]);
 
-    // 4 大指標卡片 (橫向 1x4 網格)
+    drawCenteredText(@"眼睛特徵提取與即時疲勞監控中心 (白底黑字架構)", NSMakeRect(cardX, cardY + cardH - 22.0, cardW, 16.0), [NSFont boldSystemFontOfSize:11], [NSColor colorWithCalibratedRed:95/255.0 green:130/255.0 blue:115/255.0 alpha:1.0]);
+
+    // 2. 4 大指標卡片 (純白底 #FFFFFF，深墨黑字 #25291C)
     CGFloat gridY = cardY + cardH + 16.0;
     CGFloat gap = 12.0;
     CGFloat itemW = (cardW - gap * 3.0) / 4.0;
-    CGFloat itemH = 92.0;
+    CGFloat itemH = 88.0;
 
-    auto drawMetricCard = ^(int idx, NSString* lbl, NSString* val) {
+    auto drawMetricCard = ^(int idx, NSString* lbl, NSString* val, NSString* sub) {
         CGFloat ix = cardX + idx * (itemW + gap);
         NSRect r = NSMakeRect(ix, gridY, itemW, itemH);
-        drawRoundedButton(r, 14.0, [NSColor colorWithCalibratedRed:52/255.0 green:58/255.0 blue:38/255.0 alpha:1.0]);
+        drawRoundedButton(r, 14.0, [NSColor whiteColor]); // 白底
 
-        drawCenteredText(lbl, NSMakeRect(ix, gridY + 10.0, itemW, 20.0), [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedWhite:0.8 alpha:1.0]);
-        drawCenteredText(val, NSMakeRect(ix, gridY + 36.0, itemW, 30.0), [NSFont boldSystemFontOfSize:22], [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0]);
+        drawCenteredText(lbl, NSMakeRect(ix, gridY + 8.0, itemW, 18.0), [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedRed:37/255.0 green:41/255.0 blue:28/255.0 alpha:1.0]); // 黑字
+        drawCenteredText(val, NSMakeRect(ix, gridY + 28.0, itemW, 30.0), [NSFont boldSystemFontOfSize:22], [NSColor colorWithCalibratedRed:37/255.0 green:41/255.0 blue:28/255.0 alpha:1.0]); // 黑字
+        drawCenteredText(sub, NSMakeRect(ix, gridY + 62.0, itemW, 16.0), [NSFont boldSystemFontOfSize:10], [NSColor colorWithCalibratedRed:95/255.0 green:130/255.0 blue:115/255.0 alpha:1.0]);
     };
 
     if (!hasFace) {
-        drawMetricCard(0, @"雙眼 EAR", @"--");
-        drawMetricCard(1, @"PERCLOS 閉眼比", @"--");
-        drawMetricCard(2, @"複雜度 (MSE)", @"--");
-        drawMetricCard(3, @"綜合疲勞分數", @"暫停中");
+        drawMetricCard(0, @"雙眼 EAR", @"--", @"等待偵測");
+        drawMetricCard(1, @"PERCLOS 閉眼比", @"--", @"滑動窗口");
+        drawMetricCard(2, @"複雜度 (MSE)", @"--", @"非線性分析");
+        drawMetricCard(3, @"綜合疲勞分數", @"暫停中", @"離座防打擾");
     } else {
-        drawMetricCard(0, @"雙眼 EAR", [NSString stringWithFormat:@"%.3f", curEar]);
-        drawMetricCard(1, @"PERCLOS 閉眼比", [NSString stringWithFormat:@"%.1f%%", curPerclos]);
-        drawMetricCard(2, @"複雜度 (MSE)", [NSString stringWithFormat:@"%.2f", curMse]);
-        drawMetricCard(3, @"綜合疲勞分數", [NSString stringWithFormat:@"%.1f", curScore]);
+        drawMetricCard(0, @"雙眼 EAR", [NSString stringWithFormat:@"%.3f", curEar], @"常態基準");
+        drawMetricCard(1, @"PERCLOS 閉眼比", [NSString stringWithFormat:@"%.1f%%", curPerclos], @"即時統計");
+        drawMetricCard(2, @"複雜度 (MSE)", [NSString stringWithFormat:@"%.2f", curMse], @"動力學分析");
+        drawMetricCard(3, @"綜合疲勞分數", [NSString stringWithFormat:@"%.1f", curScore], @"綜合評估");
     }
 
-    // 底部控制按鈕：進入設定介面 與 關閉系統介面 (20px 圓角邊框, 粗體)
-    CGFloat btnW = 210.0;
+    // 3. 底部三大控制按鈕：重新偵測疲勞數據、進入設定介面、關閉系統介面 (白底綠字與關閉醒目強調色)
+    CGFloat btnW = (cardW - 32.0) / 3.0;
     CGFloat btnH = 46.0;
-    CGFloat totalW = btnW * 2.0 + 20.0;
-    CGFloat startX = (w - totalW) / 2.0;
     CGFloat btnY = h - 68.0;
 
-    _settingsBtnRect = NSMakeRect(startX, btnY, btnW, btnH);
-    _minimizeTrayBtnRect = NSMakeRect(startX + btnW + 20.0, btnY, btnW, btnH);
+    _recalibBtnRect = NSMakeRect(cardX, btnY, btnW, btnH);
+    _settingsBtnRect = NSMakeRect(cardX + btnW + 16.0, btnY, btnW, btnH);
+    _minimizeTrayBtnRect = NSMakeRect(cardX + (btnW + 16.0) * 2.0, btnY, btnW, btnH);
 
-    NSColor* sBg = _isHoveringSettingsBtn ? [NSColor colorWithCalibratedRed:45/255.0 green:185/255.0 blue:145/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0];
+    // 按鈕 1: 重新偵測疲勞數據 (白底綠字，無外框，按下直接回到說明/介紹介面)
+    NSColor* rBg = _isHoveringRecalibBtn ? [NSColor colorWithCalibratedRed:240/255.0 green:248/255.0 blue:245/255.0 alpha:1.0] : [NSColor whiteColor];
+    drawRoundedButton(_recalibBtnRect, 20.0, rBg);
+    drawCenteredText(@"重新偵測疲勞數據", _recalibBtnRect, [NSFont boldSystemFontOfSize:14], [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0]);
+
+    // 按鈕 2: 進入設定介面 (白底綠字，無外框)
+    NSColor* sBg = _isHoveringSettingsBtn ? [NSColor colorWithCalibratedRed:240/255.0 green:248/255.0 blue:245/255.0 alpha:1.0] : [NSColor whiteColor];
     drawRoundedButton(_settingsBtnRect, 20.0, sBg);
-    drawCenteredText(@"進入設定介面", _settingsBtnRect, [NSFont boldSystemFontOfSize:15], [NSColor whiteColor]);
+    drawCenteredText(@"進入設定介面", _settingsBtnRect, [NSFont boldSystemFontOfSize:14], [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0]);
 
-    NSColor* mBg = _isHoveringMinimizeTrayBtn ? [NSColor colorWithCalibratedRed:255/255.0 green:235/255.0 blue:190/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:247/255.0 green:227/255.0 blue:175/255.0 alpha:1.0];
+    // 按鈕 3: 關閉系統介面 (特殊色彩突出顯眼：醒目珊瑚暖紅 #EB5757，搭配純白粗體文字，視覺高度凸顯)
+    NSColor* mBg = _isHoveringMinimizeTrayBtn ? [NSColor colorWithCalibratedRed:245/255.0 green:105/255.0 blue:105/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:235/255.0 green:87/255.0 blue:87/255.0 alpha:1.0];
     drawRoundedButton(_minimizeTrayBtnRect, 20.0, mBg);
-    drawCenteredText(@"關閉系統介面", _minimizeTrayBtnRect, [NSFont boldSystemFontOfSize:15], [NSColor colorWithCalibratedRed:37/255.0 green:41/255.0 blue:28/255.0 alpha:1.0]);
+    drawCenteredText(@"關閉系統介面", _minimizeTrayBtnRect, [NSFont boldSystemFontOfSize:14], [NSColor whiteColor]);
 }
 
 // -----------------------------------------------------------------------------
-// 階段 7：系統設定 (僅保留：提示靈敏度、重設眼動監測、返回監控中心)
+// 階段 7：系統設定 (全 Toggle Switch 模式，白底綠字，移除外框)
 // -----------------------------------------------------------------------------
 - (void)drawSettingsPanelW:(CGFloat)w H:(CGFloat)/*h*/ {
-    [[NSColor colorWithCalibratedRed:37/255.0 green:41/255.0 blue:28/255.0 alpha:1.0] setFill];
+    // 滿版薄荷綠背景 (#1EB18A)
+    [[NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0] setFill];
     NSRectFill(self.bounds);
 
-    CGFloat titleY = 48.0;
-    drawCenteredText(@"系統設定", NSMakeRect(0, titleY, w, 32.0), [NSFont boldSystemFontOfSize:24], [NSColor whiteColor]);
+    CGFloat titleY = 36.0;
+    NSRect titleRect = NSMakeRect(0, titleY, w, 36.0);
+    drawCenteredText(@"系統設定", titleRect, [NSFont boldSystemFontOfSize:29], [NSColor whiteColor]);
 
-    CGFloat cardW = std::min(w - 80.0, 600.0);
+    CGFloat cardW = std::min(w - 120.0, 640.0);
     CGFloat cardX = (w - cardW) / 2.0;
-    CGFloat startY = titleY + 50.0;
-    CGFloat itemH = 58.0;
-    CGFloat gap = 16.0;
+    CGFloat startY = titleY + 52.0;
+    CGFloat itemH = 64.0;
+    CGFloat gap = 12.0;
 
-    // 項目 1: 提示靈敏度 (粗體, 20px 圓角邊框)
-    _sensitivityBtnRect = NSMakeRect(cardX, startY, cardW, itemH);
-    NSColor* bg1 = _isHoveringSensitivityBtn ? [NSColor colorWithCalibratedRed:60/255.0 green:68/255.0 blue:46/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:50/255.0 green:56/255.0 blue:38/255.0 alpha:1.0];
-    drawRoundedButton(_sensitivityBtnRect, 20.0, bg1, [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:0.8]);
+    CGFloat switchW = 54.0;
+    CGFloat switchH = 28.0;
 
-    drawLeftText(@"提示靈敏度", NSMakeRect(cardX + 20.0, startY, cardW / 2.0, itemH), [NSFont boldSystemFontOfSize:15], [NSColor whiteColor]);
-    NSArray* sensLabels = @[ @"低靈敏度 (保守)", @"標準靈敏度 (推薦)", @"高靈敏度 (即時警報)" ];
-    NSString* sensStr = [NSString stringWithFormat:@"%@ (點擊切換)", sensLabels[_sensitivityLevel]];
-    drawRightText(sensStr, NSMakeRect(cardX + cardW / 2.0, startY, cardW / 2.0 - 20.0, itemH), [NSFont boldSystemFontOfSize:13], [NSColor colorWithCalibratedRed:247/255.0 green:227/255.0 blue:175/255.0 alpha:1.0]);
+    auto drawSettingToggle = ^(CGFloat itemY, NSRect& rect, BOOL isHovered, NSString* title, NSString* desc, BOOL isOn) {
+        rect = NSMakeRect(cardX, itemY, cardW, itemH);
+        NSColor* bg = isHovered ? [NSColor colorWithCalibratedRed:245/255.0 green:252/255.0 blue:248/255.0 alpha:1.0] : [NSColor whiteColor];
+        drawRoundedButton(rect, 18.0, bg); // 白底，無外框線
 
-    // 項目 2: 重設眼動監測 (粗體, 20px 圓角邊框)
-    CGFloat item2Y = startY + itemH + gap;
-    _recalibFromSettingsBtnRect = NSMakeRect(cardX, item2Y, cardW, itemH);
-    NSColor* bg2 = _isHoveringRecalibFromSettingsBtn ? [NSColor colorWithCalibratedRed:30/255.0 green:90/255.0 blue:70/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:20/255.0 green:68/255.0 blue:52/255.0 alpha:1.0];
-    drawRoundedButton(_recalibFromSettingsBtnRect, 20.0, bg2, [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:0.8]);
+        // 主標題 (綠字 #1EB18A)
+        NSRect tRect = NSMakeRect(cardX + 22.0, itemY + 11.0, cardW - switchW - 60.0, 22.0);
+        drawLeftText(title, tRect, [NSFont boldSystemFontOfSize:15], [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0]);
 
-    drawLeftText(@"重設眼動監測", NSMakeRect(cardX + 20.0, item2Y, cardW / 2.0, itemH), [NSFont boldSystemFontOfSize:15], [NSColor whiteColor]);
-    drawRightText(@"重新校準眼動基準 (點擊執行)", NSMakeRect(cardX + cardW / 2.0, item2Y, cardW / 2.0 - 20.0, itemH), [NSFont boldSystemFontOfSize:13], [NSColor colorWithCalibratedRed:120/255.0 green:230/255.0 blue:195/255.0 alpha:1.0]);
+        // 輔助說明
+        NSRect dRect = NSMakeRect(cardX + 22.0, itemY + 34.0, cardW - switchW - 60.0, 20.0);
+        drawLeftText(desc, dRect, [NSFont boldSystemFontOfSize:12], [NSColor colorWithCalibratedRed:95/255.0 green:130/255.0 blue:115/255.0 alpha:1.0]);
 
-    // 3. 底部動作按鈕：返回監控中心 (粗體, 20px 圓角邊框)
+        // 右側 Toggle Switch 滑動開關
+        CGFloat switchX = cardX + cardW - switchW - 25.0;
+        CGFloat sY = itemY + (itemH - switchH) / 2.0;
+        drawToggleSwitch(NSMakeRect(switchX, sY, switchW, switchH), isOn);
+    };
+
+    // 設定項目 1: 高靈敏度即時警報
+    CGFloat item1Y = startY;
+    NSString* s1Desc = _highSensitivityMode 
+        ? @"已啟用高靈敏度即時警報 (當 PERCLOS 或疲勞分偏高即刻提醒)" 
+        : @"標準靈敏度 (防誤報平滑過濾模式，推薦)";
+    drawSettingToggle(item1Y, _sensitivityBtnRect, _isHoveringSensitivityBtn, @"高靈敏度即時警報", s1Desc, _highSensitivityMode);
+
+    // 設定項目 2: 疲勞警報提示音
+    CGFloat item2Y = item1Y + itemH + gap;
+    NSString* s2Desc = _soundAlertEnabled 
+        ? @"已啟用蜂鳴警報音效 (疲勞超標時發出溫和提示音)" 
+        : @"靜音模式 (僅視覺提醒，不發出提示音)";
+    drawSettingToggle(item2Y, _toggleSoundBtnRect, _isHoveringToggleSoundBtn, @"疲勞警報提示音", s2Desc, _soundAlertEnabled);
+
+    // 設定項目 3: 開機自動背景啟動
+    CGFloat item3Y = item2Y + itemH + gap;
+    NSString* s3Desc = _autoStartEnabled 
+        ? @"已配置開機自動背景守護 (開機登入後自動在背景執行)" 
+        : @"已停用開機自動啟動 (僅在手動點擊執行檔時開啟)";
+    drawSettingToggle(item3Y, _autoStartBtnRect, _isHoveringAutoStartBtn, @"開機自動背景啟動", s3Desc, _autoStartEnabled);
+
+    // 設定項目 4: 自動科研同步 (預設恆定開啟，不可關閉)
+    CGFloat item4Y = item3Y + itemH + gap;
+    NSRect dummySyncRect = NSZeroRect;
+    drawSettingToggle(item4Y, dummySyncRect, NO, @"自動科研同步", @"系統預設恆定啟用 (每晚 21:00 自動上傳當日科研數據，不可關閉)", YES);
+
+    // 底部動作按鈕：返回監控中心 (白底綠字，無外框)
     CGFloat retW = 280.0;
     CGFloat retH = 48.0;
-    CGFloat retY = item2Y + itemH + 32.0;
+    CGFloat retY = item4Y + itemH + 24.0;
     _saveSettingsBtnRect = NSMakeRect((w - retW) / 2.0, retY, retW, retH);
 
-    NSColor* retBg = _isHoveringSaveSettingsBtn ? [NSColor colorWithCalibratedRed:170/255.0 green:215/255.0 blue:255/255.0 alpha:1.0] : [NSColor colorWithCalibratedRed:150/255.0 green:197/255.0 blue:247/255.0 alpha:1.0];
+    NSColor* retBg = _isHoveringSaveSettingsBtn ? [NSColor colorWithCalibratedRed:245/255.0 green:252/255.0 blue:248/255.0 alpha:1.0] : [NSColor whiteColor];
     drawRoundedButton(_saveSettingsBtnRect, 20.0, retBg);
-    drawCenteredText(@"返回監控中心", _saveSettingsBtnRect, [NSFont boldSystemFontOfSize:15], [NSColor colorWithCalibratedRed:37/255.0 green:41/255.0 blue:28/255.0 alpha:1.0]);
+    drawCenteredText(@"返回監控中心", _saveSettingsBtnRect, [NSFont boldSystemFontOfSize:15], [NSColor colorWithCalibratedRed:30/255.0 green:177/255.0 blue:138/255.0 alpha:1.0]);
 }
 
 // -----------------------------------------------------------------------------
@@ -825,7 +934,7 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     NSRectFill(self.bounds);
 
     CGFloat titleY = 48.0;
-    drawCenteredText(@"後測介面", NSMakeRect(0, titleY, w, 38.0), [NSFont boldSystemFontOfSize:26], [NSColor whiteColor]);
+    drawCenteredText(@"後測介面", NSMakeRect(0, titleY, w, 44.0), [NSFont boldSystemFontOfSize:31], [NSColor whiteColor]);
 
     CGFloat cardW = std::min(w - 60.0, 560.0);
     CGFloat cardH = 130.0;
@@ -868,7 +977,7 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     NSRectFill(self.bounds);
 
     CGFloat titleY = 48.0;
-    drawCenteredText(@"填寫成功!感謝您協助施測", NSMakeRect(0, titleY, w, 38.0), [NSFont boldSystemFontOfSize:26], [NSColor whiteColor]);
+    drawCenteredText(@"填寫成功!感謝您協助施測", NSMakeRect(0, titleY, w, 44.0), [NSFont boldSystemFontOfSize:31], [NSColor whiteColor]);
 
     CGFloat cardW = std::min(w - 60.0, 560.0);
     CGFloat cardH = 130.0;
@@ -945,7 +1054,9 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
             }
             break;
         case efd::MacUIStage::MainDashboard:
-            if (NSPointInRect(loc, _settingsBtnRect)) {
+            if (NSPointInRect(loc, _recalibBtnRect)) {
+                [self setStage:efd::MacUIStage::CalibrationInstruction];
+            } else if (NSPointInRect(loc, _settingsBtnRect)) {
                 [self setStage:efd::MacUIStage::SettingsPanel];
             } else if (NSPointInRect(loc, _minimizeTrayBtnRect)) {
                 [self minimizeToBackground];
@@ -953,10 +1064,14 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
             break;
         case efd::MacUIStage::SettingsPanel:
             if (NSPointInRect(loc, _sensitivityBtnRect)) {
-                _sensitivityLevel = (_sensitivityLevel + 1) % 3;
+                _highSensitivityMode = !_highSensitivityMode;
                 [self setNeedsDisplay:YES];
-            } else if (NSPointInRect(loc, _recalibFromSettingsBtnRect)) {
-                [self setStage:efd::MacUIStage::CalibrationInstruction];
+            } else if (NSPointInRect(loc, _toggleSoundBtnRect)) {
+                _soundAlertEnabled = !_soundAlertEnabled;
+                [self setNeedsDisplay:YES];
+            } else if (NSPointInRect(loc, _autoStartBtnRect)) {
+                _autoStartEnabled = !_autoStartEnabled;
+                [self setNeedsDisplay:YES];
             } else if (NSPointInRect(loc, _saveSettingsBtnRect)) {
                 [self setStage:efd::MacUIStage::MainDashboard];
             }
@@ -1000,10 +1115,12 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     BOOL inProceedDash = (_currentStage == efd::MacUIStage::CalibrationResult) && NSPointInRect(loc, _proceedDashboardBtnRect);
     BOOL inCloseBgResult = (_currentStage == efd::MacUIStage::CalibrationResult) && NSPointInRect(loc, _closeBgResultBtnRect);
     BOOL inRestartCalib = (_currentStage == efd::MacUIStage::CalibrationResult) && NSPointInRect(loc, _restartCalibBtnRect);
+    BOOL inRecalib = (_currentStage == efd::MacUIStage::MainDashboard) && NSPointInRect(loc, _recalibBtnRect);
     BOOL inSettings = (_currentStage == efd::MacUIStage::MainDashboard) && NSPointInRect(loc, _settingsBtnRect);
     BOOL inMinimizeTray = (_currentStage == efd::MacUIStage::MainDashboard) && NSPointInRect(loc, _minimizeTrayBtnRect);
     BOOL inSensitivity = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _sensitivityBtnRect);
-    BOOL inRecalibFromSet = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _recalibFromSettingsBtnRect);
+    BOOL inToggleSound = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _toggleSoundBtnRect);
+    BOOL inAutoStart = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _autoStartBtnRect);
     BOOL inSaveSet = (_currentStage == efd::MacUIStage::SettingsPanel) && NSPointInRect(loc, _saveSettingsBtnRect);
     BOOL inFillQ = (_currentStage == efd::MacUIStage::StudyCompletedGate) && NSPointInRect(loc, _fillQuestionnaireBtnRect);
     BOOL inReturnDash = (_currentStage == efd::MacUIStage::StudyCompletedGate || _currentStage == efd::MacUIStage::QuestionnaireSubmitted) && NSPointInRect(loc, _returnDashboardBtnRect);
@@ -1016,10 +1133,12 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
                       inProceedDash != _isHoveringProceedDashboardBtn ||
                       inCloseBgResult != _isHoveringCloseBgResultBtn ||
                       inRestartCalib != _isHoveringRestartCalibBtn ||
+                      inRecalib != _isHoveringRecalibBtn ||
                       inSettings != _isHoveringSettingsBtn ||
                       inMinimizeTray != _isHoveringMinimizeTrayBtn ||
                       inSensitivity != _isHoveringSensitivityBtn ||
-                      inRecalibFromSet != _isHoveringRecalibFromSettingsBtn ||
+                      inToggleSound != _isHoveringToggleSoundBtn ||
+                      inAutoStart != _isHoveringAutoStartBtn ||
                       inSaveSet != _isHoveringSaveSettingsBtn ||
                       inFillQ != _isHoveringFillQuestionnaireBtn ||
                       inReturnDash != _isHoveringReturnDashboardBtn ||
@@ -1033,16 +1152,18 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
         _isHoveringProceedDashboardBtn = inProceedDash;
         _isHoveringCloseBgResultBtn = inCloseBgResult;
         _isHoveringRestartCalibBtn = inRestartCalib;
+        _isHoveringRecalibBtn = inRecalib;
         _isHoveringSettingsBtn = inSettings;
         _isHoveringMinimizeTrayBtn = inMinimizeTray;
         _isHoveringSensitivityBtn = inSensitivity;
-        _isHoveringRecalibFromSettingsBtn = inRecalibFromSet;
+        _isHoveringToggleSoundBtn = inToggleSound;
+        _isHoveringAutoStartBtn = inAutoStart;
         _isHoveringSaveSettingsBtn = inSaveSet;
         _isHoveringFillQuestionnaireBtn = inFillQ;
         _isHoveringReturnDashboardBtn = inReturnDash;
         _isHoveringExitAppBtn = inExitApp;
 
-        BOOL isAnyHovered = (hoveredTab != -1 || inStart || inReady || inBackWelcome || inProceedDash || inCloseBgResult || inRestartCalib || inSettings || inMinimizeTray || inSensitivity || inRecalibFromSet || inSaveSet || inFillQ || inReturnDash || inExitApp);
+        BOOL isAnyHovered = (hoveredTab != -1 || inStart || inReady || inBackWelcome || inProceedDash || inCloseBgResult || inRestartCalib || inRecalib || inSettings || inMinimizeTray || inSensitivity || inToggleSound || inAutoStart || inSaveSet || inFillQ || inReturnDash || inExitApp);
         if (isAnyHovered) {
             [[NSCursor pointingHandCursor] set];
         } else {

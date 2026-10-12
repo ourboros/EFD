@@ -58,6 +58,43 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSetSimulatedEyeOpenness(J
     }
 }
 
+JNIEXPORT void JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jobject /*thiz*/, jbyteArray frameData, jint width, jint height, jint /*rotation*/) {
+    if (!g_engine || !frameData || width <= 0 || height <= 0) return;
+
+    jsize len = env->GetArrayLength(frameData);
+    if (len <= 0) return;
+
+    jbyte* bytes = env->GetByteArrayElements(frameData, nullptr);
+    if (!bytes) return;
+
+    efd::RawFrame frame;
+    frame.width = width;
+    frame.height = height;
+    frame.timestampNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+
+    size_t requiredSize = static_cast<size_t>(width * height * 4);
+    frame.data.resize(requiredSize, 255);
+
+    if (static_cast<size_t>(len) >= static_cast<size_t>(width * height)) {
+        const uint8_t* yPlane = reinterpret_cast<const uint8_t*>(bytes);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                uint8_t yVal = yPlane[y * width + x];
+                size_t idx = (y * width + x) * 4;
+                frame.data[idx + 0] = yVal;
+                frame.data[idx + 1] = yVal;
+                frame.data[idx + 2] = yVal;
+                frame.data[idx + 3] = 255;
+            }
+        }
+    }
+
+    env->ReleaseByteArrayElements(frameData, bytes, JNI_ABORT);
+    g_engine->getCameraService().onDriverFrame(frame);
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* env, jobject /*thiz*/) {
     if (!g_engine) {
