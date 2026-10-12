@@ -53,6 +53,11 @@ public:
     void setLastSyncedDate(int dateInt);
     int64_t getStudyStartTimestamp() const;
 
+    // 起始日期 (YYYYMMDD) 與即時刷新天數
+    int getStartDate() const;
+    void setStartDate(int dateInt);
+    int refreshStudyProgress();
+
 private:
     std::string m_configPath;
     std::string m_subjectUuid;
@@ -60,11 +65,17 @@ private:
     StudyStatus m_status = StudyStatus::ActiveMonitoring;
     std::string m_unlockToken;
     int64_t m_studyStartTimestamp = 0;
+    int m_startDate = 0;
     int m_launchCount = 0;
     bool m_hasCompletedInitialSetup = false;
     std::string m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
     int m_lastSyncedDate = 0;
     mutable std::mutex m_mutex;
+
+    int refreshStudyProgressUnlocked();
+    static int toJdn(int y, int m, int d);
+    static int fromJdn(int jdn);
+    static int getTodayDateInt();
 
     void saveConfigUnlocked();
     void loadConfigUnlocked();

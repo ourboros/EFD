@@ -353,7 +353,12 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
     bool hasTested = m_engine.getStudyTracker().isInitialSetupCompleted() || 
                      (m_engine.getDatabaseService().getRecordCount() > 0);
 
-    if (m_startInBackground) {
+    if (m_engine.getStudyTracker().getStatus() == StudyStatus::LockedForPostTest) {
+        // 第 14 天實驗期滿門禁：強制解除背景隱藏，直接開啟後測問卷門禁畫面
+        m_startInBackground = false;
+        m_currentStage = UIStage::StudyCompletedGate;
+        std::cout << "[實驗週期完成] 偵測到已達第 14 天實驗期滿，自動進入後測問卷門禁介面 (資產 5.png)\n";
+    } else if (m_startInBackground) {
         if (hasTested) {
             // 開機背景啟動模式且已測試過：在背景運行 (常駐托盤不彈窗)，自動連線攝影機開始即時記錄眼動數據與疲勞監控
             m_currentStage = UIStage::MainDashboard;
@@ -394,6 +399,10 @@ NativeWelcomeWindow::~NativeWelcomeWindow() {
 }
 
 void NativeWelcomeWindow::showMainWindow() {
+    if (m_engine.getStudyTracker().getStatus() == StudyStatus::LockedForPostTest &&
+        m_currentStage != UIStage::QuestionnaireSubmitted) {
+        setStage(UIStage::StudyCompletedGate);
+    }
     if (m_hwnd) {
         ShowWindow(m_hwnd, SW_RESTORE);
         SetForegroundWindow(m_hwnd);
@@ -615,6 +624,19 @@ void NativeWelcomeWindow::onTimerTick() {
                     FatigueLevel::Relaxed
                 );
             }
+        }
+
+        // 檢查運行過程中是否到達第 14 天 (跨日進入第 14 天)
+        if (m_engine.getStudyTracker().getStatus() == StudyStatus::LockedForPostTest &&
+            m_currentStage != UIStage::StudyCompletedGate &&
+            m_currentStage != UIStage::QuestionnaireSubmitted) {
+            showMainWindow();
+            setStage(UIStage::StudyCompletedGate);
+            m_trayManager.showBalloonNotification(
+                L"EFD 14天科研施測期滿",
+                L"恭喜完成 14 天科研監控！請開啟視窗填寫後測問卷以完成實驗解鎖。",
+                FatigueLevel::Relaxed
+            );
         }
     }
 }

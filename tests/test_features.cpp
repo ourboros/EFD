@@ -314,8 +314,11 @@ void testStudyWorkflowTrackerAndGatekeeper() {
     assert(tracker.getLastSyncedDate() == 0);
     tracker.setLastSyncedDate(20261011);
     assert(tracker.getLastSyncedDate() == 20261011);
+    assert(tracker.getStartDate() > 0);
 
-    // 模擬實驗推進至第 13 天
+    // 模擬實驗推進至第 2 天與第 13 天
+    tracker.setTimeWarpDay(2);
+    assert(tracker.getCurrentDay() == 2);
     tracker.setTimeWarpDay(13);
     assert(tracker.getCurrentDay() == 13);
     assert(tracker.getStatus() == efd::StudyStatus::ActiveMonitoring);

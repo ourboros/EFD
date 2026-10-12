@@ -12,6 +12,101 @@ StudyWorkflowTracker::StudyWorkflowTracker(const std::string& configPath)
     : m_configPath(configPath) {
 }
 
+int StudyWorkflowTracker::toJdn(int y, int m, int d) {
+    int a = (14 - m) / 12;
+    int y_adj = y + 4800 - a;
+    int m_adj = m + 12 * a - 3;
+    return d + (153 * m_adj + 2) / 5 + 365 * y_adj + y_adj / 4 - y_adj / 100 + y_adj / 400 - 32045;
+}
+
+int StudyWorkflowTracker::fromJdn(int jdn) {
+    int l = jdn + 68569;
+    int n = (4 * l) / 146097;
+    l = l - (146097 * n + 3) / 4;
+    int i = (4000 * (l + 1)) / 1461001;
+    l = l - (1461 * i) / 4 + 31;
+    int j = (80 * l) / 2447;
+    int d = l - (2447 * j) / 80;
+    l = j / 11;
+    int m = j + 2 - (12 * l);
+    int y = 100 * (n - 49) + i + l;
+    return y * 10000 + m * 100 + d;
+}
+
+int StudyWorkflowTracker::getTodayDateInt() {
+    auto nowTime = std::chrono::system_clock::now();
+    std::time_t nowT = std::chrono::system_clock::to_time_t(nowTime);
+    std::tm tmNow{};
+#ifdef _WIN32
+    localtime_s(&tmNow, &nowT);
+#else
+    localtime_r(&nowT, &tmNow);
+#endif
+    return (tmNow.tm_year + 1900) * 10000 + (tmNow.tm_mon + 1) * 100 + tmNow.tm_mday;
+}
+
+int StudyWorkflowTracker::refreshStudyProgressUnlocked() {
+    int todayDate = getTodayDateInt();
+    if (m_startDate <= 0) {
+        if (m_studyStartTimestamp > 0) {
+            std::time_t startT = static_cast<std::time_t>(m_studyStartTimestamp);
+            std::tm tmStart{};
+#ifdef _WIN32
+            localtime_s(&tmStart, &startT);
+#else
+            localtime_r(&startT, &tmStart);
+#endif
+            m_startDate = (tmStart.tm_year + 1900) * 10000 + (tmStart.tm_mon + 1) * 100 + tmStart.tm_mday;
+        } else {
+            m_startDate = todayDate;
+            m_studyStartTimestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+        }
+    }
+
+    int startY = m_startDate / 10000;
+    int startM = (m_startDate % 10000) / 100;
+    int startD = m_startDate % 100;
+
+    int todayY = todayDate / 10000;
+    int todayM = (todayDate % 10000) / 100;
+    int todayD = todayDate % 100;
+
+    int jdnStart = toJdn(startY, startM, startD);
+    int jdnToday = toJdn(todayY, todayM, todayD);
+    int elapsedDays = jdnToday - jdnStart;
+    if (elapsedDays < 0) elapsedDays = 0;
+
+    int calculatedDay = std::clamp(elapsedDays + 1, 1, 14);
+
+    bool changed = false;
+    if (m_status == StudyStatus::ActiveMonitoring) {
+        if (m_currentDay != calculatedDay) {
+            m_currentDay = calculatedDay;
+            changed = true;
+        }
+        if (m_currentDay >= 14) {
+            m_status = StudyStatus::LockedForPostTest;
+            changed = true;
+        }
+    } else if (m_status == StudyStatus::LockedForPostTest) {
+        if (m_currentDay != 14) {
+            m_currentDay = 14;
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        saveConfigUnlocked();
+    }
+    return m_currentDay;
+}
+
+int StudyWorkflowTracker::refreshStudyProgress() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return refreshStudyProgressUnlocked();
+}
+
 bool StudyWorkflowTracker::initialize() {
     std::lock_guard<std::mutex> lock(m_mutex);
     loadConfigUnlocked();
@@ -21,26 +116,16 @@ bool StudyWorkflowTracker::initialize() {
     if (m_subjectUuid.empty()) {
         m_subjectUuid = generateRandomUuid();
         m_studyStartTimestamp = nowSec;
+        m_startDate = getTodayDateInt();
         m_currentDay = 1;
         m_status = StudyStatus::ActiveMonitoring;
     } else if (m_studyStartTimestamp <= 0) {
         m_studyStartTimestamp = nowSec;
+        m_startDate = getTodayDateInt();
         m_currentDay = 1;
         m_status = StudyStatus::ActiveMonitoring;
     } else {
-        // 依照真實日曆天數差值計算實驗進度天數 (Day 1 ~ 14)
-        int elapsedDays = static_cast<int>((nowSec - m_studyStartTimestamp) / 86400);
-        if (elapsedDays < 0) elapsedDays = 0;
-        int calculatedDay = std::clamp(elapsedDays + 1, 1, 14);
-
-        if (m_status == StudyStatus::ActiveMonitoring) {
-            m_currentDay = calculatedDay;
-            if (m_currentDay >= 14) {
-                m_status = StudyStatus::LockedForPostTest;
-            }
-        } else if (m_status == StudyStatus::LockedForPostTest) {
-            m_currentDay = 14;
-        }
+        refreshStudyProgressUnlocked();
     }
     if (m_cloudSyncEndpoint.empty() || m_cloudSyncEndpoint.find("AKfycb...") != std::string::npos || m_cloudSyncEndpoint.find("AKfycbyGXGJz") != std::string::npos || m_cloudSyncEndpoint.find("AKfycbxWOj") != std::string::npos) {
         m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
@@ -62,6 +147,7 @@ StudyStatus StudyWorkflowTracker::getStatus() const {
 
 int StudyWorkflowTracker::getCurrentDay() const {
     std::lock_guard<std::mutex> lock(m_mutex);
+    const_cast<StudyWorkflowTracker*>(this)->refreshStudyProgressUnlocked();
     return m_currentDay;
 }
 
@@ -110,6 +196,14 @@ void StudyWorkflowTracker::setCloudSyncEndpoint(const std::string& endpoint) {
 void StudyWorkflowTracker::setTimeWarpDay(int day) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_currentDay = std::clamp(day, 1, 14);
+    int todayDate = getTodayDateInt();
+    int todayY = todayDate / 10000;
+    int todayM = (todayDate % 10000) / 100;
+    int todayD = todayDate % 100;
+    int jdnToday = toJdn(todayY, todayM, todayD);
+    int targetStartJdn = jdnToday - (m_currentDay - 1);
+    m_startDate = fromJdn(targetStartJdn);
+
     int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     m_studyStartTimestamp = nowSec - static_cast<int64_t>(m_currentDay - 1) * 86400;
@@ -121,9 +215,19 @@ void StudyWorkflowTracker::setTimeWarpDay(int day) {
 
 void StudyWorkflowTracker::advanceDay() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_currentDay < 14) {
-        m_currentDay++;
-    }
+    int targetDay = m_currentDay < 14 ? m_currentDay + 1 : 14;
+    m_currentDay = targetDay;
+    int todayDate = getTodayDateInt();
+    int todayY = todayDate / 10000;
+    int todayM = (todayDate % 10000) / 100;
+    int todayD = todayDate % 100;
+    int jdnToday = toJdn(todayY, todayM, todayD);
+    int targetStartJdn = jdnToday - (m_currentDay - 1);
+    m_startDate = fromJdn(targetStartJdn);
+
+    int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    m_studyStartTimestamp = nowSec - static_cast<int64_t>(m_currentDay - 1) * 86400;
     if (m_currentDay >= 14 && m_status == StudyStatus::ActiveMonitoring) {
         m_status = StudyStatus::LockedForPostTest;
     }
@@ -170,11 +274,24 @@ int64_t StudyWorkflowTracker::getStudyStartTimestamp() const {
     return m_studyStartTimestamp;
 }
 
+int StudyWorkflowTracker::getStartDate() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_startDate;
+}
+
+void StudyWorkflowTracker::setStartDate(int dateInt) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_startDate = dateInt;
+    refreshStudyProgressUnlocked();
+    saveConfigUnlocked();
+}
+
 void StudyWorkflowTracker::resetStudy(const std::string& newUuid) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_subjectUuid = newUuid.empty() ? generateRandomUuid() : newUuid;
     m_studyStartTimestamp = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+    m_startDate = getTodayDateInt();
     m_currentDay = 1;
     m_status = StudyStatus::ActiveMonitoring;
     m_unlockToken.clear();
@@ -192,6 +309,7 @@ void StudyWorkflowTracker::saveConfigUnlocked() {
         << "  \"status\": " << static_cast<int>(m_status) << ",\n"
         << "  \"unlockToken\": \"" << m_unlockToken << "\",\n"
         << "  \"studyStartTimestamp\": " << m_studyStartTimestamp << ",\n"
+        << "  \"startDate\": " << m_startDate << ",\n"
         << "  \"launchCount\": " << m_launchCount << ",\n"
         << "  \"hasCompletedInitialSetup\": " << (m_hasCompletedInitialSetup ? "true" : "false") << ",\n"
         << "  \"cloudSyncEndpoint\": \"" << m_cloudSyncEndpoint << "\",\n"
@@ -226,6 +344,7 @@ void StudyWorkflowTracker::loadConfigUnlocked() {
         else if (key == "status") m_status = static_cast<StudyStatus>(std::stoi(val));
         else if (key == "unlockToken") m_unlockToken = val;
         else if (key == "studyStartTimestamp") m_studyStartTimestamp = std::stoll(val);
+        else if (key == "startDate") m_startDate = std::stoi(val);
         else if (key == "launchCount") m_launchCount = std::stoi(val);
         else if (key == "hasCompletedInitialSetup") m_hasCompletedInitialSetup = (val == "true" || val == "1");
         else if (key == "cloudSyncEndpoint") m_cloudSyncEndpoint = val;
