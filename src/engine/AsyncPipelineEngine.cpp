@@ -1,6 +1,7 @@
 #include "AsyncPipelineEngine.hpp"
 #include <chrono>
 #include <algorithm>
+#include <iostream>
 
 namespace efd {
 
@@ -161,6 +162,37 @@ bool AsyncPipelineEngine::triggerManualDataSync() {
     );
 }
 
+bool AsyncPipelineEngine::checkAndTriggerNightlySync() {
+    auto nowTime = std::chrono::system_clock::now();
+    std::time_t nowT = std::chrono::system_clock::to_time_t(nowTime);
+    std::tm tmNow{};
+#ifdef _WIN32
+    localtime_s(&tmNow, &nowT);
+#else
+    localtime_r(&nowT, &tmNow);
+#endif
+    if (tmNow.tm_hour < 21) {
+        return false;
+    }
+
+    int todayDateInt = (tmNow.tm_year + 1900) * 10000 + (tmNow.tm_mon + 1) * 100 + tmNow.tm_mday;
+    if (m_studyTracker.getLastSyncedDate() == todayDateInt) {
+        return false; // 今日已完成同步，防止任何重複觸發
+    }
+
+    // 原子化持久記錄已同步日期至設定檔
+    m_studyTracker.setLastSyncedDate(todayDateInt);
+    m_lastSyncedDateInt = todayDateInt;
+    std::cout << "[夜間科研同步] 21:00 定時觸發：落盤並同步當日眼動數據 (實驗第 " 
+              << m_studyTracker.getCurrentDay() << " 天)...\n";
+    m_database.flush();
+    return m_syncWorker.triggerDailySync(
+        m_studyTracker.getSubjectUuid(),
+        m_studyTracker.getCurrentDay(),
+        nullptr
+    );
+}
+
 void AsyncPipelineEngine::handleLifecycleEvent(const LifecycleEvent& event) {
     if (event.currentState == AppLifecycleState::Resumed) {
         // 改良點 3: 熱重啟快速基準再校準 (1 秒內快速重同步光線與姿勢)
@@ -299,23 +331,9 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             m_database.logRecord(record);
         }
 
-        // 5.1 夜間定時自動儲存與上傳 (每 900 幀 / 約 30 秒檢查一次系統時鐘)
+        // 5.1 夜間定時自動儲存與上傳 (每 900 幀 / 約 30 秒委派原子檢查，持久化防重複)
         if (count % 900 == 0) {
-            auto nowTime = std::chrono::system_clock::now();
-            std::time_t nowT = std::chrono::system_clock::to_time_t(nowTime);
-            std::tm tmNow{};
-#ifdef _WIN32
-            localtime_s(&tmNow, &nowT);
-#else
-            localtime_r(&nowT, &tmNow);
-#endif
-            int todayDateInt = (tmNow.tm_year + 1900) * 10000 + (tmNow.tm_mon + 1) * 100 + tmNow.tm_mday;
-            // 晚上 21:00 ~ 23:59 之間，且今天尚未執行過自動儲存上傳
-            if (tmNow.tm_hour >= 21 && m_lastSyncedDateInt != todayDateInt) {
-                m_lastSyncedDateInt = todayDateInt;
-                m_database.flush();
-                m_syncWorker.triggerDailySync(m_studyTracker.getSubjectUuid(), m_studyTracker.getCurrentDay());
-            }
+            checkAndTriggerNightlySync();
         }
 
         // 6. 分發遙測至 UI Thread

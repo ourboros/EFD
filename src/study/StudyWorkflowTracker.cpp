@@ -15,12 +15,32 @@ StudyWorkflowTracker::StudyWorkflowTracker(const std::string& configPath)
 bool StudyWorkflowTracker::initialize() {
     std::lock_guard<std::mutex> lock(m_mutex);
     loadConfigUnlocked();
+    int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
     if (m_subjectUuid.empty()) {
         m_subjectUuid = generateRandomUuid();
-        m_studyStartTimestamp = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        m_studyStartTimestamp = nowSec;
         m_currentDay = 1;
         m_status = StudyStatus::ActiveMonitoring;
+    } else if (m_studyStartTimestamp <= 0) {
+        m_studyStartTimestamp = nowSec;
+        m_currentDay = 1;
+        m_status = StudyStatus::ActiveMonitoring;
+    } else {
+        // 依照真實日曆天數差值計算實驗進度天數 (Day 1 ~ 14)
+        int elapsedDays = static_cast<int>((nowSec - m_studyStartTimestamp) / 86400);
+        if (elapsedDays < 0) elapsedDays = 0;
+        int calculatedDay = std::clamp(elapsedDays + 1, 1, 14);
+
+        if (m_status == StudyStatus::ActiveMonitoring) {
+            m_currentDay = calculatedDay;
+            if (m_currentDay >= 14) {
+                m_status = StudyStatus::LockedForPostTest;
+            }
+        } else if (m_status == StudyStatus::LockedForPostTest) {
+            m_currentDay = 14;
+        }
     }
     if (m_cloudSyncEndpoint.empty() || m_cloudSyncEndpoint.find("AKfycb...") != std::string::npos || m_cloudSyncEndpoint.find("AKfycbyGXGJz") != std::string::npos || m_cloudSyncEndpoint.find("AKfycbxWOj") != std::string::npos) {
         m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
@@ -90,6 +110,9 @@ void StudyWorkflowTracker::setCloudSyncEndpoint(const std::string& endpoint) {
 void StudyWorkflowTracker::setTimeWarpDay(int day) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_currentDay = std::clamp(day, 1, 14);
+    int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    m_studyStartTimestamp = nowSec - static_cast<int64_t>(m_currentDay - 1) * 86400;
     if (m_currentDay >= 14 && m_status == StudyStatus::ActiveMonitoring) {
         m_status = StudyStatus::LockedForPostTest;
     }
@@ -131,6 +154,22 @@ std::string StudyWorkflowTracker::submitQuestionnaire(const std::string& questio
     return m_unlockToken;
 }
 
+int StudyWorkflowTracker::getLastSyncedDate() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_lastSyncedDate;
+}
+
+void StudyWorkflowTracker::setLastSyncedDate(int dateInt) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_lastSyncedDate = dateInt;
+    saveConfigUnlocked();
+}
+
+int64_t StudyWorkflowTracker::getStudyStartTimestamp() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_studyStartTimestamp;
+}
+
 void StudyWorkflowTracker::resetStudy(const std::string& newUuid) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_subjectUuid = newUuid.empty() ? generateRandomUuid() : newUuid;
@@ -139,6 +178,7 @@ void StudyWorkflowTracker::resetStudy(const std::string& newUuid) {
     m_currentDay = 1;
     m_status = StudyStatus::ActiveMonitoring;
     m_unlockToken.clear();
+    m_lastSyncedDate = 0;
     saveConfigUnlocked();
 }
 
@@ -154,7 +194,8 @@ void StudyWorkflowTracker::saveConfigUnlocked() {
         << "  \"studyStartTimestamp\": " << m_studyStartTimestamp << ",\n"
         << "  \"launchCount\": " << m_launchCount << ",\n"
         << "  \"hasCompletedInitialSetup\": " << (m_hasCompletedInitialSetup ? "true" : "false") << ",\n"
-        << "  \"cloudSyncEndpoint\": \"" << m_cloudSyncEndpoint << "\"\n"
+        << "  \"cloudSyncEndpoint\": \"" << m_cloudSyncEndpoint << "\",\n"
+        << "  \"lastSyncedDate\": " << m_lastSyncedDate << "\n"
         << "}\n";
 }
 
@@ -188,6 +229,7 @@ void StudyWorkflowTracker::loadConfigUnlocked() {
         else if (key == "launchCount") m_launchCount = std::stoi(val);
         else if (key == "hasCompletedInitialSetup") m_hasCompletedInitialSetup = (val == "true" || val == "1");
         else if (key == "cloudSyncEndpoint") m_cloudSyncEndpoint = val;
+        else if (key == "lastSyncedDate") m_lastSyncedDate = std::stoi(val);
     }
 }
 

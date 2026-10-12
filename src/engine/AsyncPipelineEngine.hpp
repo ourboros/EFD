@@ -78,6 +78,9 @@ public:
     // 執行手動觸發當日眼動數據落盤與雲端同步
     bool triggerManualDataSync();
 
+    // 檢查並執行夜間 21:00 定時自動同步 (線程安全、全域唯一且落盤持久化)
+    bool checkAndTriggerNightlySync();
+
     // 存取各核心模組
     PlatformLifecycleAdapter& getLifecycleAdapter() { return m_lifecycle; }
     FatigueStateMachine& getStateMachine() { return m_stateMachine; }

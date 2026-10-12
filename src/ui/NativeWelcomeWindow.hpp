@@ -159,8 +159,6 @@ private:
     std::string m_cameraErrorMsg;      // 切換相機時的錯誤訊息
     bool m_cameraListLoaded = false;   // 是否已掃描過設備清單
 
-    int m_lastSyncedDateInt = 0;       // 獨立定時 21:00 同步日期追蹤 (YYYYMMDD)
-
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void onPaint(HWND hwnd);
     void onTimerTick();

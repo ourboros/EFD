@@ -311,6 +311,9 @@ void testStudyWorkflowTrackerAndGatekeeper() {
     assert(tracker.getSubjectUuid() == "SUBJ-TEST-999");
     assert(tracker.getCurrentDay() == 1);
     assert(tracker.getStatus() == efd::StudyStatus::ActiveMonitoring);
+    assert(tracker.getLastSyncedDate() == 0);
+    tracker.setLastSyncedDate(20261011);
+    assert(tracker.getLastSyncedDate() == 20261011);
 
     // 模擬實驗推進至第 13 天
     tracker.setTimeWarpDay(13);

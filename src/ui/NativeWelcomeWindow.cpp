@@ -603,40 +603,18 @@ void NativeWelcomeWindow::onTimerTick() {
         if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
     }
 
-    // 獨立系統時鐘夜間 21:00 定時科研同步與補傳檢查 (每 1800 tick / 約 30 秒獨立檢查一次)
+    // 獨立系統時鐘夜間 21:00 定時科研同步與補傳檢查 (每 1800 tick / 約 30 秒委派核心引擎原子檢查，防止重複)
     static int s_wallClockTickCount = 0;
     if (++s_wallClockTickCount >= 1800) {
         s_wallClockTickCount = 0;
-        auto nowTime = std::chrono::system_clock::now();
-        std::time_t nowT = std::chrono::system_clock::to_time_t(nowTime);
-        std::tm tmNow{};
-#ifdef _WIN32
-        localtime_s(&tmNow, &nowT);
-#else
-        localtime_r(&nowT, &tmNow);
-#endif
-        int todayDateInt = (tmNow.tm_year + 1900) * 10000 + (tmNow.tm_mon + 1) * 100 + tmNow.tm_mday;
-        
-        // 條件 A: 當前時間為晚上 21:00 ~ 23:59，且今天尚未執行過定時上傳
-        // 條件 B: 只要系統在運作中 (即使攝影機暫停或離座)，時間一到即刻自動儲存並上傳 Google 試算表
-        if (m_autoSyncNightly && tmNow.tm_hour >= 21 && m_lastSyncedDateInt != todayDateInt) {
-            m_lastSyncedDateInt = todayDateInt;
-            std::cout << "[夜間科研同步] 偵測到已達 21:00 夜間上傳時間窗口，自動啟動當日眼動數據上傳...\n";
-            m_engine.getDatabaseService().flush();
-            m_engine.getSyncWorker().triggerDailySync(
-                m_engine.getStudyTracker().getSubjectUuid(),
-                m_engine.getStudyTracker().getCurrentDay(),
-                [this](const SyncResult& res) {
-                    if (res.success) {
-                        std::cout << "[夜間科研同步] 21:00 當日科研數據已成功上傳至 Google 試算表！\n";
-                        this->m_trayManager.showBalloonNotification(
-                            L"當日眼動科研數據已同步",
-                            L"系統已於 21:00 將今日眼動數據安全上傳至 Google 試算表。",
-                            FatigueLevel::Relaxed
-                        );
-                    }
-                }
-            );
+        if (m_autoSyncNightly) {
+            if (m_engine.checkAndTriggerNightlySync()) {
+                m_trayManager.showBalloonNotification(
+                    L"當日眼動科研數據已同步",
+                    L"系統已於 21:00 將今日眼動數據安全上傳至 Google 試算表。",
+                    FatigueLevel::Relaxed
+                );
+            }
         }
     }
 }

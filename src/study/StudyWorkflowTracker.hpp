@@ -48,6 +48,11 @@ public:
     std::string getCloudSyncEndpoint() const;
     void setCloudSyncEndpoint(const std::string& endpoint);
 
+    // 取得與更新最後成功同步科研數據的日期 (YYYYMMDD，用於防止重複上傳)
+    int getLastSyncedDate() const;
+    void setLastSyncedDate(int dateInt);
+    int64_t getStudyStartTimestamp() const;
+
 private:
     std::string m_configPath;
     std::string m_subjectUuid;
@@ -58,6 +63,7 @@ private:
     int m_launchCount = 0;
     bool m_hasCompletedInitialSetup = false;
     std::string m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
+    int m_lastSyncedDate = 0;
     mutable std::mutex m_mutex;
 
     void saveConfigUnlocked();
