@@ -24,6 +24,8 @@ jobs:
             -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DEFD_BUILD_TESTS=OFF \
+            -DEFD_BUILD_CLI=OFF \
             -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM="" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED="NO" \
@@ -35,6 +37,7 @@ jobs:
             -scheme EFD_iOS \
             -configuration Release \
             -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -43,12 +46,9 @@ jobs:
       - name: Package App into .ipa
         run: |
           mkdir -p package/Payload
-          APP_PATH=$(find build/ios -name "EFD_iOS.app" -type d | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find build/ios -name "*.app" -type d | head -n 1)
-          fi
-          echo "Found App: $APP_PATH"
-          cp -r "$APP_PATH" package/Payload/
+          APP_PATH=$(find build/ios -name "*.app" -type d | head -n 1)
+          echo "Found App Bundle: $APP_PATH"
+          cp -R "$APP_PATH" package/Payload/
           cd package
           zip -r ../EFD_iOS.ipa Payload
           cd ..

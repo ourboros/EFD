@@ -113,7 +113,9 @@ target_compile_features(efd_core PUBLIC cxx_std_20)
 # -----------------------------------------------------------------------------
 # CLI / Simulation App Target: efd_cli
 # -----------------------------------------------------------------------------
-if(EFD_BUILD_CLI)
+# CLI / Simulation App Target: efd_cli
+# -----------------------------------------------------------------------------
+if(EFD_BUILD_CLI AND NOT IOS)
     if(WIN32)
         add_executable(efd_cli
             src/main.cpp
@@ -137,79 +139,81 @@ endif()
 # -----------------------------------------------------------------------------
 # GUI Application Target: efd_gui (Full Welcome / Calibration / Monitoring UI)
 # -----------------------------------------------------------------------------
-set(EFD_GUI_SOURCES
-    src/ui/main_gui.cpp
-)
+if(NOT IOS)
+    set(EFD_GUI_SOURCES
+        src/ui/main_gui.cpp
+    )
 
-if(WIN32)
-    list(APPEND EFD_GUI_SOURCES
-        src/ui/NativeWelcomeWindow.cpp
-        src/ui/NativeWelcomeWindow.hpp
-        src/ui/FatigueFloatingIndicator.cpp
-        src/ui/FatigueFloatingIndicator.hpp
-        src/platform/windows/SystemTrayManager.cpp
-        src/platform/windows/SystemTrayManager.hpp
-        src/platform/windows/app.rc
-        src/ui/Theme.hpp
-    )
-elseif(APPLE AND NOT IOS)
-    list(APPEND EFD_GUI_SOURCES
-        src/ui/macos/MacWelcomeWindow.h
-        src/ui/macos/MacWelcomeWindow.mm
-        src/platform/macos/MacStatusItemManager.h
-        src/platform/macos/MacStatusItemManager.mm
-        src/ui/Theme.hpp
-    )
-endif()
+    if(WIN32)
+        list(APPEND EFD_GUI_SOURCES
+            src/ui/NativeWelcomeWindow.cpp
+            src/ui/NativeWelcomeWindow.hpp
+            src/ui/FatigueFloatingIndicator.cpp
+            src/ui/FatigueFloatingIndicator.hpp
+            src/platform/windows/SystemTrayManager.cpp
+            src/platform/windows/SystemTrayManager.hpp
+            src/platform/windows/app.rc
+            src/ui/Theme.hpp
+        )
+    elseif(APPLE)
+        list(APPEND EFD_GUI_SOURCES
+            src/ui/macos/MacWelcomeWindow.h
+            src/ui/macos/MacWelcomeWindow.mm
+            src/platform/macos/MacStatusItemManager.h
+            src/platform/macos/MacStatusItemManager.mm
+            src/ui/Theme.hpp
+        )
+    endif()
 
-add_executable(efd_gui WIN32
-    ${EFD_GUI_SOURCES}
-)
+    add_executable(efd_gui WIN32
+        ${EFD_GUI_SOURCES}
+    )
 
-target_link_libraries(efd_gui PRIVATE efd_core)
+    target_link_libraries(efd_gui PRIVATE efd_core)
 
-if(WIN32)
-    target_link_libraries(efd_gui PRIVATE gdi32 user32 shell32 gdiplus)
-    add_custom_command(TARGET efd_gui POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/assets"
-            "$<TARGET_FILE_DIR:efd_gui>/assets"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/design"
-            "$<TARGET_FILE_DIR:efd_gui>/design"
-    )
-elseif(APPLE AND NOT IOS)
-    set_target_properties(efd_gui PROPERTIES
-        MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist
-        MACOSX_BUNDLE_BUNDLE_NAME "EFD"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "2.0.0"
-    )
-    target_link_libraries(efd_gui PRIVATE 
-        "-framework Cocoa"
-        "-framework AppKit"
-        "-framework Foundation"
-        "-framework AVFoundation"
-        "-framework QuartzCore"
-        "-framework UserNotifications"
-    )
-    add_custom_command(TARGET efd_gui POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/assets"
-            "$<TARGET_FILE_DIR:efd_gui>/../Resources/assets"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/design"
-            "$<TARGET_FILE_DIR:efd_gui>/../Resources/design"
-    )
+    if(WIN32)
+        target_link_libraries(efd_gui PRIVATE gdi32 user32 shell32 gdiplus)
+        add_custom_command(TARGET efd_gui POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+                "$<TARGET_FILE_DIR:efd_gui>/assets"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/design"
+                "$<TARGET_FILE_DIR:efd_gui>/design"
+        )
+    elseif(APPLE)
+        set_target_properties(efd_gui PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist
+            MACOSX_BUNDLE_BUNDLE_NAME "EFD"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "2.0.0"
+        )
+        target_link_libraries(efd_gui PRIVATE 
+            "-framework Cocoa"
+            "-framework AppKit"
+            "-framework Foundation"
+            "-framework AVFoundation"
+            "-framework QuartzCore"
+            "-framework UserNotifications"
+        )
+        add_custom_command(TARGET efd_gui POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+                "$<TARGET_FILE_DIR:efd_gui>/../Resources/assets"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/design"
+                "$<TARGET_FILE_DIR:efd_gui>/../Resources/design"
+        )
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
 # iOS Application Target: EFD_iOS
 # -----------------------------------------------------------------------------
 if(IOS)
-    add_executable(EFD_iOS
+    add_executable(EFD_iOS MACOSX_BUNDLE
         ios/main.m
         ios/AppDelegate.h
         ios/AppDelegate.mm
@@ -222,13 +226,17 @@ if(IOS)
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+        XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
+        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
+        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""
     )
 endif()
 
 # -----------------------------------------------------------------------------
 # Unit Tests Target
 # -----------------------------------------------------------------------------
-if(EFD_BUILD_TESTS)
+if(EFD_BUILD_TESTS AND NOT IOS)
     enable_testing()
     add_subdirectory(tests)
 endif()
