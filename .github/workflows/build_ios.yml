@@ -1,0 +1,61 @@
+name: Build EFD iOS (.ipa)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup CMake & Ninja
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.28.x'
+
+      - name: Generate Xcode Project for iOS
+        run: |
+          mkdir -p build/ios
+          cmake -B build/ios \
+            -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM="" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED="NO" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED="NO"
+
+      - name: Build EFD iOS Target
+        run: |
+          xcodebuild -project build/ios/EFD.xcodeproj \
+            -scheme EFD_iOS \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package App into .ipa
+        run: |
+          mkdir -p package/Payload
+          APP_PATH=$(find build/ios -name "EFD_iOS.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find build/ios -name "*.app" -type d | head -n 1)
+          fi
+          echo "Found App: $APP_PATH"
+          cp -r "$APP_PATH" package/Payload/
+          cd package
+          zip -r ../EFD_iOS.ipa Payload
+          cd ..
+
+      - name: Upload .ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EFD_iOS_ipa
+          path: EFD_iOS.ipa
+          retention-days: 14

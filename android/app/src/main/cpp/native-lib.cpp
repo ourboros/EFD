@@ -71,7 +71,7 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     efd::RawFrame frame;
     frame.width = width;
     frame.height = height;
-    frame.timestampNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    frame.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
     size_t requiredSize = static_cast<size_t>(width * height * 4);

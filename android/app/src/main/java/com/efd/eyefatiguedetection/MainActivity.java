@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -70,6 +71,7 @@ public class MainActivity extends AppCompatActivity {
     private float mCurrentScore = 12.0f;
     private int mCurrentLevel = 0;
     private boolean mHasShownAlert = false;
+    private EfdScreenStateReceiver mScreenStateReceiver;
 
     private static final String CHANNEL_ID = "efd_fatigue_alerts";
     private static final int PERMISSION_REQ_CODE = 1001;
@@ -106,7 +108,27 @@ public class MainActivity extends AppCompatActivity {
         // 4. 延遲 500ms 請求權限，避免阻礙主視窗渲染啟動
         mHandler.postDelayed(this::requestAppPermissions, 500);
 
-        // 5. 啟動遙測更新輪詢
+        // 5. 註冊螢幕鎖屏與解鎖廣播監聽器
+        try {
+            mScreenStateReceiver = new EfdScreenStateReceiver();
+            mScreenStateReceiver.register(this);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to register screen state receiver: " + t.getMessage());
+        }
+
+        // 6. 啟動前台常駐監控服務
+        try {
+            Intent serviceIntent = new Intent(this, EfdForegroundService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to start foreground service: " + t.getMessage());
+        }
+
+        // 7. 啟動遙測更新輪詢
         startTelemetryLoop();
     }
 
@@ -898,6 +920,13 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (mScreenStateReceiver != null) {
+            try {
+                mScreenStateReceiver.unregister(this);
+            } catch (Throwable t) {
+                // ignore
+            }
+        }
         if (mHandler != null && mTelemetryRunnable != null) {
             mHandler.removeCallbacks(mTelemetryRunnable);
         }

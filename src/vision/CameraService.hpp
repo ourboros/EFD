@@ -55,6 +55,9 @@ public:
     float getFps() const { return m_config.fps; }
     int64_t getTotalFramesDelivered() const { return m_totalFramesDelivered.load(); }
 
+    // 接收驅動或 JNI 影格
+    void onDriverFrame(const RawFrame& frame);
+
 private:
     CameraConfig m_config;
     std::unique_ptr<ICameraDriver> m_driver;
@@ -71,7 +74,6 @@ private:
 
     // 建立平台原生驅動實例
     std::unique_ptr<ICameraDriver> createPlatformDriver();
-    void onDriverFrame(const RawFrame& frame);
     void startWatchdog();
     void stopWatchdog();
 };

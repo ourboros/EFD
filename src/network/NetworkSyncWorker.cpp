@@ -328,6 +328,7 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
 
 } // namespace efd
 
+#ifdef _WIN32
 #include <windows.h>
 #include <string>
 
@@ -347,3 +348,4 @@ void RunPowerShell(const std::string& script) {
         CloseHandle(pi.hThread);
     }
 }
+#endif
