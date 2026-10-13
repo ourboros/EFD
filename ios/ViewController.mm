@@ -1,9 +1,13 @@
 #import "ViewController.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
-#include "engine/AsyncPipelineEngine.hpp"
+#include <memory>
+#include <algorithm>
+#include <string>
+#include <vector>
 #include <iomanip>
 #include <sstream>
+#include "engine/AsyncPipelineEngine.hpp"
 
 // -----------------------------------------------------------------------------
 // EFD iOS 設計系統規範色碼 (5 大核心配色)

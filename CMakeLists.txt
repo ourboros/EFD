@@ -220,15 +220,22 @@ if(IOS)
         ios/ViewController.h
         ios/ViewController.mm
     )
+    target_include_directories(EFD_iOS PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/ios
+    )
     target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox")
     set_target_properties(EFD_iOS PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
-        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Manual"
+        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "-"
+        XCODE_ATTRIBUTE_AD_HOC_CODE_SIGNING_ALLOWED "YES"
         XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
-        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
+        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "YES"
         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""
     )
 endif()
