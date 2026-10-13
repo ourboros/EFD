@@ -20,6 +20,7 @@ public class EfdForegroundService extends LifecycleService {
     private EfdNotificationHudManager mHudManager;
     private Handler mHandler;
     private Runnable mTelemetryRunnable;
+    private boolean mHasAlerted = false;
 
     public class LocalBinder extends Binder {
         public EfdForegroundService getService() {
@@ -33,8 +34,8 @@ public class EfdForegroundService extends LifecycleService {
         Log.i(TAG, "EfdForegroundService onCreate");
 
         mHudManager = new EfdNotificationHudManager(this);
-        startForeground(EfdNotificationHudManager.NOTIFICATION_ID, 
-                mHudManager.buildForegroundNotification("系統即時防護中", 12.0f, 0));
+        startForeground(EfdNotificationHudManager.SERVICE_NOTIFICATION_ID, 
+                mHudManager.buildForegroundNotification());
 
         EfdNativeBridge.initEngine();
 
@@ -59,14 +60,21 @@ public class EfdForegroundService extends LifecycleService {
                     String jsonStr = EfdNativeBridge.getTelemetryJson();
                     if (jsonStr != null && jsonStr.length() > 0 && !jsonStr.startsWith("{\"error\"")) {
                         JSONObject obj = new JSONObject(jsonStr);
-                        float score = (float) obj.optDouble("fatigueScore", 12.0);
                         int level = obj.optInt("fatigueLevel", 0);
 
-                        String statusText = "生理狀態：正常專注";
-                        if (level == 2) statusText = "生理狀態：【重度疲勞警報】";
-                        else if (level == 1) statusText = "生理狀態：注意疲勞";
-
-                        mHudManager.updateNotification(statusText, score, level);
+                        // 僅在「過度疲勞 (level == 2 / SevereWarning)」時觸發警告提醒通知，平時靜默不騷擾
+                        if (level == 2) {
+                            if (!mHasAlerted) {
+                                mHasAlerted = true;
+                                Log.w(TAG, "偵測到過度疲勞 (SevereWarning)，調出疲勞警告提醒！");
+                                mHudManager.triggerSevereFatigueAlert(
+                                        "🚨 EFD 重度疲勞警告提醒",
+                                        "你的眼睛處於過度疲勞狀態，請立即閉眼休息 5 分鐘！"
+                                );
+                            }
+                        } else {
+                            mHasAlerted = false; // 恢復正常時重置，以便下次過度疲勞時能再次觸發提醒
+                        }
                     }
                 } catch (Throwable t) {
                     // ignore

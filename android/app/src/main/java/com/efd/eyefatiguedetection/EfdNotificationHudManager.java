@@ -12,8 +12,10 @@ import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 
 public class EfdNotificationHudManager {
-    public static final String CHANNEL_ID = "efd_fatigue_hud_channel";
-    public static final int NOTIFICATION_ID = 1001;
+    public static final String SERVICE_CHANNEL_ID = "efd_service_channel";
+    public static final String ALERT_CHANNEL_ID = "efd_fatigue_alert_channel";
+    public static final int SERVICE_NOTIFICATION_ID = 1001;
+    public static final int ALERT_NOTIFICATION_ID = 1002;
 
     private final Context mContext;
     private final NotificationManager mNotificationManager;
@@ -21,24 +23,35 @@ public class EfdNotificationHudManager {
     public EfdNotificationHudManager(@NonNull Context context) {
         this.mContext = context.getApplicationContext();
         this.mNotificationManager = (NotificationManager) mContext.getSystemService(Context.NOTIFICATION_SERVICE);
-        createNotificationChannel();
+        createNotificationChannels();
     }
 
-    private void createNotificationChannel() {
+    private void createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "EFD 眼睛疲勞即時狀態",
+            // 靜默背景服務通道 (LOW IMPORTANCE，不安擾使用者)
+            NotificationChannel serviceChannel = new NotificationChannel(
+                    SERVICE_CHANNEL_ID,
+                    "EFD 背景靜默監控服務",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            serviceChannel.setDescription("保持 EFD 背景相機與眼動疲勞檢測持續運作");
+
+            // 疲勞警報通道 (HIGH IMPORTANCE，過度疲勞時調出提醒)
+            NotificationChannel alertChannel = new NotificationChannel(
+                    ALERT_CHANNEL_ID,
+                    "EFD 眼睛疲勞警告提醒",
                     NotificationManager.IMPORTANCE_HIGH
             );
-            channel.setDescription("顯示 EFD 即時眼睛疲勞數值與提醒通知");
+            alertChannel.setDescription("當檢測到過度疲勞時彈出高優先級提醒橫幅");
+
             if (mNotificationManager != null) {
-                mNotificationManager.createNotificationChannel(channel);
+                mNotificationManager.createNotificationChannel(serviceChannel);
+                mNotificationManager.createNotificationChannel(alertChannel);
             }
         }
     }
 
-    public Notification buildForegroundNotification(String statusText, float score, int level) {
+    public Notification buildForegroundNotification() {
         Intent launchIntent = new Intent(mContext, MainActivity.class);
         launchIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pendingIntent = PendingIntent.getActivity(
@@ -46,28 +59,36 @@ public class EfdNotificationHudManager {
                 PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
         );
 
-        String title = "🟢 EFD 眼睛疲勞即時監控中";
-        if (level == 2) {
-            title = "🚨 EFD 眼睛疲勞警告：請適當休息！";
-        } else if (level == 1) {
-            title = "⚠️ EFD 用眼注意提醒";
-        }
-
-        String content = String.format(java.util.Locale.getDefault(), "%s | 疲勞分數: %.1f / 100", statusText, score);
-
-        return new NotificationCompat.Builder(mContext, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentTitle(title)
-                .setContentText(content)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+        return new NotificationCompat.Builder(mContext, SERVICE_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("EFD 眼睛疲勞背景監控中")
+                .setContentText("系統即時防護持續運作中，僅於過度疲勞時跳出提醒")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .setContentIntent(pendingIntent)
                 .build();
     }
 
-    public void updateNotification(String statusText, float score, int level) {
-        if (mNotificationManager != null) {
-            mNotificationManager.notify(NOTIFICATION_ID, buildForegroundNotification(statusText, score, level));
-        }
+    public void triggerSevereFatigueAlert(String title, String message) {
+        if (mNotificationManager == null) return;
+
+        Intent launchIntent = new Intent(mContext, MainActivity.class);
+        launchIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                mContext, 0, launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
+        );
+
+        Notification alertNotification = new NotificationCompat.Builder(mContext, ALERT_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .build();
+
+        mNotificationManager.notify(ALERT_NOTIFICATION_ID, alertNotification);
     }
 }

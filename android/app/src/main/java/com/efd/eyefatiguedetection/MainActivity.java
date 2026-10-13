@@ -901,10 +901,12 @@ public class MainActivity extends AppCompatActivity {
                             }
                         }
 
-                        // 自動觸發通知
-                        if (lastAlertLevel == 2 && !mHasShownAlert) {
+                        // 僅在過度疲勞 (level == 2 / SevereWarning) 時調出提醒彈窗與警報，平時紀錄不騷擾
+                        if ((lastAlertLevel == 2 || mCurrentLevel == 2) && !mHasShownAlert) {
                             mHasShownAlert = true;
                             triggerFatigueAlertNotification("你的眼睛處於疲勞狀態，請適當休息");
+                        } else if (lastAlertLevel < 2 && mCurrentLevel < 2) {
+                            mHasShownAlert = false;
                         }
                     }
                 } catch (Throwable e) {
