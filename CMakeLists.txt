@@ -216,7 +216,7 @@ if(IOS)
         ios/ViewController.h
         ios/ViewController.mm
     )
-    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox")
+    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreGraphics")
     set_target_properties(EFD_iOS PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
@@ -232,4 +232,3 @@ if(EFD_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
-
