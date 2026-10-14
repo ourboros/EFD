@@ -6,6 +6,10 @@ project(EFD
     LANGUAGES CXX C
 )
 
+if(APPLE)
+    enable_language(OBJC OBJCXX)
+endif()
+
 # -----------------------------------------------------------------------------
 # C++ Standard & Compiler Options
 # -----------------------------------------------------------------------------
