@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-ios:
     runs-on: macos-14
@@ -35,7 +38,8 @@ jobs:
 
       - name: Build EFD iOS Target
         run: |
-          echo "=== Archiving EFD_iOS (Unsigned) ==="
+          set +e
+          echo "=== Archiving EFD_iOS ==="
           xcodebuild archive \
             -project build/ios/EFD.xcodeproj \
             -scheme EFD_iOS \
@@ -43,7 +47,23 @@ jobs:
             -destination "generic/platform=iOS" \
             -archivePath "${PWD}/build/EFD_iOS.xcarchive" \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO \
+            > build.log 2>&1
+          BUILD_STATUS=$?
+          echo "Xcodebuild archive exited with code: $BUILD_STATUS"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B debug-log
+          git add -f build.log
+          git commit -m "debug: save build.log"
+          git push -f origin debug-log || true
+
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo "=== BUILD LOG (LAST 80 LINES) ==="
+            tail -n 80 build.log
+            exit $BUILD_STATUS
+          fi
 
       - name: Upload Build Log on Failure
         if: always()
