@@ -79,19 +79,18 @@ jobs:
           mkdir -p package/Payload
           
           echo "=== Locating EFD_iOS.app Bundle ==="
-          APP_DIR="${PWD}/build/EFD_iOS.xcarchive/Products/Applications/EFD_iOS.app"
-          if [ ! -d "$APP_DIR" ]; then
-            echo "Not in standard archive location, searching build directory..."
-            APP_DIR=$(find build -name "EFD_iOS.app" -type d -exec test -f "{}/EFD_iOS" \; -print | head -n 1)
+          APP_DIR=$(find ~/Library/Developer/Xcode/DerivedData build -name "EFD_iOS.app" -type d -exec test -f "{}/EFD_iOS" \; -print | head -n 1)
+          if [ -z "$APP_DIR" ]; then
+            APP_DIR="${PWD}/build/EFD_iOS.xcarchive/Products/Applications/EFD_iOS.app"
           fi
-          if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
-            APP_DIR=$(find build -name "EFD_iOS.app" -type d | head -n 1)
+          if [ ! -d "$APP_DIR" ]; then
+            APP_DIR=$(find ~/Library/Developer/Xcode/DerivedData build -name "EFD_iOS.app" -type d | head -n 1)
           fi
           
           echo "Found App Bundle directory: $APP_DIR"
           if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
-            echo "ERROR: EFD_iOS.app not found! Listing build directory:"
-            find build -maxdepth 5
+            echo "ERROR: EFD_iOS.app not found! Listing DerivedData and build directory:"
+            find ~/Library/Developer/Xcode/DerivedData build -maxdepth 5 2>/dev/null || true
             exit 1
           fi
 
