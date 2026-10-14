@@ -35,7 +35,6 @@ jobs:
 
       - name: Build EFD iOS Target
         run: |
-          set -o pipefail
           echo "=== Archiving EFD_iOS (Unsigned) ==="
           xcodebuild archive \
             -project build/ios/EFD.xcodeproj \
@@ -44,17 +43,7 @@ jobs:
             -destination "generic/platform=iOS" \
             -archivePath "${PWD}/build/EFD_iOS.xcarchive" \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            2>&1 | tee build.log || true
-
-          grep -C 3 -iE "error:|fatal error:|ARCHIVE FAILED|BUILD FAILED" build.log | while IFS= read -r line; do
-            echo "::error title=BuildError::$line"
-          done
-
-          if grep -qiE "ARCHIVE FAILED|BUILD FAILED" build.log; then
-            echo "Build or Archive failed!"
-            exit 1
-          fi
+            CODE_SIGNING_REQUIRED=NO
 
       - name: Upload Build Log on Failure
         if: always()
