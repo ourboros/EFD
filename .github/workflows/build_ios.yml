@@ -53,15 +53,11 @@ jobs:
             DEVELOPMENT_TEAM="" \
             2>&1 | tee build.log || true
 
-          # Push build.log to build-log-branch for instant diagnosis
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git checkout -B build-log-branch
-          git add -f build.log
-          git commit -m "build log"
-          git push -f origin build-log-branch || true
+          tail -n 35 build.log | while IFS= read -r line; do
+            echo "::warning title=BuildLog::$line"
+          done
 
-          if grep -q "ARCHIVE FAILED" build.log || grep -q "BUILD FAILED" build.log; then
+          if grep -qiE "ARCHIVE FAILED|BUILD FAILED" build.log; then
             echo "Build or Archive failed!"
             exit 1
           fi
