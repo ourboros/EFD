@@ -26,7 +26,6 @@ jobs:
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DCMAKE_XCODE_GENERATE_SCHEME=ON \
             -DEFD_BUILD_TESTS=OFF \
             -DEFD_BUILD_CLI=OFF \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED="NO" \
@@ -36,20 +35,13 @@ jobs:
 
       - name: Build EFD iOS Target
         run: |
-          echo "=== Xcode Available SDKs & Targets ==="
-          xcodebuild -showsdks
-          xcodebuild -list -project build/ios/EFD.xcodeproj
-
           echo "=== Building EFD_iOS Target ==="
           xcodebuild -project build/ios/EFD.xcodeproj \
             -target EFD_iOS \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
             build
 
       - name: Package App into .ipa
@@ -57,7 +49,10 @@ jobs:
           mkdir -p package/Payload
           
           echo "=== Locating EFD_iOS.app Bundle ==="
-          APP_DIR=$(find build -name "EFD_iOS.app" -type d | head -n 1)
+          APP_DIR=$(find build -name "EFD_iOS.app" -type d -exec test -f "{}/EFD_iOS" \; -print | head -n 1)
+          if [ -z "$APP_DIR" ]; then
+            APP_DIR=$(find build -name "EFD_iOS.app" -type d | head -n 1)
+          fi
           
           echo "Found App Bundle directory: $APP_DIR"
           if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
@@ -71,23 +66,19 @@ jobs:
 
           # Verify EFD_iOS binary exists inside the app bundle
           if [ ! -f "$APP_DIR/EFD_iOS" ]; then
-            echo "Searching for EFD_iOS binary..."
-            PARENT_DIR=$(dirname "$APP_DIR")
-            if [ -f "$PARENT_DIR/EFD_iOS" ]; then
-              echo "Found EFD_iOS binary in $PARENT_DIR, copying into $APP_DIR..."
-              cp "$PARENT_DIR/EFD_iOS" "$APP_DIR/EFD_iOS"
+            echo "Searching for EFD_iOS binary in build directory..."
+            BIN_PATH=$(find build -type f -name "EFD_iOS" 2>/dev/null | head -n 1)
+            if [ -n "$BIN_PATH" ]; then
+              echo "Found binary at $BIN_PATH, copying into $APP_DIR..."
+              cp "$BIN_PATH" "$APP_DIR/EFD_iOS"
             else
-              BIN_PATH=$(find build -type f -name "EFD_iOS" 2>/dev/null | head -n 1)
-              if [ -n "$BIN_PATH" ]; then
-                echo "Found binary at $BIN_PATH, copying into $APP_DIR..."
-                cp "$BIN_PATH" "$APP_DIR/EFD_iOS"
-              else
-                echo "CRITICAL ERROR: Main binary EFD_iOS could not be found anywhere in build/!"
-                find build -type f
-                exit 1
-              fi
+              echo "CRITICAL ERROR: Main binary EFD_iOS could not be found anywhere in build/!"
+              find build -type f
+              exit 1
             fi
           fi
+
+          chmod +x "$APP_DIR/EFD_iOS"
 
           echo "=== Verified executable info ==="
           ls -lh "$APP_DIR/EFD_iOS"
