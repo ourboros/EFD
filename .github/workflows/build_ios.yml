@@ -28,9 +28,11 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DEFD_BUILD_TESTS=OFF \
             -DEFD_BUILD_CLI=OFF \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED="NO" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE="Manual" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="-" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED="YES" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED="NO" \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DCMAKE_XCODE_ATTRIBUTE_AD_HOC_CODE_SIGNING_ALLOWED="YES" \
             -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=""
 
       - name: Build EFD iOS Target
@@ -40,8 +42,12 @@ jobs:
             -target EFD_iOS \
             -configuration Release \
             -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_STYLE="Manual" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            DEVELOPMENT_TEAM="" \
             build
 
       - name: Package App into .ipa
