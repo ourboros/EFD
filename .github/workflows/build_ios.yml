@@ -29,7 +29,6 @@ jobs:
             -DCMAKE_XCODE_GENERATE_SCHEME=ON \
             -DEFD_BUILD_TESTS=OFF \
             -DEFD_BUILD_CLI=OFF \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED="NO" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED="NO" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
             -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=""
@@ -37,24 +36,19 @@ jobs:
       - name: Build EFD iOS Target
         run: |
           set -o pipefail
-          echo "=== Xcode Available Schemes and Targets ==="
-          xcodebuild -list -project build/ios/EFD.xcodeproj
-
           echo "=== Archiving EFD_iOS (Unsigned) ==="
           xcodebuild archive \
             -project build/ios/EFD.xcodeproj \
             -scheme EFD_iOS \
             -configuration Release \
-            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             -archivePath "${PWD}/build/EFD_iOS.xcarchive" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
+            CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee build.log || true
 
-          tail -n 35 build.log | while IFS= read -r line; do
-            echo "::warning title=BuildLog::$line"
+          grep -C 3 -iE "error:|fatal error:|ARCHIVE FAILED|BUILD FAILED" build.log | while IFS= read -r line; do
+            echo "::error title=BuildError::$line"
           done
 
           if grep -qiE "ARCHIVE FAILED|BUILD FAILED" build.log; then

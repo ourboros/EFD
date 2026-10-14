@@ -229,13 +229,13 @@ if(IOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/ios
     )
-    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox")
+    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreGraphics")
     set_target_properties(EFD_iOS PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.efd.EyeFatigueDetection"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
-        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
         XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
         XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""
