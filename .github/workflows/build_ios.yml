@@ -26,30 +26,38 @@ jobs:
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_XCODE_GENERATE_SCHEME=ON \
             -DEFD_BUILD_TESTS=OFF \
             -DEFD_BUILD_CLI=OFF \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE="Manual" \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="-" \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED="YES" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED="NO" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED="NO" \
-            -DCMAKE_XCODE_ATTRIBUTE_AD_HOC_CODE_SIGNING_ALLOWED="YES" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
             -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=""
 
       - name: Build EFD iOS Target
         run: |
           set -o pipefail
-          echo "=== Building EFD_iOS Target ==="
-          xcodebuild -project build/ios/EFD.xcodeproj \
-            -target EFD_iOS \
+          echo "=== Xcode Available Schemes and Targets ==="
+          xcodebuild -list -project build/ios/EFD.xcodeproj
+
+          echo "=== Archiving EFD_iOS (Unsigned) ==="
+          xcodebuild archive \
+            -project build/ios/EFD.xcodeproj \
+            -scheme EFD_iOS \
             -configuration Release \
             -sdk iphoneos \
-            CODE_SIGN_STYLE="Manual" \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_ALLOWED=YES \
+            -archivePath "${PWD}/build/EFD_iOS.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            build 2>&1 | tee build.log || (echo "=== XCODEBUILD FAILED! LAST 100 LINES OF LOG: ===" && tail -n 100 build.log && exit 1)
+            2>&1 | tee build.log || {
+              echo "=== XCODEBUILD ARCHIVE FAILED! ==="
+              while IFS= read -r line; do
+                echo "::error title=Xcodebuild::$line"
+              done < <(grep -iE "error:|fatal error:|signing|provisioning|failed" build.log | tail -n 25)
+              exit 1
+            }
 
       - name: Upload Build Log on Failure
         if: always()
@@ -65,8 +73,12 @@ jobs:
           mkdir -p package/Payload
           
           echo "=== Locating EFD_iOS.app Bundle ==="
-          APP_DIR=$(find build -name "EFD_iOS.app" -type d -exec test -f "{}/EFD_iOS" \; -print | head -n 1)
-          if [ -z "$APP_DIR" ]; then
+          APP_DIR="${PWD}/build/EFD_iOS.xcarchive/Products/Applications/EFD_iOS.app"
+          if [ ! -d "$APP_DIR" ]; then
+            echo "Not in standard archive location, searching build directory..."
+            APP_DIR=$(find build -name "EFD_iOS.app" -type d -exec test -f "{}/EFD_iOS" \; -print | head -n 1)
+          fi
+          if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
             APP_DIR=$(find build -name "EFD_iOS.app" -type d | head -n 1)
           fi
           
@@ -95,6 +107,7 @@ jobs:
           fi
 
           chmod +x "$APP_DIR/EFD_iOS"
+          rm -rf "$APP_DIR/_CodeSignature"
 
           echo "=== Verified executable info ==="
           ls -lh "$APP_DIR/EFD_iOS"
