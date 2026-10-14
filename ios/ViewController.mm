@@ -29,7 +29,7 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
 };
 
 @interface ViewController () {
-    std::unique_ptr<efd::AsyncPipelineEngine>* _engine;
+    efd::AsyncPipelineEngine* _engine;
     efd::EngineTelemetry _latestTelemetry;
     BOOL _hasTelemetry;
 }
@@ -80,17 +80,15 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     [self.view addSubview:self.contentContainer];
 
     // 初始化 C++20 EFD 跨平台五執行緒非同步管線引擎
-    _engine = new std::unique_ptr<efd::AsyncPipelineEngine>(
-        std::make_unique<efd::AsyncPipelineEngine>(efd::PlatformType::iOS)
-    );
+    _engine = new efd::AsyncPipelineEngine(efd::PlatformType::iOS);
 
     // 檢查是否已達到第 14 天後測門禁鎖定
-    if ((*_engine)->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest) {
+    if (_engine->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest) {
         self.currentStage = EFDAppStageStudyGate;
     }
 
     // 綁定遙測數據回呼
-    (*_engine)->setTelemetryCallback([self](const efd::EngineTelemetry& t) {
+    _engine->setTelemetryCallback([self](const efd::EngineTelemetry& t) {
         self->_latestTelemetry = t;
         self->_hasTelemetry = YES;
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -99,7 +97,7 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     });
 
     // 綁定警報通知回呼 (疲勞超標時跳出警報與震動提示)
-    (*_engine)->setAlertCallback([self](efd::FatigueLevel level, float score, const std::string& msg) {
+    _engine->setAlertCallback([self](efd::FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
         if (level == efd::FatigueLevel::SevereWarning || score >= 70.0f) {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -109,7 +107,7 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     });
 
     // 啟動管線引擎
-    (*_engine)->start();
+    _engine->start();
 
     // 啟動定時檢查定時器 (每 30 秒檢查一次夜間 21:00 科研同步與門禁狀態)
     self.backgroundCheckTimer = [NSTimer scheduledTimerWithTimeInterval:30.0
@@ -131,7 +129,7 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     [self.backgroundCheckTimer invalidate];
     [self.calibTimer invalidate];
     if (_engine) {
-        if (*_engine) (*_engine)->stop();
+        _engine->stop();
         delete _engine;
         _engine = nullptr;
     }
@@ -141,13 +139,13 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
 // 背景定時檢查 (21:00 夜間科研同步 & 第 14 天後測門禁)
 // -----------------------------------------------------------------------------
 - (void)onBackgroundCheckTick {
-    if (!_engine || !(*_engine)) return;
+    if (!_engine) return;
 
     // 觸發夜間 21:00 定時同步檢查
-    (*_engine)->checkAndTriggerNightlySync();
+    _engine->checkAndTriggerNightlySync();
 
     // 檢查是否跨日解鎖到達第 14 天後測門禁
-    if ((*_engine)->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest &&
+    if (_engine->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest &&
         self.currentStage != EFDAppStageStudyGate) {
         self.currentStage = EFDAppStageStudyGate;
         [self renderCurrentStage];
@@ -379,8 +377,8 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
         self.calibTimer = nil;
 
         // 呼叫 C++ 引擎校準
-        if (_engine && *_engine) {
-            (*_engine)->calibrate(3.0f);
+        if (_engine) {
+            _engine->calibrate(3.0f);
         }
 
         // 校準完成，進入即時監控中心
@@ -715,8 +713,8 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     NSURL *url = [NSURL URLWithString:@"https://forms.gle/y5f1jTnrrtsxz65G9"];
     if ([[UIApplication sharedApplication] canOpenURL:url]) {
         [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
-            if (self->_engine && *self->_engine) {
-                (*self->_engine)->getStudyTracker().submitQuestionnaire("Study_Post_Survey_Completed_iOS");
+            if (self->_engine) {
+                self->_engine->getStudyTracker().submitQuestionnaire("Study_Post_Survey_Completed_iOS");
             }
         }];
     }
