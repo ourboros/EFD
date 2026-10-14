@@ -39,6 +39,8 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
+            -derivedDataPath build/DerivedData \
+            CONFIGURATION_BUILD_DIR="${PWD}/build/output" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -48,12 +50,23 @@ jobs:
       - name: Package App into .ipa
         run: |
           mkdir -p package/Payload
-          APP_PATH=$(find build/ios -name "*.app" -type d | head -n 1)
-          echo "Found App Bundle: $APP_PATH"
+          APP_PATH="${PWD}/build/output/EFD_iOS.app"
+          if [ ! -f "$APP_PATH/EFD_iOS" ]; then
+            echo "Searching in build directory for EFD_iOS executable..."
+            APP_PATH=$(find build -name "EFD_iOS.app" -type d -exec test -f "{}/EFD_iOS" \; -print | head -n 1)
+          fi
+          echo "=== Found Compiled App Bundle: $APP_PATH ==="
+          ls -la "$APP_PATH"
+          if [ ! -f "$APP_PATH/EFD_iOS" ]; then
+            echo "CRITICAL ERROR: Main binary EFD_iOS was not found in $APP_PATH!"
+            exit 1
+          fi
+          echo "=== Verified executable size: $(ls -lh "$APP_PATH/EFD_iOS") ==="
           cp -R "$APP_PATH" package/Payload/
           cd package
           zip -r ../EFD_iOS.ipa Payload
           cd ..
+          echo "=== Generated IPA size: $(ls -lh EFD_iOS.ipa) ==="
 
       - name: Upload .ipa Artifact
         uses: actions/upload-artifact@v4
