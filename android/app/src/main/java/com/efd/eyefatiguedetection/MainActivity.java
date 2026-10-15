@@ -28,6 +28,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -165,16 +166,48 @@ public class MainActivity extends AppCompatActivity {
                     ActivityCompat.requestPermissions(this,
                             new String[]{Manifest.permission.CAMERA, Manifest.permission.POST_NOTIFICATIONS},
                             PERMISSION_REQ_CODE);
+                } else {
+                    startForegroundMonitoringService();
                 }
             } else {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                     ActivityCompat.requestPermissions(this,
                             new String[]{Manifest.permission.CAMERA},
                             PERMISSION_REQ_CODE);
+                } else {
+                    startForegroundMonitoringService();
                 }
             }
         } catch (Throwable t) {
             Log.w(TAG, "Permission request failed: " + t.getMessage());
+        }
+    }
+
+    private void startForegroundMonitoringService() {
+        try {
+            Intent serviceIntent = new Intent(this, EfdForegroundService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+            Log.i(TAG, "前台疲勞監控服務 EfdForegroundService 已成功啟動");
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to start foreground service: " + t.getMessage());
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQ_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.i(TAG, "相機權限授權成功，立即開啟前台監控服務與鏡頭串流");
+                startForegroundMonitoringService();
+            } else {
+                Log.w(TAG, "相機權限遭拒絕，無法開啟前置鏡頭");
+                Toast.makeText(this, "請給予相機權限以進行疲勞檢測", Toast.LENGTH_LONG).show();
+            }
         }
     }
 
@@ -887,17 +920,39 @@ public class MainActivity extends AppCompatActivity {
                         mCurrentLevel = obj.optInt("fatigueLevel", 0);
                         int lastAlertLevel = obj.optInt("lastAlertLevel", 0);
 
+                        boolean hasFace = obj.optBoolean("hasFace", true);
+                        float currentEar = (float) obj.optDouble("currentEar", 0.312);
+                        float threshold = (float) obj.optDouble("threshold", 0.265);
+                        float perclos = (float) obj.optDouble("perclos", 0.0);
+                        int blinkRate = obj.optInt("blinkRate", 0);
+                        float complexityCI = (float) obj.optDouble("complexityCI", 0.0);
+
                         if (mCurrentStage == UIStage.MainDashboard && mDashScoreText != null) {
-                            mDashScoreText.setText(String.format(java.util.Locale.getDefault(), "疲勞評分：%.1f / 100", mCurrentScore));
-                            if (mCurrentLevel == 2) {
-                                mDashStatusText.setText("生理狀態：你的眼睛處於疲勞狀態，請適當休息");
-                                mDashStatusText.setTextColor(Color.parseColor("#EB5757"));
-                            } else if (mCurrentLevel == 1) {
-                                mDashStatusText.setText("生理狀態：用眼注意 (Attention)");
+                            if (!hasFace) {
+                                mDashStatusText.setText("生理狀態：未就座 (Away / No Face)");
                                 mDashStatusText.setTextColor(Color.parseColor("#F7E3AF"));
+                                mDashScoreText.setText("疲勞評分：未就座 (暫停計算)");
+                                if (mDashMetricsText != null) {
+                                    mDashMetricsText.setText(String.format(java.util.Locale.getDefault(),
+                                            "EAR 即時: -- | 閾值: %.3f\nPERCLOS: -- | 閃爍: -- | CI: --", threshold));
+                                }
                             } else {
-                                mDashStatusText.setText("生理狀態：清醒專注 (Normal)");
-                                mDashStatusText.setTextColor(Color.parseColor("#1EB18A"));
+                                mDashScoreText.setText(String.format(java.util.Locale.getDefault(), "疲勞評分：%.1f / 100", mCurrentScore));
+                                if (mCurrentLevel == 2) {
+                                    mDashStatusText.setText("生理狀態：你的眼睛處於疲勞狀態，請適當休息");
+                                    mDashStatusText.setTextColor(Color.parseColor("#EB5757"));
+                                } else if (mCurrentLevel == 1) {
+                                    mDashStatusText.setText("生理狀態：用眼注意 (Attention)");
+                                    mDashStatusText.setTextColor(Color.parseColor("#F7E3AF"));
+                                } else {
+                                    mDashStatusText.setText("生理狀態：清醒專注 (Normal)");
+                                    mDashStatusText.setTextColor(Color.parseColor("#1EB18A"));
+                                }
+                                if (mDashMetricsText != null) {
+                                    mDashMetricsText.setText(String.format(java.util.Locale.getDefault(),
+                                            "EAR 即時: %.3f | 閾值: %.3f\nPERCLOS: %.1f%% | 閃爍: %d 次/分 | CI: %.2f",
+                                            currentEar, threshold, perclos, blinkRate, complexityCI));
+                                }
                             }
                         }
 

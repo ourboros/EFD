@@ -21,6 +21,7 @@ public class EfdForegroundService extends LifecycleService {
     private Handler mHandler;
     private Runnable mTelemetryRunnable;
     private boolean mHasAlerted = false;
+    private int mSyncDateInt = 0;
 
     public class LocalBinder extends Binder {
         public EfdForegroundService getService() {
@@ -75,6 +76,21 @@ public class EfdForegroundService extends LifecycleService {
                         } else {
                             mHasAlerted = false; // 恢復正常時重置，以便下次過度疲勞時能再次觸發提醒
                         }
+
+                        // 每晚 21:00 (9 PM) 自動上傳當日眼動資料至 Google 試算表
+                        java.util.Calendar cal = java.util.Calendar.getInstance();
+                        int hour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+                        int todayDateInt = cal.get(java.util.Calendar.YEAR) * 10000 +
+                                (cal.get(java.util.Calendar.MONTH) + 1) * 100 +
+                                cal.get(java.util.Calendar.DAY_OF_MONTH);
+
+                        if (hour >= 21 && mSyncDateInt != todayDateInt) {
+                            mSyncDateInt = todayDateInt;
+                            Log.i(TAG, "21:00 定時觸發：自動上傳當日眼動資料至 Google 試算表...");
+                            EfdHttpSyncBridge.uploadEyelidDataAsync("SUBJ-ANDROID-001", 1, "Daily_2100_Evening_Sync", (success, responseMessage) -> {
+                                Log.i(TAG, "21:00 自動上傳試算表結果: " + success + " | " + responseMessage);
+                            });
+                        }
                     }
                 } catch (Throwable t) {
                     // ignore
@@ -83,6 +99,26 @@ public class EfdForegroundService extends LifecycleService {
             }
         };
         mHandler.post(mTelemetryRunnable);
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        Log.w(TAG, "使用者將 App 從任務選單中滑掉關閉，啟動鬧鐘級 1 秒內自動重啟機制...");
+
+        try {
+            Intent restartServiceIntent = new Intent(getApplicationContext(), EfdForegroundService.class);
+            android.app.PendingIntent restartPendingIntent = android.app.PendingIntent.getService(
+                    getApplicationContext(), 1, restartServiceIntent,
+                    android.app.PendingIntent.FLAG_ONE_SHOT | (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M ? android.app.PendingIntent.FLAG_IMMUTABLE : 0));
+
+            android.app.AlarmManager alarmService = (android.app.AlarmManager) getApplicationContext().getSystemService(android.content.Context.ALARM_SERVICE);
+            if (alarmService != null) {
+                alarmService.set(android.app.AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, restartPendingIntent);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "自動重啟服務失敗: " + t.getMessage());
+        }
     }
 
     @Override

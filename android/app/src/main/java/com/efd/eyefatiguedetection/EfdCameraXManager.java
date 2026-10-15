@@ -42,7 +42,7 @@ public class EfdCameraXManager {
                 mCameraProvider = future.get();
                 bindCameraUseCases();
                 mIsRunning = true;
-                Log.i(TAG, "CameraX 前置鏡頭分析綁定成功 (30 FPS 串流開啟)");
+                Log.i(TAG, "CameraX 前置鏡頭全彩 NV21 串流分析綁定成功 (30 FPS)");
             } catch (Throwable t) {
                 Log.e(TAG, "開啟 CameraX 失敗: " + t.getMessage(), t);
             }
@@ -68,18 +68,12 @@ public class EfdCameraXManager {
             @Override
             public void analyze(@NonNull ImageProxy image) {
                 try {
-                    ImageProxy.PlaneProxy[] planes = image.getPlanes();
-                    if (planes != null && planes.length > 0) {
-                        ByteBuffer yBuffer = planes[0].getBuffer();
-                        byte[] yBytes = new byte[yBuffer.remaining()];
-                        yBuffer.get(yBytes);
+                    byte[] nv21 = imageToNv21(image);
+                    int width = image.getWidth();
+                    int height = image.getHeight();
+                    int rotation = image.getImageInfo().getRotationDegrees();
 
-                        int width = image.getWidth();
-                        int height = image.getHeight();
-                        int rotation = image.getImageInfo().getRotationDegrees();
-
-                        EfdNativeBridge.sendFrame(yBytes, width, height, rotation);
-                    }
+                    EfdNativeBridge.sendFrame(nv21, width, height, rotation);
                 } catch (Throwable t) {
                     Log.w(TAG, "Frame processing error: " + t.getMessage());
                 } finally {
@@ -93,6 +87,61 @@ public class EfdCameraXManager {
         } catch (Throwable t) {
             Log.e(TAG, "Bind CameraX to lifecycle failed: " + t.getMessage(), t);
         }
+    }
+
+    private static byte[] imageToNv21(ImageProxy image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        byte[] nv21 = new byte[width * height * 3 / 2];
+
+        ImageProxy.PlaneProxy[] planes = image.getPlanes();
+        ByteBuffer yBuffer = planes[0].getBuffer();
+        ByteBuffer uBuffer = planes[1].getBuffer();
+        ByteBuffer vBuffer = planes[2].getBuffer();
+
+        int rowStride = planes[0].getRowStride();
+
+        if (rowStride == width) {
+            yBuffer.get(nv21, 0, width * height);
+        } else {
+            int pos = 0;
+            for (int row = 0; row < height; row++) {
+                yBuffer.get(nv21, pos, width);
+                pos += width;
+                if (row < height - 1) {
+                    yBuffer.position(yBuffer.position() + rowStride - width);
+                }
+            }
+        }
+
+        int vRowStride = planes[2].getRowStride();
+        int vPixelStride = planes[2].getPixelStride();
+        int uRowStride = planes[1].getRowStride();
+        int uPixelStride = planes[1].getPixelStride();
+
+        int uvPos = width * height;
+        int uvHeight = height / 2;
+        int uvWidth = width / 2;
+
+        byte[] vBytes = new byte[vBuffer.remaining()];
+        byte[] uBytes = new byte[uBuffer.remaining()];
+        vBuffer.get(vBytes);
+        uBuffer.get(uBytes);
+
+        for (int row = 0; row < uvHeight; row++) {
+            int vLineOffset = row * vRowStride;
+            int uLineOffset = row * uRowStride;
+            for (int col = 0; col < uvWidth; col++) {
+                int vIdx = vLineOffset + col * vPixelStride;
+                int uIdx = uLineOffset + col * uPixelStride;
+                if (vIdx < vBytes.length && uIdx < uBytes.length) {
+                    nv21[uvPos++] = vBytes[vIdx];
+                    nv21[uvPos++] = uBytes[uIdx];
+                }
+            }
+        }
+
+        return nv21;
     }
 
     public void stopCamera() {

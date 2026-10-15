@@ -19,6 +19,9 @@ static int g_lastAlertLevel = 0;
 static float g_lastAlertScore = 0.0f;
 static std::mutex g_alertMutex;
 
+static efd::EngineTelemetry g_lastTelemetry;
+static std::mutex g_telemetryMutex;
+
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
@@ -32,6 +35,11 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngine(JNIEnv* /*env*
             g_lastAlertScore = score;
             g_lastAlertMessage = msg;
             LOGI("Alert triggered: Level=%d, Score=%.1f, Msg=%s", static_cast<int>(level), score, msg.c_str());
+        });
+
+        g_engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
+            std::lock_guard<std::mutex> lock(g_telemetryMutex);
+            g_lastTelemetry = telemetry;
         });
 
         g_engine->start();
@@ -68,26 +76,56 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     jbyte* bytes = env->GetByteArrayElements(frameData, nullptr);
     if (!bytes) return;
 
+    // 接收實體相機影格，關閉背景 Synthetic 虛擬驅動
+    g_engine->getCameraService().stopSyntheticIfRunning();
+
     efd::RawFrame frame;
     frame.width = width;
     frame.height = height;
+    frame.channels = 4;
+    frame.format = efd::PixelFormat::RGBA8888;
+    frame.isSynthetic = false;
     frame.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
     size_t requiredSize = static_cast<size_t>(width * height * 4);
     frame.data.resize(requiredSize, 255);
 
-    if (static_cast<size_t>(len) >= static_cast<size_t>(width * height)) {
-        const uint8_t* yPlane = reinterpret_cast<const uint8_t*>(bytes);
+    const uint8_t* nv21 = reinterpret_cast<const uint8_t*>(bytes);
+    int frameSize = width * height;
+
+    if (static_cast<size_t>(len) >= static_cast<size_t>(frameSize * 3 / 2)) {
+        const uint8_t* yPlane = nv21;
+        const uint8_t* vuPlane = nv21 + frameSize;
+
         for (int y = 0; y < height; ++y) {
+            int yIndex = y * width;
+            int uvIndex = (y / 2) * width;
+
             for (int x = 0; x < width; ++x) {
-                uint8_t yVal = yPlane[y * width + x];
-                size_t idx = (y * width + x) * 4;
-                frame.data[idx + 0] = yVal;
-                frame.data[idx + 1] = yVal;
-                frame.data[idx + 2] = yVal;
+                int yVal = yPlane[yIndex + x] & 0xFF;
+                int vVal = (vuPlane[uvIndex + (x & ~1)] & 0xFF) - 128;
+                int uVal = (vuPlane[uvIndex + (x & ~1) + 1] & 0xFF) - 128;
+
+                int r = static_cast<int>(yVal + 1.402f * vVal);
+                int g = static_cast<int>(yVal - 0.344136f * uVal - 0.714136f * vVal);
+                int b = static_cast<int>(yVal + 1.772f * uVal);
+
+                size_t idx = (yIndex + x) * 4;
+                frame.data[idx + 0] = static_cast<uint8_t>(std::clamp(r, 0, 255));
+                frame.data[idx + 1] = static_cast<uint8_t>(std::clamp(g, 0, 255));
+                frame.data[idx + 2] = static_cast<uint8_t>(std::clamp(b, 0, 255));
                 frame.data[idx + 3] = 255;
             }
+        }
+    } else {
+        for (int i = 0; i < frameSize; ++i) {
+            uint8_t yVal = nv21[i];
+            size_t idx = i * 4;
+            frame.data[idx + 0] = yVal;
+            frame.data[idx + 1] = yVal;
+            frame.data[idx + 2] = yVal;
+            frame.data[idx + 3] = 255;
         }
     }
 
@@ -102,10 +140,14 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* 
     }
 
     std::lock_guard<std::mutex> lock(g_alertMutex);
-    
-    // 獲取最新狀態
-    auto state = g_engine->getStateMachine().getState();
-    float threshold = g_engine->getAdaptiveBaseline().getCurrentThreshold();
+    std::lock_guard<std::mutex> tLock(g_telemetryMutex);
+
+    // 獲取最新狀態與完整遙測指標
+    auto state = g_lastTelemetry.systemState;
+    float threshold = g_lastTelemetry.currentThreshold;
+    auto eyeMetrics = g_lastTelemetry.eyeMetrics;
+    auto complexityMetrics = g_lastTelemetry.complexityMetrics;
+    bool hasFace = g_lastTelemetry.detection.hasFace;
 
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(3);
@@ -115,6 +157,11 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* 
         << "\"cooldownState\":" << static_cast<int>(state.cooldownState) << ","
         << "\"cooldownRemaining\":" << state.cooldownRemainingSeconds << ","
         << "\"threshold\":" << threshold << ","
+        << "\"hasFace\":" << (hasFace ? "true" : "false") << ","
+        << "\"currentEar\":" << eyeMetrics.earAvg << ","
+        << "\"perclos\":" << (eyeMetrics.perclos * 100.0f) << ","
+        << "\"blinkRate\":" << eyeMetrics.blinkRatePerMin << ","
+        << "\"complexityCI\":" << complexityMetrics.complexityIndex << ","
         << "\"studyDay\":" << state.studyDay << ","
         << "\"isStudyLocked\":" << (state.isStudyLocked ? "true" : "false") << ","
         << "\"lastAlertLevel\":" << g_lastAlertLevel << ","
