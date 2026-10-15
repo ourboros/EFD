@@ -24,6 +24,13 @@
     <true/>
     <key>NSCameraUsageDescription</key>
     <string>EFD 需要使用前鏡頭進行即時眼動特徵萃取、閉眼分析與疲勞預警。</string>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+        <string>processing</string>
+    </array>
     <key>UIRequiredDeviceCapabilities</key>
     <array>
         <string>arm64</string>

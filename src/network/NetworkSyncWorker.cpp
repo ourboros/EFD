@@ -287,7 +287,9 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
             uploadServerResponse = rawOutput;
             realUploadSuccess = false;
         }
-    }
+#elif defined(__APPLE__)
+    extern bool PerformAppleHttpUpload(const std::string& url, const std::string& jsonBody, std::string& outResponse);
+    realUploadSuccess = PerformAppleHttpUpload(targetUrl, jsonDump, uploadServerResponse);
 #endif
 
     if (!realUploadSuccess) {

@@ -32,6 +32,9 @@ public:
     // 停止攝影機
     void stop();
 
+    // 若正在運行虛擬 Synthetic 驅動則立刻關閉它 (改用外部傳入的實體串流)
+    void stopSyntheticIfRunning();
+
     // 查詢是否正在運行
     bool isRunning() const;
 
@@ -57,6 +60,9 @@ public:
 
     // 接收驅動或 JNI 影格
     void onDriverFrame(const RawFrame& frame);
+
+    // 取得平台原生相機底層物件指標 (例如 Apple AVCaptureSession)
+    void* getNativeCameraHandle() const;
 
 private:
     CameraConfig m_config;

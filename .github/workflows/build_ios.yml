@@ -114,6 +114,11 @@ jobs:
           chmod +x "$APP_DIR/EFD_iOS"
           rm -rf "$APP_DIR/_CodeSignature"
 
+          echo "=== Copying assets into App Bundle ==="
+          cp -f "ios/logo.png" "$APP_DIR/" 2>/dev/null || true
+          cp -f "ios/資產 10.png" "$APP_DIR/" 2>/dev/null || true
+          cp -f "design/1x/資產 10.png" "$APP_DIR/" 2>/dev/null || true
+
           echo "=== Verified executable info ==="
           ls -lh "$APP_DIR/EFD_iOS"
           file "$APP_DIR/EFD_iOS" || true

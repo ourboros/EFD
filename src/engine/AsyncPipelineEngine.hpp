@@ -87,6 +87,7 @@ public:
     AdaptiveBaseline& getAdaptiveBaseline() { return m_baseline; }
     FeatureExtractor& getFeatureExtractor() { return m_extractor; }
     CameraService& getCameraService() { return *m_camera; }
+    void* getNativeCameraHandle() const { return m_camera ? m_camera->getNativeCameraHandle() : nullptr; }
     FaceLandmarker& getFaceLandmarker() { return *m_landmarker; }
     DatabaseService& getDatabaseService() { return m_database; }
     StudyWorkflowTracker& getStudyTracker() { return m_studyTracker; }

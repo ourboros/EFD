@@ -165,6 +165,17 @@ void CameraService::stop() {
     }
 }
 
+void CameraService::stopSyntheticIfRunning() {
+    stopWatchdog();
+    std::lock_guard<std::mutex> lock(m_driverMutex);
+    if (m_isSyntheticFallback && m_driver) {
+        m_driver->close();
+        m_driver.reset();
+        m_isSyntheticFallback = false;
+        std::cout << "[CameraService] 收到實體相機 JNI 串流影格，已自動切斷 Synthetic 虛擬背景驅動\n";
+    }
+}
+
 bool CameraService::isRunning() const {
     return m_driver && m_driver->isOpened();
 }
@@ -192,6 +203,18 @@ void CameraService::setSimulatedEyeState(float openness) {
     if (m_driver) {
         m_driver->setSimulatedEyeState(openness);
     }
+}
+
+void* CameraService::getNativeCameraHandle() const {
+#if defined(__APPLE__)
+    if (m_driver && !m_isSyntheticFallback) {
+        auto appleDriver = dynamic_cast<AppleAvFoundationCameraDriver*>(m_driver.get());
+        if (appleDriver) {
+            return appleDriver->getCaptureSessionPtr();
+        }
+    }
+#endif
+    return nullptr;
 }
 
 } // namespace efd

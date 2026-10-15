@@ -95,6 +95,11 @@ if(WIN32)
         src/platform/windows/SystemTrayManager.cpp
         src/ui/FatigueFloatingIndicator.cpp
     )
+elseif(APPLE)
+    list(APPEND EFD_CORE_SOURCES
+        src/vision/drivers/AppleAvFoundationCameraDriver.mm
+        src/network/NetworkSyncWorkerApple.mm
+    )
 endif()
 
 add_library(efd_core STATIC
@@ -104,6 +109,8 @@ add_library(efd_core STATIC
 
 if(WIN32)
     target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib gdi32 user32 shell32 gdiplus winhttp.lib)
+elseif(APPLE)
+    target_link_libraries(efd_core PUBLIC "-framework Foundation" "-framework AVFoundation" "-framework CoreVideo" "-framework CoreMedia")
 endif()
 
 target_include_directories(efd_core PUBLIC
@@ -217,19 +224,25 @@ endif()
 # iOS Application Target: EFD_iOS
 # -----------------------------------------------------------------------------
 if(IOS)
+    set(EFD_IOS_RESOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/ios/logo.png
+        ${CMAKE_CURRENT_SOURCE_DIR}/ios/資產 10.png
+        ${CMAKE_CURRENT_SOURCE_DIR}/design/1x/資產 10.png
+    )
     add_executable(EFD_iOS MACOSX_BUNDLE
         ios/main.m
         ios/AppDelegate.h
         ios/AppDelegate.mm
         ios/ViewController.h
         ios/ViewController.mm
+        ${EFD_IOS_RESOURCES}
     )
     target_include_directories(EFD_iOS PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/ios
     )
-    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreGraphics")
+    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreGraphics" "-framework UserNotifications")
     set_target_properties(EFD_iOS PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
@@ -240,6 +253,7 @@ if(IOS)
         XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
         XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""
         XCODE_GENERATE_SCHEME TRUE
+        RESOURCE "${EFD_IOS_RESOURCES}"
     )
 endif()
 
