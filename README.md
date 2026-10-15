@@ -353,14 +353,26 @@ cmake --build build/vs-x64 --config Release
 .\build\vs-x64\tests\Release\efd_tests.exe
 ```
 
-### 7.2 iOS 環境 (.ipa 封裝與側載)
-透過 GitHub Actions 雲端自動化或 macOS 本地建置：
-```bash
-# 1. 產生 Xcode iOS 專案
-cmake -B build/ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+### 7.2 iOS 環境 (.ipa 封裝與 iPhone 13 側載指南)
 
-# 2. 封裝 App Archive
-xcodebuild archive -project build/ios/EFD.xcodeproj -scheme EFD_iOS -configuration Release -destination "generic/platform=iOS" -archivePath build/EFD_iOS.xcarchive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+#### 1. 透過 GitHub Actions 自動構建
+儲存庫已配置 `.github/workflows/build_ios.yml`，每次推送至 `main` 分支時，macOS-14 Runner 會自動執行：
+1. `cmake -B build/ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0` 產生原生專案。
+2. 呼叫 `xcodebuild archive` 封裝 `EFD_iOS.xcarchive`。
+3. 自動拷貝「資產 10」官方 Logo 與資源檔案，打包生成 `EFD_iOS.ipa` 並發布於 Actions Artifacts（保留 14 天）。
 
-# 3. 打包成 EFD_iOS.ipa 即可透過 Sideloadly 側載至 iPhone 13
-```
+#### 2. iPhone 13 實機安裝步驟 (透過 PC + Sideloadly)
+1. **下載 IPA**：進入 GitHub Actions 最新成功的 Run，至底部 Artifacts 下載 `EFD_iOS_ipa.zip` 並解壓縮取得 `EFD_iOS.ipa`。
+2. **連接手機**：使用 Lightning 傳輸線將 iPhone 13 連接至 PC，螢幕解鎖並點擊「信任這部電腦」。
+3. **Sideloadly 簽名安裝**：
+   - 開啟 Sideloadly，將 `EFD_iOS.ipa` 拖曳至 IPA 框中。
+   - 輸入個人 Apple ID，點擊 **Start** 並輸入雙重認證驗證碼。
+   - 看到進度條顯示 `Done.` 即安裝完畢。
+4. **信任開發者憑證**：
+   - 前往 iPhone **「設定」➔「一般」➔「VPN 與裝置管理」**。
+   - 點擊個人 Apple ID 並選擇 **「信任」**。
+5. **開啟開發者模式 (iOS 16+)**：
+   - 前往 iPhone **「設定」➔「隱私權與安全性」➔「開發者模式」** 切換為開啟，依提示重新啟動手機後確認啟用。
+6. **啟動使用**：
+   - 點擊桌面 `EFD_iOS`，首次進入允許相機權限，系統即啟動前鏡頭 4:3 即時監控與 14 天研究時序排程。
+

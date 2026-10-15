@@ -226,8 +226,6 @@ endif()
 if(IOS)
     set(EFD_IOS_RESOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/ios/logo.png
-        ${CMAKE_CURRENT_SOURCE_DIR}/ios/資產 10.png
-        ${CMAKE_CURRENT_SOURCE_DIR}/design/1x/資產 10.png
     )
     add_executable(EFD_iOS MACOSX_BUNDLE
         ios/main.m
@@ -242,7 +240,7 @@ if(IOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/ios
     )
-    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreGraphics" "-framework UserNotifications")
+    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreGraphics" "-framework UserNotifications" "-framework CoreVideo" "-framework CoreMedia")
     set_target_properties(EFD_iOS PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist

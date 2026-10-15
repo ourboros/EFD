@@ -58,6 +58,7 @@ jobs:
           git add -f build.log
           git commit -m "debug: save build.log"
           git push -f origin debug-log || true
+          git checkout main || git checkout - || true
 
           if [ $BUILD_STATUS -ne 0 ]; then
             echo "=== BUILD LOG (LAST 80 LINES) ==="

@@ -18,7 +18,7 @@
 didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
        fromConnection:(AVCaptureConnection *)connection {
     (void)output;
-    (Connection != nil ? (void)0 : (void)0);
+    (void)connection;
 
     if (!_frameCallback) return;
 
