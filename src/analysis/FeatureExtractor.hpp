@@ -29,6 +29,9 @@ public:
     // 重置累積統計
     void reset();
 
+    // 重置單幀暫態計數 (當人臉脫離視野時調用，防止殘留閉眼幀污染下次進入)
+    void resetTemporaryCounters();
+
 private:
     float m_threshold = 0.21f;
     size_t m_maxHistorySize = 300; // 預設保留 10 秒 @ 30 FPS (或 300 筆)

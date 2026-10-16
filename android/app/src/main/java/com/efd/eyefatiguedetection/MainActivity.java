@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -241,7 +242,25 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(mMainContainer);
 
+        // 讀取是否曾進行過監測，若已監測過則直接進入即時監控中心
+        SharedPreferences prefs = getSharedPreferences("efd_prefs", MODE_PRIVATE);
+        if (prefs.getBoolean("has_calibrated", false)) {
+            mCurrentStage = UIStage.MainDashboard;
+        } else {
+            mCurrentStage = UIStage.Welcome;
+        }
+
         // 渲染初始頁面
+        renderCurrentStage();
+    }
+
+    public void setStage(UIStage stage) {
+        mCurrentStage = stage;
+        if (stage == UIStage.MainDashboard || stage == UIStage.SettingsPanel) {
+            getSharedPreferences("efd_prefs", MODE_PRIVATE)
+                    .edit().putBoolean("has_calibrated", true).apply();
+        }
+        updateNavBarHighlight();
         renderCurrentStage();
     }
 
@@ -281,12 +300,6 @@ public class MainActivity extends AppCompatActivity {
         scroll.addView(mNavBarContainer);
         mMainContainer.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    }
-
-    public void setStage(UIStage stage) {
-        mCurrentStage = stage;
-        updateNavBarHighlight();
-        renderCurrentStage();
     }
 
     private void updateNavBarHighlight() {

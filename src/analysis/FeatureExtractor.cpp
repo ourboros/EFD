@@ -157,5 +157,10 @@ void FeatureExtractor::reset() {
     m_totalBlinkDurationMs = 0.0f;
 }
 
+void FeatureExtractor::resetTemporaryCounters() {
+    m_wasClosed = false;
+    m_currentClosedFrames = 0;
+}
+
 } // namespace efd
 

@@ -82,13 +82,13 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     efd::RawFrame frame;
     frame.width = width;
     frame.height = height;
-    frame.channels = 4;
-    frame.format = efd::PixelFormat::RGBA8888;
+    frame.channels = 3;
+    frame.format = efd::PixelFormat::RGB888;
     frame.isSynthetic = false;
     frame.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
-    size_t requiredSize = static_cast<size_t>(width * height * 4);
+    size_t requiredSize = static_cast<size_t>(width * height * 3);
     frame.data.resize(requiredSize, 255);
 
     const uint8_t* nv21 = reinterpret_cast<const uint8_t*>(bytes);
@@ -107,25 +107,23 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
                 int vVal = (vuPlane[uvIndex + (x & ~1)] & 0xFF) - 128;
                 int uVal = (vuPlane[uvIndex + (x & ~1) + 1] & 0xFF) - 128;
 
-                int r = static_cast<int>(yVal + 1.402f * vVal);
-                int g = static_cast<int>(yVal - 0.344136f * uVal - 0.714136f * vVal);
-                int b = static_cast<int>(yVal + 1.772f * uVal);
+                int r = static_cast<int>(static_cast<float>(yVal) + 1.402f * static_cast<float>(vVal));
+                int g = static_cast<int>(static_cast<float>(yVal) - 0.344136f * static_cast<float>(uVal) - 0.714136f * static_cast<float>(vVal));
+                int b = static_cast<int>(static_cast<float>(yVal) + 1.772f * static_cast<float>(uVal));
 
-                size_t idx = (yIndex + x) * 4;
+                size_t idx = (yIndex + x) * 3;
                 frame.data[idx + 0] = static_cast<uint8_t>(std::clamp(r, 0, 255));
                 frame.data[idx + 1] = static_cast<uint8_t>(std::clamp(g, 0, 255));
                 frame.data[idx + 2] = static_cast<uint8_t>(std::clamp(b, 0, 255));
-                frame.data[idx + 3] = 255;
             }
         }
     } else {
         for (int i = 0; i < frameSize; ++i) {
             uint8_t yVal = nv21[i];
-            size_t idx = i * 4;
+            size_t idx = i * 3;
             frame.data[idx + 0] = yVal;
             frame.data[idx + 1] = yVal;
             frame.data[idx + 2] = yVal;
-            frame.data[idx + 3] = 255;
         }
     }
 

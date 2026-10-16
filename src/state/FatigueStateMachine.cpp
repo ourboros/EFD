@@ -57,6 +57,9 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
     m_userPresent = faceDetected;
     if (!faceDetected) {
         m_awayTimer += deltaSeconds;
+        if (m_awayTimer >= 1.0f) {
+            m_currentLevel = FatigueLevel::UserAway;
+        }
         if (m_awayTimer >= static_cast<float>(m_awayResetThreshold)) {
             // 離座達到 5 分鐘，自動跳回 20 分鐘冷卻保護（防離座回座時直接彈窗或重複警報）
             m_cooldownState = CooldownState::InCooldown;

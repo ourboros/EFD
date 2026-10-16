@@ -136,6 +136,7 @@ private:
     std::atomic<int64_t> m_processedFrameCount{0};
     ComplexityMetrics m_cachedComplexity;
     int m_lastSyncedDateInt = 0;
+    int m_consecutiveAbsentFrames = 0;
 
     void inferenceWorkerLoop();
     void signalProcessingWorkerLoop();

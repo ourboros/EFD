@@ -270,9 +270,14 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         // 1. 計算幾何特徵 (EAR / PERCLOS / 眨眼率) - 僅在偵測到正對鏡頭人臉時計算
         EyeMetrics eyeMetrics;
         if (package.detection.hasFace) {
+            m_consecutiveAbsentFrames = 0;
             eyeMetrics = m_extractor.processFrame(package.detection.landmarks, m_camera->getFps());
         } else {
-            // 人臉未偵測到或離座：幾何指標全部歸零，杜絕假疲勞數據
+            // 人臉未偵測到或離座：重置暫態計數器，幾何指標全部歸零，杜絕假疲勞數據
+            m_extractor.resetTemporaryCounters();
+            if (++m_consecutiveAbsentFrames >= 90) { // 約 3 秒 @ 30 FPS 徹底清空歷史
+                m_extractor.reset();
+            }
             eyeMetrics.earAvg = 0.0f;
             eyeMetrics.earLeft = 0.0f;
             eyeMetrics.earRight = 0.0f;

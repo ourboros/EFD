@@ -868,11 +868,35 @@ static UIImage* EFDGetAsset10Logo() {
 }
 
 // -----------------------------------------------------------------------------
-// 即時遙測數據刷新 (當使用者離座或無人臉時，數據自然歸零)
+// 即時遙測數據刷新 (當使用者離座或無人臉時，明確標記離座暫停並停止疲勞累積)
 // -----------------------------------------------------------------------------
 - (void)updateTelemetryUI:(const efd::EngineTelemetry&)t {
     if (self.currentStage != EFDAppStageDashboard) return;
 
+    if (!t.detection.hasFace) {
+        if (self.cameraStatusLabel) {
+            self.cameraStatusLabel.text = @"⚠️ 偵測暫停：未在畫面中偵測到人臉 (已暫停疲勞計算)";
+            self.cameraStatusLabel.textColor = COLOR_ALERT_CORAL;
+        }
+        if (self.earValueLabel) {
+            self.earValueLabel.text = @"--";
+        }
+        if (self.perclosValueLabel) {
+            self.perclosValueLabel.text = @"離座暫停";
+        }
+        if (self.mseValueLabel) {
+            self.mseValueLabel.text = @"--";
+        }
+        if (self.fatigueScoreLabel) {
+            self.fatigueScoreLabel.text = @"暫停中";
+        }
+        return;
+    }
+
+    if (self.cameraStatusLabel) {
+        self.cameraStatusLabel.text = @"📷 前置攝影機 (人臉鎖定中・疲勞分析正常運作)";
+        self.cameraStatusLabel.textColor = COLOR_TEXT_DARK;
+    }
     if (self.earValueLabel) {
         self.earValueLabel.text = [NSString stringWithFormat:@"%.3f", t.eyeMetrics.earAvg];
     }
@@ -888,9 +912,14 @@ static UIImage* EFDGetAsset10Logo() {
 }
 
 // -----------------------------------------------------------------------------
-// 疲勞超標警報震動與通知發送
+// 疲勞超標警報震動與通知發送 (使用者離座時全面靜音抑制)
 // -----------------------------------------------------------------------------
 - (void)triggerFatigueAlertNotification:(float)score {
+    // 若無人在鏡頭前，抑制警報避免誤報打擾
+    if (_hasTelemetry && !_latestTelemetry.detection.hasFace) {
+        return;
+    }
+
     UINotificationFeedbackGenerator *feedback = [[UINotificationFeedbackGenerator alloc] init];
     [feedback notificationOccurred:UINotificationFeedbackTypeWarning];
 
