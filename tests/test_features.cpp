@@ -21,8 +21,6 @@
 #include "storage/DatabaseService.hpp"
 #include "study/StudyWorkflowTracker.hpp"
 #include "network/NetworkSyncWorker.hpp"
-#include "platform/windows/SystemTrayManager.hpp"
-#include "ui/FatigueFloatingIndicator.hpp"
 #include "engine/AsyncPipelineEngine.hpp"
 
 #ifdef _WIN32
@@ -33,6 +31,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "platform/windows/SystemTrayManager.hpp"
+#include "ui/FatigueFloatingIndicator.hpp"
 #endif
 
 void testEarCalculation() {
@@ -151,8 +151,12 @@ void testFaceLandmarkerRobustPresenceDetection() {
         return f;
     };
 
-    auto rgbResult = landmarker.detect(buildFrame(efd::PixelFormat::RGB888));
-    auto bgrResult = landmarker.detect(buildFrame(efd::PixelFormat::BGR888));
+    auto rgbFrame = buildFrame(efd::PixelFormat::RGB888);
+    auto bgrFrame = buildFrame(efd::PixelFormat::BGR888);
+    (void)landmarker.detect(rgbFrame);
+    auto rgbResult = landmarker.detect(rgbFrame);
+    (void)landmarker.detect(bgrFrame);
+    auto bgrResult = landmarker.detect(bgrFrame);
     assert(rgbResult.hasFace);
     assert(bgrResult.hasFace);
     std::cout << " [PASS] (RGB/BGR 均成功偵測在場)\n";
