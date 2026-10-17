@@ -93,8 +93,73 @@ void testMseComplexity() {
     std::cout << " [PASS] (CI = " << metrics.complexityIndex << ")\n";
 }
 
+void testFaceLandmarkerRobustPresenceDetection() {
+    std::cout << "[TEST] 4. 測試人臉在場偵測健壯性 (RGB/BGR 一致)...";
+    efd::FaceLandmarker landmarker;
+    assert(landmarker.initialize());
+
+    const int w = 640;
+    const int h = 480;
+    auto buildFrame = [&](efd::PixelFormat fmt) {
+        efd::RawFrame f;
+        f.width = w;
+        f.height = h;
+        f.channels = (fmt == efd::PixelFormat::RGBA8888) ? 4 : 3;
+        f.format = fmt;
+        f.isSynthetic = false;
+        f.data.assign(static_cast<size_t>(w * h * f.channels), 24);
+
+        int minX = 180, maxX = 460;
+        int minY = 80, maxY = 420;
+        for (int y = minY; y < maxY; ++y) {
+            for (int x = minX; x < maxX; ++x) {
+                size_t idx = static_cast<size_t>((y * w + x) * f.channels);
+                uint8_t r = 196, g = 148, b = 112;
+                if (fmt == efd::PixelFormat::BGR888) {
+                    f.data[idx + 0] = b;
+                    f.data[idx + 1] = g;
+                    f.data[idx + 2] = r;
+                } else {
+                    f.data[idx + 0] = r;
+                    f.data[idx + 1] = g;
+                    f.data[idx + 2] = b;
+                }
+            }
+        }
+
+        // 雙眼暗部，提供對比梯度
+        auto paintEye = [&](int cx, int cy) {
+            for (int y = cy - 12; y <= cy + 12; ++y) {
+                for (int x = cx - 20; x <= cx + 20; ++x) {
+                    if (x < 0 || x >= w || y < 0 || y >= h) continue;
+                    size_t idx = static_cast<size_t>((y * w + x) * f.channels);
+                    uint8_t r = 40, g = 30, b = 25;
+                    if (fmt == efd::PixelFormat::BGR888) {
+                        f.data[idx + 0] = b;
+                        f.data[idx + 1] = g;
+                        f.data[idx + 2] = r;
+                    } else {
+                        f.data[idx + 0] = r;
+                        f.data[idx + 1] = g;
+                        f.data[idx + 2] = b;
+                    }
+                }
+            }
+        };
+        paintEye(250, 200);
+        paintEye(390, 200);
+        return f;
+    };
+
+    auto rgbResult = landmarker.detect(buildFrame(efd::PixelFormat::RGB888));
+    auto bgrResult = landmarker.detect(buildFrame(efd::PixelFormat::BGR888));
+    assert(rgbResult.hasFace);
+    assert(bgrResult.hasFace);
+    std::cout << " [PASS] (RGB/BGR 均成功偵測在場)\n";
+}
+
 void testEmdDecomposition() {
-    std::cout << "[TEST] 4. 測試 EMD (經驗模態分解)...";
+    std::cout << "[TEST] 5. 測試 EMD (經驗模態分解)...";
     efd::EmdCalculator emd(3, 10, 0.05f);
 
     std::vector<float> signal(120);
@@ -108,7 +173,7 @@ void testEmdDecomposition() {
 }
 
 void testFatigueStateMachineFullCycle() {
-    std::cout << "[TEST] 5. 測試 20/5/5 智能冷卻、快篩與離座重置狀態機...";
+    std::cout << "[TEST] 6. 測試 20/5/5 智能冷卻、快篩與離座重置狀態機...";
     efd::FatigueStateMachine fsm(1200, 300, 300);
 
     bool alertTriggered = false;
@@ -160,7 +225,7 @@ void testFatigueStateMachineFullCycle() {
 }
 
 void testPlatformLifecycleAdapter() {
-    std::cout << "[TEST] 6. 測試跨平台生命週期適配器 (PlatformLifecycleAdapter)...";
+    std::cout << "[TEST] 7. 測試跨平台生命週期適配器 (PlatformLifecycleAdapter)...";
     efd::PlatformLifecycleAdapter adapter(efd::PlatformType::Windows);
     assert(adapter.getPlatformType() == efd::PlatformType::Windows);
     assert(adapter.supportsSystemTray());
@@ -187,7 +252,7 @@ void testPlatformLifecycleAdapter() {
 }
 
 void testAsyncPipelineEngine() {
-    std::cout << "[TEST] 7. 測試五執行緒非同步管線引擎 (AsyncPipelineEngine)...";
+    std::cout << "[TEST] 8. 測試五執行緒非同步管線引擎 (AsyncPipelineEngine)...";
     efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
 
     std::atomic<int> telemetryCount{0};
@@ -227,7 +292,7 @@ void testAsyncPipelineEngine() {
 }
 
 void testCameraDriversAndHal() {
-    std::cout << "[TEST] 8. 測試跨平台相機硬體抽象層 (Camera HAL & Drivers)...";
+    std::cout << "[TEST] 9. 測試跨平台相機硬體抽象層 (Camera HAL & Drivers)...";
     efd::CameraService cameraService(640, 480, 30.0f);
 
     // 1. 測試設備列舉 (包含實體與虛擬鏡頭)
@@ -266,7 +331,7 @@ void testCameraDriversAndHal() {
 }
 
 void testDatabaseServicePersistence() {
-    std::cout << "[TEST] 9. 測試本地資料持久化服務 (DatabaseService)...";
+    std::cout << "[TEST] 10. 測試本地資料持久化服務 (DatabaseService)...";
     efd::DatabaseService db("test_study_data.dat");
     db.clearAllData();
     assert(db.initialize());
@@ -304,7 +369,7 @@ void testDatabaseServicePersistence() {
 }
 
 void testStudyWorkflowTrackerAndGatekeeper() {
-    std::cout << "[TEST] 10. 測試 14 天科研週期追蹤與門禁事務解鎖 (StudyWorkflowTracker)...";
+    std::cout << "[TEST] 11. 測試 14 天科研週期追蹤與門禁事務解鎖 (StudyWorkflowTracker)...";
     efd::StudyWorkflowTracker tracker("test_study_config.json");
     tracker.resetStudy("SUBJ-TEST-999");
     assert(tracker.initialize());
@@ -339,7 +404,7 @@ void testStudyWorkflowTrackerAndGatekeeper() {
 }
 
 void testNetworkSyncWorker() {
-    std::cout << "[TEST] 11. 測試科研雲端非同步同步與門禁憑證生成 (NetworkSyncWorker)...";
+    std::cout << "[TEST] 12. 測試科研雲端非同步同步與門禁憑證生成 (NetworkSyncWorker)...";
     efd::DatabaseService db("test_sync_db.dat");
     db.clearAllData();
     assert(db.initialize());
@@ -395,7 +460,7 @@ void testNetworkSyncWorker() {
 }
 
 void testFloatingIndicatorAndSystemTray() {
-    std::cout << "[TEST] 12. 測試桌面置頂懸浮指標 HUD 與 Windows 系統托盤 (UI & Tray)...";
+    std::cout << "[TEST] 13. 測試桌面置頂懸浮指標 HUD 與 Windows 系統托盤 (UI & Tray)...";
 #ifdef _WIN32
     // 1. 測試懸浮指標物件
     efd::FatigueFloatingIndicator indicator(168, 56);
@@ -476,6 +541,7 @@ int main() {
     testEarCalculation();
     testAdaptiveBaseline();
     testMseComplexity();
+    testFaceLandmarkerRobustPresenceDetection();
     testEmdDecomposition();
     testFatigueStateMachineFullCycle();
     testPlatformLifecycleAdapter();
@@ -486,6 +552,6 @@ int main() {
     testNetworkSyncWorker();
     testFloatingIndicatorAndSystemTray();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 12 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 13 項測試順利通過！\n";
     return 0;
 }

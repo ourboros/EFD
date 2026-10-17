@@ -54,6 +54,8 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
 
 // 背景計時器 (定時科研同步與門禁檢查)
 @property (nonatomic, strong) NSTimer *backgroundCheckTimer;
+@property (nonatomic, strong) UIImage *welcomeLogoImage;
+@property (nonatomic, assign) BOOL isPresentingFatigueAlert;
 
 @end
 
@@ -68,6 +70,11 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     self.soundAlertEnabled = YES;
     self.autoStartEnabled = NO;
     self.currentStage = EFDAppStageWelcome;
+    self.isPresentingFatigueAlert = NO;
+    self.welcomeLogoImage = [UIImage imageNamed:@"logo9"];
+    if (!self.welcomeLogoImage) {
+        self.welcomeLogoImage = [UIImage imageNamed:@"logo"];
+    }
 
     // 建立內容容器視圖
     self.contentContainer = [[UIView alloc] initWithFrame:self.view.bounds];
@@ -86,20 +93,29 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     }
 
     // 綁定遙測數據回呼
-    (*_engine)->setTelemetryCallback([self](const efd::EngineTelemetry& t) {
-        self->_latestTelemetry = t;
-        self->_hasTelemetry = YES;
+    __weak typeof(self) weakSelf = self;
+    (*_engine)->setTelemetryCallback([weakSelf](const efd::EngineTelemetry& t) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf->_latestTelemetry = t;
+        strongSelf->_hasTelemetry = YES;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self updateTelemetryUI:t];
+            __strong typeof(weakSelf) uiSelf = weakSelf;
+            if (!uiSelf) return;
+            [uiSelf updateTelemetryUI:t];
         });
     });
 
     // 綁定警報通知回呼 (疲勞超標時跳出警報與震動提示)
-    (*_engine)->setAlertCallback([self](efd::FatigueLevel level, float score, const std::string& msg) {
+    (*_engine)->setAlertCallback([weakSelf](efd::FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
         if (level == efd::FatigueLevel::SevereWarning || score >= 70.0f) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self triggerFatigueAlertNotification:score];
+                __strong typeof(weakSelf) uiSelf = weakSelf;
+                if (!uiSelf) return;
+                [uiSelf triggerFatigueAlertNotification:score];
             });
         }
     });
@@ -127,7 +143,11 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     [self.backgroundCheckTimer invalidate];
     [self.calibTimer invalidate];
     if (_engine) {
-        if (*_engine) (*_engine)->stop();
+        if (*_engine) {
+            (*_engine)->setTelemetryCallback({});
+            (*_engine)->setAlertCallback({});
+            (*_engine)->stop();
+        }
         delete _engine;
         _engine = nullptr;
     }
@@ -201,7 +221,9 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     badge.layer.borderWidth = 3.0;
 
     UIImageView *iconView = [[UIImageView alloc] initWithFrame:CGRectMake(25, 25, 60, 60)];
-    iconView.image = [UIImage systemImageNamed:@"eye.circle.fill"];
+    UIImage *logo = self.welcomeLogoImage ?: [UIImage systemImageNamed:@"eye.circle.fill"];
+    iconView.image = logo;
+    iconView.contentMode = UIViewContentModeScaleAspectFit;
     iconView.tintColor = COLOR_PRIMARY_MINT;
     [badge addSubview:iconView];
     [self.contentContainer addSubview:badge];
@@ -742,6 +764,11 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
 // 疲勞超標警報震動與通知發送
 // -----------------------------------------------------------------------------
 - (void)triggerFatigueAlertNotification:(float)score {
+    if (self.isPresentingFatigueAlert || self.presentedViewController || !self.view.window) {
+        return;
+    }
+    self.isPresentingFatigueAlert = YES;
+
     // 1. Taptic Engine 觸覺震動提醒
     UINotificationFeedbackGenerator *feedback = [[UINotificationFeedbackGenerator alloc] init];
     [feedback notificationOccurred:UINotificationFeedbackTypeWarning];
@@ -755,7 +782,14 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"🚨 眼睛疲勞提醒"
                                                                    message:[NSString stringWithFormat:@"疲勞綜合評分已達 %.1f 分！\n你的眼睛處於疲勞狀態，請適當休息放鬆 5 分鐘。", score]
                                                             preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"我知道了，閉眼休息" style:UIAlertActionStyleDestructive handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"我知道了，閉眼休息" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        (void)action;
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (strongSelf) {
+            strongSelf.isPresentingFatigueAlert = NO;
+        }
+    }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 

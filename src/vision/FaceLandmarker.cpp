@@ -105,6 +105,39 @@ inline bool isSkinPixel(uint8_t c0, uint8_t c1, uint8_t c2, PixelFormat format) 
     return isStrictSkinPixel(c0, c1, c2);
 }
 
+inline void readPixelRgb(const uint8_t* pixelData, int width, int x, int y, PixelFormat format, uint8_t& r, uint8_t& g, uint8_t& b) {
+    int idx = 0;
+    switch (format) {
+        case PixelFormat::BGR888:
+            idx = (y * width + x) * 3;
+            b = pixelData[idx + 0];
+            g = pixelData[idx + 1];
+            r = pixelData[idx + 2];
+            break;
+        case PixelFormat::RGBA8888:
+            idx = (y * width + x) * 4;
+            r = pixelData[idx + 0];
+            g = pixelData[idx + 1];
+            b = pixelData[idx + 2];
+            break;
+        case PixelFormat::Grayscale:
+            idx = (y * width + x);
+            r = g = b = pixelData[idx];
+            break;
+        case PixelFormat::RGB888:
+        default:
+            idx = (y * width + x) * 3;
+            r = pixelData[idx + 0];
+            g = pixelData[idx + 1];
+            b = pixelData[idx + 2];
+            break;
+    }
+}
+
+inline int luminanceFromRgb(uint8_t r, uint8_t g, uint8_t b) {
+    return (r * 299 + g * 587 + b * 114) / 1000;
+}
+
 } // anonymous namespace
 
 LandmarkDetectionResult FaceLandmarker::detect(const RawFrame& frame) {
@@ -155,12 +188,10 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
         for (int y = 0; y < height; y += step) {
             for (int x = 0; x < width; x += step) {
-                int idx = (y * width + x) * 3;
-                uint8_t c0 = pixelData[idx];
-                uint8_t c1 = pixelData[idx + 1];
-                uint8_t c2 = pixelData[idx + 2];
+                uint8_t r = 0, g = 0, b = 0;
+                readPixelRgb(pixelData, width, x, y, format, r, g, b);
 
-                if (isSkinPixel(c0, c1, c2, format)) {
+                if (isStrictSkinPixel(r, g, b)) {
                     skinPixels++;
                     skinSumX += x;
                     skinSumY += y;
@@ -182,7 +213,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
         // 合理特徵門檻：既能過濾微小光影噪訊，又能敏銳捕捉任意坐姿與偏向角的使用者
         int totalSamples = (width / step) * (height / step);
-        int minSkinRequired = std::max(70, static_cast<int>(totalSamples * 0.0012f));
+        int minSkinRequired = std::max(45, static_cast<int>(totalSamples * 0.0007f));
 
         diag.skinPixels = skinPixels;
         diag.minSkinRequired = minSkinRequired;
@@ -192,11 +223,11 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         // 在場人體特徵幾何檢驗 (支援視野內邊緣位置、偏角與不同體態)
         if (skinPixels < minSkinRequired) {
             diag.unconfirmedReason = "鏡頭前未偵測到真人臉部膚色特徵 (使用者離座 / 採樣點 " + std::to_string(skinPixels) + " < " + std::to_string(minSkinRequired) + ")";
-        } else if (boxW < static_cast<int>(width * 0.04f) || boxH < static_cast<int>(height * 0.05f)) {
+        } else if (boxW < static_cast<int>(width * 0.03f) || boxH < static_cast<int>(height * 0.04f)) {
             diag.unconfirmedReason = "目標特徵區域過小，非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
-        } else if (aspectRatio < 0.35f || aspectRatio > 3.80f) {
+        } else if (aspectRatio < 0.22f || aspectRatio > 5.20f) {
             diag.unconfirmedReason = "長寬比例不符合人臉頭部輪廓 (比例: " + std::to_string(aspectRatio) + ")";
-        } else if (fillDensity < 0.03f) {
+        } else if (fillDensity < 0.015f) {
             diag.unconfirmedReason = "特徵分佈散亂，非連續臉部實體 (填充率: " + std::to_string(fillDensity) + ")";
         } else {
             // 人體/頭部幾何定位 (避免脖子/胸口將中心下拉)
@@ -231,15 +262,18 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                         int px = ecx + dx;
                         if (px <= 0 || px >= width) continue;
 
-                        int idx = (py * width + px) * 3;
-                        int lum = (pixelData[idx] * 299 + pixelData[idx + 1] * 587 + pixelData[idx + 2] * 114) / 1000;
+                        uint8_t r = 0, g = 0, b = 0;
+                        readPixelRgb(pixelData, width, px, py, format, r, g, b);
+                        int lum = luminanceFromRgb(r, g, b);
                         if (lum < minLum) minLum = lum;
                         if (lum > maxLum) maxLum = lum;
 
-                        int idxTop = ((py - 1) * width + px) * 3;
-                        int idxBot = ((py + 1) * width + px) * 3;
-                        int lumTop = (pixelData[idxTop] * 299 + pixelData[idxTop + 1] * 587 + pixelData[idxTop + 2] * 114) / 1000;
-                        int lumBot = (pixelData[idxBot] * 299 + pixelData[idxBot + 1] * 587 + pixelData[idxBot + 2] * 114) / 1000;
+                        uint8_t rTop = 0, gTop = 0, bTop = 0;
+                        uint8_t rBot = 0, gBot = 0, bBot = 0;
+                        readPixelRgb(pixelData, width, px, py - 1, format, rTop, gTop, bTop);
+                        readPixelRgb(pixelData, width, px, py + 1, format, rBot, gBot, bBot);
+                        int lumTop = luminanceFromRgb(rTop, gTop, bTop);
+                        int lumBot = luminanceFromRgb(rBot, gBot, bBot);
                         totalGrad += std::abs(lumBot - lumTop);
                         gradSamples++;
                     }
@@ -251,7 +285,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             float avgContrast = totalContrast * 0.5f;
 
             // 真人眼部必然存在瞳孔/睫毛與眼眶的反差；空木椅或牆面無此特徵
-            if (avgContrast < 18.0f && avgEyeGrad < 4.0f) {
+            if (avgContrast < 12.0f && avgEyeGrad < 2.5f) {
                 diag.unconfirmedReason = "候選區域缺乏人臉眼部特徵反差 (判定為背景家具非真人)";
             } else {
                 personInFrame = true;
@@ -268,12 +302,10 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
             for (int y = std::max(0, minSkinY); y <= std::min(height - 1, maxSkinY); y += step) {
                 for (int x = std::max(0, minSkinX); x <= std::min(width - 1, maxSkinX); x += step) {
-                    int idx = (y * width + x) * 3;
-                    uint8_t c0 = pixelData[idx];
-                    uint8_t c1 = pixelData[idx + 1];
-                    uint8_t c2 = pixelData[idx + 2];
+                    uint8_t r = 0, g = 0, b = 0;
+                    readPixelRgb(pixelData, width, x, y, format, r, g, b);
 
-                    if (isSkinPixel(c0, c1, c2, format)) {
+                    if (isStrictSkinPixel(r, g, b)) {
                         if (x < midX) leftSkin++;
                         else rightSkin++;
                     }
@@ -286,7 +318,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             diag.symmetryRatio = symmetryRatio;
 
             // 只要偵測到人臉並大致朝向鏡頭 (允許偏轉、偏坐或單側光照)
-            if (symmetryRatio >= 0.06f) {
+            if (symmetryRatio >= 0.03f) {
                 facingCamera = true;
             } else {
                 // 若位於畫面極邊緣，單側裁切屬正常現象，依然予以確認在場
@@ -434,10 +466,12 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                     for (int dx = -eyeBoxRadius / 2; dx <= eyeBoxRadius / 2; dx += 2) {
                         int px = ecx + dx;
                         if (px <= 0 || px >= width) continue;
-                        int idxTop = ((testY - 1) * width + px) * 3;
-                        int idxBot = ((testY + 1) * width + px) * 3;
-                        int lTop = (pixelData[idxTop] * 299 + pixelData[idxTop + 1] * 587 + pixelData[idxTop + 2] * 114) / 1000;
-                        int lBot = (pixelData[idxBot] * 299 + pixelData[idxBot + 1] * 587 + pixelData[idxBot + 2] * 114) / 1000;
+                        uint8_t rTop = 0, gTop = 0, bTop = 0;
+                        uint8_t rBot = 0, gBot = 0, bBot = 0;
+                        readPixelRgb(pixelData, width, px, testY - 1, format, rTop, gTop, bTop);
+                        readPixelRgb(pixelData, width, px, testY + 1, format, rBot, gBot, bBot);
+                        int lTop = luminanceFromRgb(rTop, gTop, bTop);
+                        int lBot = luminanceFromRgb(rBot, gBot, bBot);
                         rowContrastSum += std::abs(lBot - lTop);
                         rowSampleCount++;
                     }
@@ -470,8 +504,9 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                         int px = ecx + dx;
                         if (px < 0 || px >= width) continue;
 
-                        int idx = (py * width + px) * 3;
-                        int lum = (pixelData[idx] * 299 + pixelData[idx + 1] * 587 + pixelData[idx + 2] * 114) / 1000;
+                        uint8_t r = 0, g = 0, b = 0;
+                        readPixelRgb(pixelData, width, px, py, format, r, g, b);
+                        int lum = luminanceFromRgb(r, g, b);
                         totalLuma += lum;
                         lumas.push_back(lum);
                         pixelCount++;
@@ -553,4 +588,3 @@ FaceLandmarker::PresenceDiagnostic FaceLandmarker::getLatestPresenceDiagnostic()
 }
 
 } // namespace efd
-

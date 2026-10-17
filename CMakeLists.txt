@@ -209,12 +209,20 @@ endif()
 # iOS Application Target: EFD_iOS
 # -----------------------------------------------------------------------------
 if(IOS)
+    set(EFD_IOS_RESOURCES
+        assets/logo9.png
+        assets/logo.png
+    )
+    set_source_files_properties(${EFD_IOS_RESOURCES} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources
+    )
     add_executable(EFD_iOS
         ios/main.m
         ios/AppDelegate.h
         ios/AppDelegate.mm
         ios/ViewController.h
         ios/ViewController.mm
+        ${EFD_IOS_RESOURCES}
     )
     target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreGraphics")
     set_target_properties(EFD_iOS PROPERTIES
