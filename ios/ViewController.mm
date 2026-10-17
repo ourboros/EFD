@@ -1,8 +1,8 @@
+#include <pthread.h>
 #import "ViewController.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <UserNotifications/UserNotifications.h>
-#import "Asset10Data.h"
 #include <memory>
 #include <algorithm>
 #include <string>
@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <sstream>
 #include "engine/AsyncPipelineEngine.hpp"
+#include "Asset10Data.h"
 
 // -----------------------------------------------------------------------------
 // EFD iOS 設計系統規範色碼 (5 大核心配色)
@@ -31,35 +32,31 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
 };
 
 static UIImage* EFDGetAsset10Logo() {
-    static UIImage *s_logo = nil;
-    if (s_logo) return s_logo;
-
-    // 1. 優先嘗試主 Bundle 內資源檔
-    NSString *path = [[NSBundle mainBundle] pathForResource:@"logo" ofType:@"png"];
-    if (!path) {
-        path = [[NSBundle mainBundle] pathForResource:@"資產 10" ofType:@"png"];
-    }
-    if (path) {
-        s_logo = [UIImage imageWithContentsOfFile:path];
-        if (s_logo) return s_logo;
-    }
-
-    UIImage *namedImg = [UIImage imageNamed:@"logo"] ?: [UIImage imageNamed:@"資產 10"];
-    if (namedImg) {
-        s_logo = namedImg;
-        return s_logo;
-    }
-
-    // 2. 內嵌官方「資產 10」Base64 數據保底 (保障 100% 絕對成功載入官方 Logo，杜絕回退至不相關的 icon)
-    if (kAsset10PngBase64.length > 100) {
-        NSData *data = [[NSData alloc] initWithBase64EncodedString:kAsset10PngBase64 options:NSDataBase64DecodingIgnoreUnknownCharacters];
-        if (data && data.length > 0) {
-            s_logo = [UIImage imageWithData:data];
-            if (s_logo) return s_logo;
+    static UIImage *s_cachedLogo = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        // 1. 優先從記憶體內嵌的「資產 10」官方 PNG Base64 解碼 (最可靠、杜絕路徑與編碼問題)
+        if (kAsset10PngBase64.length > 100) {
+            NSData *data = [[NSData alloc] initWithBase64EncodedString:kAsset10PngBase64 options:NSDataBase64DecodingIgnoreUnknownCharacters];
+            if (data && data.length > 0) {
+                s_cachedLogo = [UIImage imageWithData:data];
+            }
         }
-    }
-
-    return [UIImage systemImageNamed:@"eye.circle.fill"];
+        // 2. 若有 Bundle 資源則作為後備
+        if (!s_cachedLogo) {
+            NSString *path = [[NSBundle mainBundle] pathForResource:@"logo" ofType:@"png"];
+            if (!path) {
+                path = [[NSBundle mainBundle] pathForResource:@"資產 10" ofType:@"png"];
+            }
+            if (path) {
+                s_cachedLogo = [UIImage imageWithContentsOfFile:path];
+            }
+        }
+        if (!s_cachedLogo) {
+            s_cachedLogo = [UIImage imageNamed:@"logo"] ?: [UIImage imageNamed:@"資產 10"];
+        }
+    });
+    return s_cachedLogo;
 }
 
 @interface ViewController () <UNUserNotificationCenterDelegate> {
@@ -122,7 +119,7 @@ static UIImage* EFDGetAsset10Logo() {
         self.currentStage = EFDAppStageStudyGate;
     }
 
-    // 遙測回呼 (執行值拷貝與頻率節流，徹底消弭跨執行緒 Dangling Reference 與 RunLoop 擁塞造成的閃退)
+    // 遙測回呼 (弱引用與值拷貝保護，杜絕懸垂指標崩潰與主線程過載)
     __weak typeof(self) weakSelf = self;
     _engine->setTelemetryCallback([weakSelf](const efd::EngineTelemetry& t) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
@@ -133,7 +130,7 @@ static UIImage* EFDGetAsset10Logo() {
 
         if (!strongSelf->_isTelemetryDispatchPending) {
             strongSelf->_isTelemetryDispatchPending = YES;
-            efd::EngineTelemetry snapshot = t; // 值拷貝，杜絕 stack variable reference 懸垂指標記憶體損壞
+            efd::EngineTelemetry snapshot = t; // 完整值拷貝，防止多線程 stack 變數釋放崩潰
             dispatch_async(dispatch_get_main_queue(), ^{
                 __strong typeof(weakSelf) s = weakSelf;
                 if (s) {
@@ -978,7 +975,7 @@ static UIImage* EFDGetAsset10Logo() {
     }
 
     if (self.presentedViewController != nil) {
-        return; // 避免同時重疊彈窗導致 iOS 拋出 NSInvalidArgumentException 崩潰
+        return; // 避免同時重複彈窗導致 iOS 拋出 NSInvalidArgumentException 閃退
     }
 
     @try {
