@@ -93,7 +93,7 @@ inline bool isStrictSkinPixel(uint8_t r, uint8_t g, uint8_t b) {
     float cr = 128.0f + 0.5000f * rf - 0.4187f * gf - 0.0813f * bf;
 
     // 關鍵特徵：真人血液血紅素吸收使 Cr (紅色) 明顯高於 Cb (藍色)；木頭與牆面反光則 Cr 與 Cb 接近
-    if (cr <= cb + 8.0f) return false;
+    if (cr <= cb + 5.0f) return false;
 
     return (y >= 30.0f && y <= 250.0f && cb >= 75.0f && cb <= 135.0f && cr >= 130.0f && cr <= 180.0f);
 }
@@ -144,240 +144,130 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
     if (isRealCamera) {
         // ---------------------------------------------------------------------
-        // 階段一：網格密度聚類與人體人臉特徵高精度定位 (Grid Density Clustering)
+        // 階段一：人體與人臉特徵高精度掃描 (全視野動態覆蓋，與 Windows 版演算法完全一致)
         // ---------------------------------------------------------------------
-        const int GRID_COLS = 16;
-        const int GRID_ROWS = 12;
-        int cellW = std::max(1, width / GRID_COLS);
-        int cellH = std::max(1, height / GRID_ROWS);
         int step = (width > 640) ? 4 : 2;
-
-        struct GridCell {
-            int skinCount = 0;
-            int totalSamples = 0;
-            uint64_t skinSumX = 0;
-            uint64_t skinSumY = 0;
-            uint64_t lumaSum = 0;
-            int minX = 999999, maxX = -1;
-            int minY = 999999, maxY = -1;
-        };
-
-        std::vector<GridCell> grid(GRID_COLS * GRID_ROWS);
+        int skinPixels = 0;
+        uint64_t skinSumX = 0;
+        uint64_t skinSumY = 0;
+        int minSkinX = width, maxSkinX = 0;
+        int minSkinY = height, maxSkinY = 0;
 
         for (int y = 0; y < height; y += step) {
-            int gy = std::clamp(y / cellH, 0, GRID_ROWS - 1);
             for (int x = 0; x < width; x += step) {
-                int gx = std::clamp(x / cellW, 0, GRID_COLS - 1);
-                int cellIdx = gy * GRID_COLS + gx;
-
                 int idx = (y * width + x) * 3;
                 uint8_t c0 = pixelData[idx];
                 uint8_t c1 = pixelData[idx + 1];
                 uint8_t c2 = pixelData[idx + 2];
 
-                grid[cellIdx].totalSamples++;
-
                 if (isSkinPixel(c0, c1, c2, format)) {
-                    grid[cellIdx].skinCount++;
-                    grid[cellIdx].skinSumX += x;
-                    grid[cellIdx].skinSumY += y;
-                    int lum = (format == PixelFormat::BGR888)
-                        ? (c2 * 299 + c1 * 587 + c0 * 114) / 1000
-                        : (c0 * 299 + c1 * 587 + c2 * 114) / 1000;
-                    grid[cellIdx].lumaSum += lum;
-
-                    if (x < grid[cellIdx].minX) grid[cellIdx].minX = x;
-                    if (x > grid[cellIdx].maxX) grid[cellIdx].maxX = x;
-                    if (y < grid[cellIdx].minY) grid[cellIdx].minY = y;
-                    if (y > grid[cellIdx].maxY) grid[cellIdx].maxY = y;
+                    skinPixels++;
+                    skinSumX += x;
+                    skinSumY += y;
+                    if (x < minSkinX) minSkinX = x;
+                    if (x > maxSkinX) maxSkinX = x;
+                    if (y < minSkinY) minSkinY = y;
+                    if (y > maxSkinY) maxSkinY = y;
                 }
             }
         }
 
-        // 標記高密度膚色單元格 (單元格內膚色佔比 >= 28%，過濾零散背景反射)
-        std::vector<bool> activeCell(GRID_COLS * GRID_ROWS, false);
-        for (int i = 0; i < GRID_COLS * GRID_ROWS; ++i) {
-            if (grid[i].totalSamples > 0) {
-                float density = static_cast<float>(grid[i].skinCount) / static_cast<float>(grid[i].totalSamples);
-                if (density >= 0.28f && grid[i].skinCount >= 15) {
-                    activeCell[i] = true;
-                }
-            }
-        }
+        int boxW = std::max(0, maxSkinX - minSkinX);
+        int boxH = std::max(0, maxSkinY - minSkinY);
+        int sampleCols = (boxW / step) + 1;
+        int sampleRows = (boxH / step) + 1;
+        int boxSampleArea = sampleCols * sampleRows;
+        float fillDensity = (boxSampleArea > 0) ? (static_cast<float>(skinPixels) / boxSampleArea) : 0.0f;
+        float aspectRatio = (boxW > 0) ? (static_cast<float>(boxH) / static_cast<float>(boxW)) : 0.0f;
 
-        // 連通分量分析 (BFS 連通塊標記)
-        std::vector<int> componentLabel(GRID_COLS * GRID_ROWS, -1);
-        int currentLabel = 0;
+        // 合理特徵門檻：既能過濾微小光影噪訊，又能敏銳捕捉任意坐姿與偏向角的使用者
+        int totalSamples = (width / step) * (height / step);
+        int minSkinRequired = std::max(70, static_cast<int>(totalSamples * 0.0012f));
 
-        struct ComponentData {
-            int cellCount = 0;
-            int totalSkinCount = 0;
-            uint64_t sumX = 0;
-            uint64_t sumY = 0;
-            uint64_t sumLuma = 0;
-            int minX = 999999, maxX = -1;
-            int minY = 999999, maxY = -1;
-        };
-        std::vector<ComponentData> components;
+        diag.skinPixels = skinPixels;
+        diag.minSkinRequired = minSkinRequired;
+        diag.fillDensity = fillDensity;
+        diag.aspectRatio = aspectRatio;
 
-        for (int gy = 0; gy < GRID_ROWS; ++gy) {
-            for (int gx = 0; gx < GRID_COLS; ++gx) {
-                int idx = gy * GRID_COLS + gx;
-                if (!activeCell[idx] || componentLabel[idx] != -1) continue;
-
-                ComponentData comp;
-                std::vector<int> q;
-                q.push_back(idx);
-                componentLabel[idx] = currentLabel;
-
-                size_t head = 0;
-                while (head < q.size()) {
-                    int curr = q[head++];
-                    int cy = curr / GRID_COLS;
-                    int cx = curr % GRID_COLS;
-
-                    comp.cellCount++;
-                    comp.totalSkinCount += grid[curr].skinCount;
-                    comp.sumX += grid[curr].skinSumX;
-                    comp.sumY += grid[curr].skinSumY;
-                    comp.sumLuma += grid[curr].lumaSum;
-
-                    if (grid[curr].minX < comp.minX) comp.minX = grid[curr].minX;
-                    if (grid[curr].maxX > comp.maxX) comp.maxX = grid[curr].maxX;
-                    if (grid[curr].minY < comp.minY) comp.minY = grid[curr].minY;
-                    if (grid[curr].maxY > comp.maxY) comp.maxY = grid[curr].maxY;
-
-                    const int dx[4] = {0, 0, -1, 1};
-                    const int dy[4] = {-1, 1, 0, 0};
-                    for (int d = 0; d < 4; ++d) {
-                        int nx = cx + dx[d];
-                        int ny = cy + dy[d];
-                        if (nx >= 0 && nx < GRID_COLS && ny >= 0 && ny < GRID_ROWS) {
-                            int nidx = ny * GRID_COLS + nx;
-                            if (activeCell[nidx] && componentLabel[nidx] == -1) {
-                                componentLabel[nidx] = currentLabel;
-                                q.push_back(nidx);
-                            }
-                        }
-                    }
-                }
-                components.push_back(comp);
-                currentLabel++;
-            }
-        }
-
-        int bestCompIdx = -1;
-        int maxSkinInComp = 0;
-        for (size_t i = 0; i < components.size(); ++i) {
-            if (components[i].totalSkinCount > maxSkinInComp) {
-                maxSkinInComp = components[i].totalSkinCount;
-                bestCompIdx = static_cast<int>(i);
-            }
-        }
-
-        if (bestCompIdx == -1 || components[bestCompIdx].cellCount < 4 || components[bestCompIdx].totalSkinCount < 250) {
-            diag.unconfirmedReason = "鏡頭前未偵測到真人臉部聚集特徵 (使用者離座或採樣不足)";
+        // 在場人體特徵幾何檢驗 (支援視野內邊緣位置、偏角與不同體態)
+        if (skinPixels < minSkinRequired) {
+            diag.unconfirmedReason = "鏡頭前未偵測到真人臉部膚色特徵 (使用者離座 / 採樣點 " + std::to_string(skinPixels) + " < " + std::to_string(minSkinRequired) + ")";
+        } else if (boxW < static_cast<int>(width * 0.04f) || boxH < static_cast<int>(height * 0.05f)) {
+            diag.unconfirmedReason = "目標特徵區域過小，非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
+        } else if (aspectRatio < 0.35f || aspectRatio > 3.80f) {
+            diag.unconfirmedReason = "長寬比例不符合人臉頭部輪廓 (比例: " + std::to_string(aspectRatio) + ")";
+        } else if (fillDensity < 0.03f) {
+            diag.unconfirmedReason = "特徵分佈散亂，非連續臉部實體 (填充率: " + std::to_string(fillDensity) + ")";
         } else {
-            const auto& comp = components[bestCompIdx];
-            int boxW = std::max(0, comp.maxX - comp.minX);
-            int boxH = std::max(0, comp.maxY - comp.minY);
-            float aspectRatio = (boxW > 0) ? (static_cast<float>(boxH) / static_cast<float>(boxW)) : 0.0f;
-            int sampleCols = (boxW / step) + 1;
-            int sampleRows = (boxH / step) + 1;
-            int boxSampleArea = sampleCols * sampleRows;
-            float fillDensity = (boxSampleArea > 0) ? (static_cast<float>(comp.totalSkinCount) / boxSampleArea) : 0.0f;
+            // 人體/頭部幾何定位 (避免脖子/胸口將中心下拉)
+            detectedFaceCx = (minSkinX + maxSkinX) * 0.5f;
+            int faceH = std::min(boxH, static_cast<int>(boxW * 1.35f));
+            detectedFaceCy = minSkinY + faceH * 0.50f;
+            detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, faceH)),
+                                           static_cast<float>(std::min(width, height)) * 0.15f,
+                                           static_cast<float>(std::min(width, height)) * 0.98f);
 
-            diag.skinPixels = comp.totalSkinCount;
-            diag.minSkinRequired = 250;
-            diag.fillDensity = fillDensity;
-            diag.aspectRatio = aspectRatio;
+            // 雙眼真實解剖位置 (眼睛位於頭頂至下巴的 38% 處)
+            int eyeCenterY = static_cast<int>(minSkinY + faceH * 0.38f);
+            int eyeLeftX = static_cast<int>(detectedFaceCx - boxW * 0.22f);
+            int eyeRightX = static_cast<int>(detectedFaceCx + boxW * 0.22f);
+            int eyeBoxRadius = std::clamp(static_cast<int>(boxW * 0.10f), 8, 36);
 
-            if (boxW < static_cast<int>(width * 0.10f) || boxH < static_cast<int>(height * 0.10f)) {
-                diag.unconfirmedReason = "目標特徵區域過小，非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
-            } else if (boxW > static_cast<int>(width * 0.88f) || boxH > static_cast<int>(height * 0.95f)) {
-                diag.unconfirmedReason = "目標特徵佔滿全視野，非正常人臉距鏡距離 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
-            } else if (aspectRatio < 0.80f || aspectRatio > 2.30f) {
-                diag.unconfirmedReason = "長寬比例不符合人臉頭部輪廓 (比例: " + std::to_string(aspectRatio) + ")";
-            } else if (fillDensity < 0.14f) {
-                diag.unconfirmedReason = "特徵分佈散亂，非連續臉部實體 (填充率: " + std::to_string(fillDensity) + ")";
-            } else {
-                // 人體/頭部幾何定位 (避免脖子/胸口將中心下拉)
-                detectedFaceCx = (comp.minX + comp.maxX) * 0.5f;
-                int faceH = std::min(boxH, static_cast<int>(boxW * 1.35f));
-                detectedFaceCy = comp.minY + faceH * 0.50f;
-                detectedFaceScale = std::clamp(static_cast<float>(std::max(boxW, faceH)),
-                                               static_cast<float>(std::min(width, height)) * 0.15f,
-                                               static_cast<float>(std::min(width, height)) * 0.98f);
+            int eyeCentersX[2] = { eyeLeftX, eyeRightX };
+            float totalGrad = 0.0f;
+            int gradSamples = 0;
+            float totalContrast = 0.0f;
 
-                int avgSkinLum = (comp.totalSkinCount > 0) ? static_cast<int>(comp.sumLuma / comp.totalSkinCount) : 128;
+            for (int e = 0; e < 2; ++e) {
+                int ecx = eyeCentersX[e];
+                int ecy = eyeCenterY;
+                int minLum = 255;
+                int maxLum = 0;
 
-                // 雙眼真實解剖位置 (眼睛位於頭頂至下巴的 38% 處)
-                int eyeCenterY = static_cast<int>(comp.minY + faceH * 0.38f);
-                int eyeLeftX = static_cast<int>(detectedFaceCx - boxW * 0.22f);
-                int eyeRightX = static_cast<int>(detectedFaceCx + boxW * 0.22f);
-                int eyeBoxRadius = std::clamp(static_cast<int>(boxW * 0.09f), 6, 32);
+                for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
+                    int py = ecy + dy;
+                    if (py <= 1 || py >= height - 2) continue;
+                    for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
+                        int px = ecx + dx;
+                        if (px <= 0 || px >= width) continue;
 
-                int eyeCentersX[2] = { eyeLeftX, eyeRightX };
-                float eyeContrast[2] = { 0.0f, 0.0f };
-                float eyeGrad[2] = { 0.0f, 0.0f };
-                int eyeMinLum[2] = { 255, 255 };
+                        int idx = (py * width + px) * 3;
+                        int lum = (pixelData[idx] * 299 + pixelData[idx + 1] * 587 + pixelData[idx + 2] * 114) / 1000;
+                        if (lum < minLum) minLum = lum;
+                        if (lum > maxLum) maxLum = lum;
 
-                for (int e = 0; e < 2; ++e) {
-                    int ecx = eyeCentersX[e];
-                    int ecy = eyeCenterY;
-                    int minLum = 255;
-                    int maxLum = 0;
-                    float totalGrad = 0.0f;
-                    int gradSamples = 0;
-
-                    for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
-                        int py = ecy + dy;
-                        if (py <= 1 || py >= height - 2) continue;
-                        for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
-                            int px = ecx + dx;
-                            if (px <= 0 || px >= width) continue;
-
-                            int idx = (py * width + px) * 3;
-                            int lum = (pixelData[idx] * 299 + pixelData[idx + 1] * 587 + pixelData[idx + 2] * 114) / 1000;
-                            if (lum < minLum) minLum = lum;
-                            if (lum > maxLum) maxLum = lum;
-
-                            int idxTop = ((py - 1) * width + px) * 3;
-                            int idxBot = ((py + 1) * width + px) * 3;
-                            int lumTop = (pixelData[idxTop] * 299 + pixelData[idxTop + 1] * 587 + pixelData[idxTop + 2] * 114) / 1000;
-                            int lumBot = (pixelData[idxBot] * 299 + pixelData[idxBot + 1] * 587 + pixelData[idxBot + 2] * 114) / 1000;
-                            totalGrad += std::abs(lumBot - lumTop);
-                            gradSamples++;
-                        }
+                        int idxTop = ((py - 1) * width + px) * 3;
+                        int idxBot = ((py + 1) * width + px) * 3;
+                        int lumTop = (pixelData[idxTop] * 299 + pixelData[idxTop + 1] * 587 + pixelData[idxTop + 2] * 114) / 1000;
+                        int lumBot = (pixelData[idxBot] * 299 + pixelData[idxBot + 1] * 587 + pixelData[idxBot + 2] * 114) / 1000;
+                        totalGrad += std::abs(lumBot - lumTop);
+                        gradSamples++;
                     }
-                    eyeContrast[e] = static_cast<float>(std::max(0, maxLum - minLum));
-                    eyeGrad[e] = (gradSamples > 0) ? (totalGrad / gradSamples) : 0.0f;
-                    eyeMinLum[e] = minLum;
                 }
+                totalContrast += static_cast<float>(std::max(0, maxLum - minLum));
+            }
 
-                // 真人雙眼生理特徵：兩眼均需有邊界對比度與暗部 (瞳孔/睫毛)
-                bool leftEyeOk = (eyeContrast[0] >= 16.0f || eyeGrad[0] >= 3.0f) && (eyeMinLum[0] < avgSkinLum);
-                bool rightEyeOk = (eyeContrast[1] >= 16.0f || eyeGrad[1] >= 3.0f) && (eyeMinLum[1] < avgSkinLum);
+            float avgEyeGrad = (gradSamples > 0) ? (totalGrad / gradSamples) : 0.0f;
+            float avgContrast = totalContrast * 0.5f;
 
-                if (!leftEyeOk || !rightEyeOk) {
-                    diag.unconfirmedReason = "雙眼區域缺乏人臉眼部生理特徵 (判定為背景物品非真人)";
-                } else {
-                    personInFrame = true;
-                }
+            // 真人眼部必然存在瞳孔/睫毛與眼眶的反差；空木椅或牆面無此特徵
+            if (avgContrast < 18.0f && avgEyeGrad < 4.0f) {
+                diag.unconfirmedReason = "候選區域缺乏人臉眼部特徵反差 (判定為背景家具非真人)";
+            } else {
+                personInFrame = true;
             }
         }
 
         // ---------------------------------------------------------------------
         // 階段二：確認臉部朝向攝影機 (Face Orientation & Symmetry)
         // ---------------------------------------------------------------------
-        if (personInFrame && bestCompIdx >= 0) {
-            const auto& comp = components[bestCompIdx];
+        if (personInFrame) {
             int leftSkin = 0;
             int rightSkin = 0;
             int midX = static_cast<int>(detectedFaceCx);
 
-            for (int y = std::max(0, comp.minY); y <= std::min(height - 1, comp.maxY); y += step) {
-                for (int x = std::max(0, comp.minX); x <= std::min(width - 1, comp.maxX); x += step) {
+            for (int y = std::max(0, minSkinY); y <= std::min(height - 1, maxSkinY); y += step) {
+                for (int x = std::max(0, minSkinX); x <= std::min(width - 1, maxSkinX); x += step) {
                     int idx = (y * width + x) * 3;
                     uint8_t c0 = pixelData[idx];
                     uint8_t c1 = pixelData[idx + 1];
@@ -395,12 +285,13 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             symmetryRatio = (maxSide > 0) ? (static_cast<float>(minSide) / maxSide) : 0.0f;
             diag.symmetryRatio = symmetryRatio;
 
-            // 雙眼雙側對稱檢驗 (需具備基本生理對稱性)
-            if (symmetryRatio >= 0.20f) {
+            // 只要偵測到人臉並大致朝向鏡頭 (允許偏轉、偏坐、戴耳機或單側光照)
+            if (symmetryRatio >= 0.06f) {
                 facingCamera = true;
             } else {
+                // 若位於畫面極邊緣，單側裁切屬正常現象，依然予以確認在場
                 bool nearBorder = (detectedFaceCx < width * 0.20f || detectedFaceCx > width * 0.80f);
-                if (nearBorder && symmetryRatio >= 0.10f) {
+                if (nearBorder && skinPixels >= minSkinRequired) {
                     facingCamera = true;
                 } else {
                     diag.unconfirmedReason = "臉部偏轉角度過大 (對稱度: " + std::to_string(symmetryRatio) + ")";
@@ -461,8 +352,8 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
     } else {
         m_consecutiveMissingFrames++;
         m_consecutiveFaceFrames = 0;
-        // 連續 2 幀丟失立即確認離座，杜絕假疲勞數據
-        if (m_consecutiveMissingFrames >= 2) {
+        // 允許 12 影格 (約 0.4 秒) 的短暫晃動或遮擋寬限期，避免一動就立刻判定離座
+        if (m_consecutiveMissingFrames >= 12) {
             m_isFaceConfirmed = false;
             m_trackedScale = 0.0f;
         }

@@ -615,6 +615,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView mDashScoreText;
     private TextView mDashStatusText;
     private TextView mDashMetricsText;
+    private EfdCameraXManager mLocalCameraManager;
 
     private void renderMainDashboardScreen() {
         ScrollView scroll = new ScrollView(this);
@@ -632,6 +633,24 @@ public class MainActivity extends AppCompatActivity {
         header.setGravity(Gravity.CENTER);
         header.setPadding(0, 0, 0, 16);
         layout.addView(header);
+
+        // 4:3 即時相機預覽視窗 (可直接看見相機畫面與截圖)
+        try {
+            androidx.camera.view.PreviewView previewView = new androidx.camera.view.PreviewView(this);
+            LinearLayout.LayoutParams previewLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 480);
+            previewLp.setMargins(0, 0, 0, 16);
+            previewView.setLayoutParams(previewLp);
+            previewView.setScaleType(androidx.camera.view.PreviewView.ScaleType.FIT_CENTER);
+            layout.addView(previewView);
+
+            if (mLocalCameraManager == null) {
+                mLocalCameraManager = new EfdCameraXManager(this, this);
+            }
+            mLocalCameraManager.startCameraWithPreview(previewView);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to embed camera preview: " + t.getMessage());
+        }
 
         // 核心狀態卡片
         LinearLayout statusCard = new LinearLayout(this);

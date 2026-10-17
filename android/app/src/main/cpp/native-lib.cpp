@@ -67,7 +67,7 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSetSimulatedEyeOpenness(J
 }
 
 JNIEXPORT void JNICALL
-Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jobject /*thiz*/, jbyteArray frameData, jint width, jint height, jint /*rotation*/) {
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jobject /*thiz*/, jbyteArray frameData, jint width, jint height, jint rotation) {
     if (!g_engine || !frameData || width <= 0 || height <= 0) return;
 
     jsize len = env->GetArrayLength(frameData);
@@ -79,16 +79,20 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     // 接收實體相機影格，關閉背景 Synthetic 虛擬驅動
     g_engine->getCameraService().stopSyntheticIfRunning();
 
+    int rot = (rotation % 360 + 360) % 360;
+    int outW = (rot == 90 || rot == 270) ? height : width;
+    int outH = (rot == 90 || rot == 270) ? width : height;
+
     efd::RawFrame frame;
-    frame.width = width;
-    frame.height = height;
+    frame.width = outW;
+    frame.height = outH;
     frame.channels = 3;
     frame.format = efd::PixelFormat::RGB888;
     frame.isSynthetic = false;
     frame.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
-    size_t requiredSize = static_cast<size_t>(width * height * 3);
+    size_t requiredSize = static_cast<size_t>(outW * outH * 3);
     frame.data.resize(requiredSize, 255);
 
     const uint8_t* nv21 = reinterpret_cast<const uint8_t*>(bytes);
@@ -111,19 +115,29 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
                 int g = static_cast<int>(static_cast<float>(yVal) - 0.344136f * static_cast<float>(uVal) - 0.714136f * static_cast<float>(vVal));
                 int b = static_cast<int>(static_cast<float>(yVal) + 1.772f * static_cast<float>(uVal));
 
-                size_t idx = (yIndex + x) * 3;
-                frame.data[idx + 0] = static_cast<uint8_t>(std::clamp(r, 0, 255));
-                frame.data[idx + 1] = static_cast<uint8_t>(std::clamp(g, 0, 255));
-                frame.data[idx + 2] = static_cast<uint8_t>(std::clamp(b, 0, 255));
+                uint8_t rClamped = static_cast<uint8_t>(std::clamp(r, 0, 255));
+                uint8_t gClamped = static_cast<uint8_t>(std::clamp(g, 0, 255));
+                uint8_t bClamped = static_cast<uint8_t>(std::clamp(b, 0, 255));
+
+                int rx = x, ry = y;
+                if (rot == 90) {
+                    rx = height - 1 - y;
+                    ry = x;
+                } else if (rot == 180) {
+                    rx = width - 1 - x;
+                    ry = height - 1 - y;
+                } else if (rot == 270) {
+                    rx = y;
+                    ry = width - 1 - x;
+                }
+
+                size_t outIdx = (ry * outW + rx) * 3;
+                if (outIdx + 2 < requiredSize) {
+                    frame.data[outIdx + 0] = rClamped;
+                    frame.data[outIdx + 1] = gClamped;
+                    frame.data[outIdx + 2] = bClamped;
+                }
             }
-        }
-    } else {
-        for (int i = 0; i < frameSize; ++i) {
-            uint8_t yVal = nv21[i];
-            size_t idx = i * 3;
-            frame.data[idx + 0] = yVal;
-            frame.data[idx + 1] = yVal;
-            frame.data[idx + 2] = yVal;
         }
     }
 
@@ -145,7 +159,13 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* 
     float threshold = g_lastTelemetry.currentThreshold;
     auto eyeMetrics = g_lastTelemetry.eyeMetrics;
     auto complexityMetrics = g_lastTelemetry.complexityMetrics;
-    bool hasFace = g_lastTelemetry.detection.hasFace;
+
+    // 影格超時檢查：若超過 1.0 秒未收到新影格，強制歸零離座
+    auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    bool isStale = (g_lastTelemetry.latestFrame.timestampMs > 0) &&
+                   ((nowMs - g_lastTelemetry.latestFrame.timestampMs) > 1200);
+    bool hasFace = g_lastTelemetry.detection.hasFace && !isStale;
 
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(3);

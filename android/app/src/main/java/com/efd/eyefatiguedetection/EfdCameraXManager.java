@@ -5,6 +5,7 @@ import android.util.Log;
 import android.util.Size;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
@@ -34,22 +35,24 @@ public class EfdCameraXManager {
     }
 
     public void startCamera() {
-        if (mIsRunning) return;
+        startCameraWithPreview(null);
+    }
 
+    public void startCameraWithPreview(@Nullable androidx.camera.view.PreviewView previewView) {
         ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(mContext);
         future.addListener(() -> {
             try {
                 mCameraProvider = future.get();
-                bindCameraUseCases();
+                bindCombinedUseCases(previewView);
                 mIsRunning = true;
-                Log.i(TAG, "CameraX 前置鏡頭全彩 NV21 串流分析綁定成功 (30 FPS)");
+                Log.i(TAG, "CameraX 前置鏡頭全彩 NV21 串流與即時預覽雙合一綁定成功 (30 FPS)");
             } catch (Throwable t) {
                 Log.e(TAG, "開啟 CameraX 失敗: " + t.getMessage(), t);
             }
         }, ContextCompat.getMainExecutor(mContext));
     }
 
-    private void bindCameraUseCases() {
+    private void bindCombinedUseCases(@Nullable androidx.camera.view.PreviewView previewView) {
         if (mCameraProvider == null) return;
 
         mCameraProvider.unbindAll();
@@ -83,10 +86,20 @@ public class EfdCameraXManager {
         });
 
         try {
-            mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, imageAnalysis);
+            if (previewView != null) {
+                androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder().build();
+                preview.setSurfaceProvider(previewView.getSurfaceProvider());
+                mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, preview, imageAnalysis);
+            } else {
+                mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, imageAnalysis);
+            }
         } catch (Throwable t) {
             Log.e(TAG, "Bind CameraX to lifecycle failed: " + t.getMessage(), t);
         }
+    }
+
+    public void bindPreviewView(@NonNull androidx.camera.view.PreviewView previewView) {
+        startCameraWithPreview(previewView);
     }
 
     private static byte[] imageToNv21(ImageProxy image) {
@@ -146,15 +159,19 @@ public class EfdCameraXManager {
 
     public void stopCamera() {
         mIsRunning = false;
-        if (mCameraProvider != null) {
-            try {
+        try {
+            if (mCameraProvider != null) {
                 mCameraProvider.unbindAll();
-            } catch (Throwable t) {
-                // ignore
             }
+        } catch (Throwable t) {
+            Log.w(TAG, "Error unbinding CameraX: " + t.getMessage());
         }
-        if (mCameraExecutor != null && !mCameraExecutor.isShutdown()) {
-            mCameraExecutor.shutdown();
+        try {
+            if (mCameraExecutor != null && !mCameraExecutor.isShutdown()) {
+                mCameraExecutor.shutdownNow();
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Error shutting down executor: " + t.getMessage());
         }
     }
 
