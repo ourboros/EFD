@@ -166,7 +166,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
     m_latestTelemetry.eyeMetrics.perclos = 0.0f;
     m_latestTelemetry.eyeMetrics.blinkCount = 0;
     m_latestTelemetry.complexityMetrics.complexityIndex = 4.50f;
-    m_latestTelemetry.systemState.currentFatigueScore = 5.0f;
+    m_latestTelemetry.systemState.smoothedFatigueScore = 5.0f;
     m_latestTelemetry.systemState.fatigueLevel = FatigueLevel::Relaxed;
     m_latestTelemetry.lifecycleSummary = "相機狀態: 正在連接前置攝影機 (30 FPS)...";
     m_latestTelemetry.currentStudyDay = m_engine.getStudyTracker().getCurrentDay();
@@ -209,14 +209,14 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         // 即時同步至懸浮指標 HUD
         this->m_floatingIndicator.updateMetrics(
             t.eyeMetrics.earAvg,
-            t.systemState.currentFatigueScore,
+            t.systemState.smoothedFatigueScore,
             t.systemState.fatigueLevel,
             t.lifecycleSummary
         );
         // 即時更新系統托盤提示
         this->m_trayManager.updateStatus(
             t.systemState.fatigueLevel,
-            t.systemState.currentFatigueScore,
+            t.systemState.smoothedFatigueScore,
             utf8ToWide(t.lifecycleSummary)
         );
 
@@ -280,8 +280,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
                 if (t.systemState.cooldownState == CooldownState::InCooldown) {
                     std::cout << " | 【是否疲勞: 20分鐘冷卻靜默暫停提醒中 (剩餘 " << cdMins << "分" << std::setw(2) << std::setfill('0') << cdSecs << "秒)】" << std::setfill(' ');
                 } else if (t.systemState.cooldownState == CooldownState::FastScreening) {
-                    std::cout << " | 【是否疲勞: 5分鐘輕量快篩追蹤中 (總體分數: " << std::fixed << std::setprecision(1) << t.systemState.currentFatigueScore << ")】";
-                } else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning || t.systemState.currentFatigueScore >= 65.0f) {
+                    std::cout << " | 【是否疲勞: 5分鐘輕量快篩追蹤中 (總體分數: " << std::fixed << std::setprecision(1) << t.systemState.smoothedFatigueScore << ")】";
+                } else if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning || t.systemState.smoothedFatigueScore >= 65.0f) {
                     std::cout << " | 【是否疲勞: 是 (超標警報)】";
                 } else if (t.systemState.fatigueLevel == FatigueLevel::Attention) {
                     std::cout << " | 【是否疲勞: 輕度 (注意力提醒)】";
@@ -301,7 +301,7 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
                           << " (基準閾值 " << std::fixed << std::setprecision(3) << t.currentThreshold << "), PERCLOS=" << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
                           << ", 眨眼=" << std::setprecision(1) << t.eyeMetrics.blinkRatePerMin << "次/分"
                           << ", MSE CI=" << std::setprecision(2) << t.complexityMetrics.complexityIndex
-                          << ", 疲勞分=" << std::setprecision(1) << t.systemState.currentFatigueScore << "/100.0 (警戒閾值 65.0)"
+                          << ", 疲勞分=" << std::setprecision(1) << t.systemState.smoothedFatigueScore << "/100.0 (警戒閾值 65.0)"
                           << ", 狀態: ";
                 if (t.systemState.fatigueLevel == FatigueLevel::SevereWarning) std::cout << "嚴重疲勞警告 (SevereWarning)";
                 else if (t.systemState.fatigueLevel == FatigueLevel::Attention) std::cout << "注意力提醒 (Attention)";
@@ -429,6 +429,8 @@ void NativeWelcomeWindow::setStage(UIStage stage) {
     m_animTimeSec = 0.0f;
     if (stage == UIStage::ActiveCalibration) {
         m_calibrationProgress = 0.0f;
+        // 進入實際校準階段才開始收集樣本 (只收有偵測到人臉的幀)
+        m_engine.beginCalibration();
     }
     if (stage == UIStage::CalibrationInstruction || stage == UIStage::ActiveCalibration || stage == UIStage::MainDashboard || stage == UIStage::SettingsPanel) {
         if (!m_engine.isRunning()) {
@@ -477,7 +479,8 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
         }
     } else if (m_currentStage == UIStage::ActiveCalibration) {
         if (PtInRect(&m_skipCalibBtnRect, pt)) {
-            m_engine.calibrate(3.0f);
+            // 略過：以已收集的樣本嘗試校準，不足時保留原基準
+            m_lastCalibrationOk = m_engine.finishCalibration();
             m_engine.getStudyTracker().setInitialSetupCompleted(true);
             setStage(UIStage::CalibrationResult);
         }
@@ -605,7 +608,7 @@ void NativeWelcomeWindow::onTimerTick() {
                           << std::fixed << std::setprecision(1) << m_calibratedUserBiasX << ", " 
                           << m_calibratedUserBiasY << ")\n";
             }
-            m_engine.calibrate(3.0f);
+            m_lastCalibrationOk = m_engine.finishCalibration();
             setStage(UIStage::CalibrationResult);
         }
 
@@ -1356,7 +1359,9 @@ void NativeWelcomeWindow::drawCalibrationResult(Gdiplus::Graphics& g, int w, int
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
 
     Gdiplus::RectF titleRect(10.0f, titleY, static_cast<float>(w - 20), 46.0f);
-    g.DrawString(L"眼動特徵提取與基準校準完成！", -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
+    g.DrawString(m_lastCalibrationOk ? L"眼動特徵提取與基準校準完成！"
+                                     : L"校準未完成：未穩定偵測到臉部，請按「重新校準」",
+                 -1, &titleFont, titleRect, &centerFormat, &whiteBrush);
 
     // 2. 個人化基準數據卡片 (20px 圓角邊框)
     int cardW = isNarrow ? std::min(w - 30, 440) : 540;
@@ -1499,7 +1504,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     // 判斷在場、冷卻與疲勞狀態
     bool isPresent = (m_latestTelemetry.detection.hasFace && m_latestTelemetry.systemState.userPresent);
     FatigueLevel level = m_latestTelemetry.systemState.fatigueLevel;
-    float fatigueScore = m_latestTelemetry.systemState.currentFatigueScore;
+    float fatigueScore = m_latestTelemetry.systemState.smoothedFatigueScore;
     bool inCooldown = (m_latestTelemetry.systemState.cooldownState == CooldownState::InCooldown || m_latestTelemetry.systemState.cooldownState == CooldownState::FastScreening);
     int cdRemaining = m_latestTelemetry.systemState.cooldownRemainingSeconds;
     int cdMins = cdRemaining / 60;
@@ -1563,7 +1568,7 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
         swprintf_s(b1, 32, L"%.3f", static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg));
         swprintf_s(b2, 32, L"%.1f%%", static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f));
         swprintf_s(b3, 32, L"%.2f", static_cast<double>(m_latestTelemetry.complexityMetrics.complexityIndex));
-        swprintf_s(b4, 32, L"%.1f", static_cast<double>(m_latestTelemetry.systemState.currentFatigueScore));
+        swprintf_s(b4, 32, L"%.1f", static_cast<double>(m_latestTelemetry.systemState.smoothedFatigueScore));
     }
 
     if (!isNarrow) {

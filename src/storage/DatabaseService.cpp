@@ -16,6 +16,15 @@ DatabaseService::~DatabaseService() {
     flushToDiskUnlocked();
 }
 
+void DatabaseService::setDatabasePath(const std::string& path) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!path.empty()) {
+        m_dbPath = path;
+        m_walPath = path + ".wal";
+        loadFromDiskUnlocked();
+    }
+}
+
 bool DatabaseService::initialize() {
     std::lock_guard<std::mutex> lock(m_mutex);
     loadFromDiskUnlocked();
@@ -139,6 +148,41 @@ void DatabaseService::flushToDiskUnlocked() {
     wal.close();
 }
 
+bool DatabaseService::parseRecordLine(const std::string& line, FatigueRecord& r) {
+    if (line.empty()) return false;
+    // 斷電或寫入中斷可能留下半行資料：略過該行，不讓整個 App 因例外閃退
+    try {
+        std::stringstream ss(line);
+        std::string fields[7];
+        for (std::string& field : fields) {
+            if (!std::getline(ss, field, ',')) return false; // 欄位不足 (半行) 視為無效
+        }
+        r.timestampMs = std::stoll(fields[0]);
+        r.subjectUuid = fields[1];
+        r.ear = std::stof(fields[2]);
+        r.perclos = std::stof(fields[3]);
+        r.complexityIndex = std::stof(fields[4]);
+        r.fatigueScore = std::stof(fields[5]);
+        int level = std::stoi(fields[6]);
+        r.alertLevel = (level >= 0 && level <= static_cast<int>(FatigueLevel::UserAway))
+            ? static_cast<FatigueLevel>(level) : FatigueLevel::Relaxed;
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+int64_t DatabaseService::getOldestRecordTimestampMs() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int64_t oldest = 0;
+    for (const auto& r : m_memoryCache) {
+        if (r.timestampMs > 0 && (oldest == 0 || r.timestampMs < oldest)) {
+            oldest = r.timestampMs;
+        }
+    }
+    return oldest;
+}
+
 void DatabaseService::loadFromDiskUnlocked() {
     m_memoryCache.clear();
     
@@ -148,18 +192,10 @@ void DatabaseService::loadFromDiskUnlocked() {
         std::string line;
         if (std::getline(db, line)) { // 跳過標題列
             while (std::getline(db, line)) {
-                if (line.empty()) continue;
-                std::stringstream ss(line);
-                std::string token;
                 FatigueRecord r;
-                if (std::getline(ss, token, ',')) r.timestampMs = std::stoll(token);
-                if (std::getline(ss, token, ',')) r.subjectUuid = token;
-                if (std::getline(ss, token, ',')) r.ear = std::stof(token);
-                if (std::getline(ss, token, ',')) r.perclos = std::stof(token);
-                if (std::getline(ss, token, ',')) r.complexityIndex = std::stof(token);
-                if (std::getline(ss, token, ',')) r.fatigueScore = std::stof(token);
-                if (std::getline(ss, token, ',')) r.alertLevel = static_cast<FatigueLevel>(std::stoi(token));
-                m_memoryCache.push_back(r);
+                if (parseRecordLine(line, r)) {
+                    m_memoryCache.push_back(r);
+                }
             }
         }
         db.close();
@@ -171,19 +207,11 @@ void DatabaseService::loadFromDiskUnlocked() {
         std::string line;
         bool hasWalRecords = false;
         while (std::getline(wal, line)) {
-            if (line.empty()) continue;
-            std::stringstream ss(line);
-            std::string token;
             FatigueRecord r;
-            if (std::getline(ss, token, ',')) r.timestampMs = std::stoll(token);
-            if (std::getline(ss, token, ',')) r.subjectUuid = token;
-            if (std::getline(ss, token, ',')) r.ear = std::stof(token);
-            if (std::getline(ss, token, ',')) r.perclos = std::stof(token);
-            if (std::getline(ss, token, ',')) r.complexityIndex = std::stof(token);
-            if (std::getline(ss, token, ',')) r.fatigueScore = std::stof(token);
-            if (std::getline(ss, token, ',')) r.alertLevel = static_cast<FatigueLevel>(std::stoi(token));
-            m_memoryCache.push_back(r);
-            hasWalRecords = true;
+            if (parseRecordLine(line, r)) {
+                m_memoryCache.push_back(r);
+                hasWalRecords = true;
+            }
         }
         wal.close();
 

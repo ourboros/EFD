@@ -100,11 +100,12 @@ public class MainActivity extends AppCompatActivity {
             Log.w(TAG, "Failed to create notification channel: " + t.getMessage());
         }
 
-        // 3. 初始化原生 NDK C++ 引擎 (非阻塞防禦性調用)
+        // 3. 初始化原生 NDK C++ 引擎並配置內部持久化儲存目錄
         try {
-            EfdNativeBridge.initEngine();
+            String filesDir = getFilesDir().getAbsolutePath();
+            EfdNativeBridge.initEngineWithPath(filesDir);
         } catch (Throwable t) {
-            Log.e(TAG, "Error initializing native engine: " + t.getMessage());
+            Log.e(TAG, "Error initializing native engine with path: " + t.getMessage());
         }
 
         // 4. 延遲 500ms 請求權限，避免阻礙主視窗渲染啟動
@@ -634,20 +635,38 @@ public class MainActivity extends AppCompatActivity {
         header.setPadding(0, 0, 0, 16);
         layout.addView(header);
 
-        // 4:3 即時相機預覽視窗 (可直接看見相機畫面與截圖)
+        // 置中固定比例相機預覽視窗 (280dp 正方形圓角卡片，FILL_CENTER 滿版無黑邊)
         try {
-            androidx.camera.view.PreviewView previewView = new androidx.camera.view.PreviewView(this);
-            LinearLayout.LayoutParams previewLp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, 480);
-            previewLp.setMargins(0, 0, 0, 16);
-            previewView.setLayoutParams(previewLp);
-            previewView.setScaleType(androidx.camera.view.PreviewView.ScaleType.FIT_CENTER);
-            layout.addView(previewView);
-
-            if (mLocalCameraManager == null) {
-                mLocalCameraManager = new EfdCameraXManager(this, this);
+            int boxSize = (int) (280 * getResources().getDisplayMetrics().density);
+            FrameLayout cardView = new FrameLayout(this);
+            android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
+            cardBg.setCornerRadius(24f);
+            cardBg.setColor(Color.parseColor("#181C12"));
+            cardView.setBackground(cardBg);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                cardView.setClipToOutline(true);
             }
-            mLocalCameraManager.startCameraWithPreview(previewView);
+            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(boxSize, boxSize);
+            cardLp.gravity = Gravity.CENTER_HORIZONTAL;
+            cardLp.setMargins(0, 0, 0, 20);
+            cardView.setLayoutParams(cardLp);
+
+            androidx.camera.view.PreviewView previewView = new androidx.camera.view.PreviewView(this);
+            previewView.setScaleType(androidx.camera.view.PreviewView.ScaleType.FILL_CENTER);
+            cardView.addView(previewView, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+            layout.addView(cardView);
+
+            EfdForegroundService fgService = EfdForegroundService.getInstance();
+            if (fgService != null && fgService.getCameraManager() != null) {
+                fgService.getCameraManager().startCameraWithPreview(previewView);
+            } else {
+                if (mLocalCameraManager == null) {
+                    mLocalCameraManager = new EfdCameraXManager(this, this);
+                }
+                mLocalCameraManager.startCameraWithPreview(previewView);
+            }
         } catch (Throwable t) {
             Log.w(TAG, "Failed to embed camera preview: " + t.getMessage());
         }
@@ -657,6 +676,16 @@ public class MainActivity extends AppCompatActivity {
         statusCard.setOrientation(LinearLayout.VERTICAL);
         statusCard.setBackgroundColor(Color.parseColor("#343A26"));
         statusCard.setPadding(24, 24, 24, 24);
+
+        TextView subjText = new TextView(this);
+        String uuid = EfdNativeBridge.getSubjectUuid();
+        int day = EfdNativeBridge.getCurrentDay();
+        subjText.setText(String.format(java.util.Locale.getDefault(), "受試者代碼：%s (實驗第 %d / 14 天)", uuid, day));
+        subjText.setTextSize(13);
+        subjText.setTypeface(null, android.graphics.Typeface.BOLD);
+        subjText.setTextColor(Color.parseColor("#F7E3AF"));
+        subjText.setPadding(0, 0, 0, 8);
+        statusCard.addView(subjText);
 
         mDashStatusText = new TextView(this);
         mDashStatusText.setText("生理狀態：清醒專注 (Normal)");
@@ -951,6 +980,8 @@ public class MainActivity extends AppCompatActivity {
                         mCurrentScore = (float) obj.optDouble("fatigueScore", 12.0);
                         mCurrentLevel = obj.optInt("fatigueLevel", 0);
                         int lastAlertLevel = obj.optInt("lastAlertLevel", 0);
+                        int cooldownState = obj.optInt("cooldownState", 0);
+                        int cooldownRemaining = obj.optInt("cooldownRemaining", 0);
 
                         boolean hasFace = obj.optBoolean("hasFace", true);
                         float currentEar = (float) obj.optDouble("currentEar", 0.312);
@@ -970,7 +1001,13 @@ public class MainActivity extends AppCompatActivity {
                                 }
                             } else {
                                 mDashScoreText.setText(String.format(java.util.Locale.getDefault(), "疲勞評分：%.1f / 100", mCurrentScore));
-                                if (mCurrentLevel == 2) {
+                                if (cooldownState == 1 && cooldownRemaining > 0) {
+                                    int mins = cooldownRemaining / 60;
+                                    int secs = cooldownRemaining % 60;
+                                    mDashStatusText.setText(String.format(java.util.Locale.getDefault(),
+                                            "生理狀態：重度疲勞【防打擾冷卻中 剩餘 %d分%d秒】", mins, secs));
+                                    mDashStatusText.setTextColor(Color.parseColor("#EB5757"));
+                                } else if (mCurrentLevel == 2) {
                                     mDashStatusText.setText("生理狀態：你的眼睛處於疲勞狀態，請適當休息");
                                     mDashStatusText.setTextColor(Color.parseColor("#EB5757"));
                                 } else if (mCurrentLevel == 1) {
@@ -988,12 +1025,9 @@ public class MainActivity extends AppCompatActivity {
                             }
                         }
 
-                        // 僅在過度疲勞 (level == 2 / SevereWarning) 時調出提醒彈窗與警報，平時紀錄不騷擾
-                        if ((lastAlertLevel == 2 || mCurrentLevel == 2) && !mHasShownAlert) {
-                            mHasShownAlert = true;
+                        // 僅當 C++ 狀態機發射單次警報脈衝 (lastAlertLevel == 2) 時調出提醒彈窗，20 分鐘冷卻期內絕對靜默
+                        if (lastAlertLevel == 2) {
                             triggerFatigueAlertNotification("你的眼睛處於疲勞狀態，請適當休息");
-                        } else if (lastAlertLevel < 2 && mCurrentLevel < 2) {
-                            mHasShownAlert = false;
                         }
                     }
                 } catch (Throwable e) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "efd/types.hpp"
 #include <string>
 #include <chrono>
 #include <mutex>
@@ -17,6 +18,7 @@ public:
     explicit StudyWorkflowTracker(const std::string& configPath = "efd_study_config.json");
     ~StudyWorkflowTracker() = default;
 
+    void setConfigPath(const std::string& path);
     bool initialize();
 
     std::string getSubjectUuid() const;
@@ -44,6 +46,10 @@ public:
     bool isInitialSetupCompleted() const;
     void setInitialSetupCompleted(bool completed);
 
+    // 初次校準成功：標記完成並保存個人化基準，下次啟動直接沿用
+    void markInitialSetupCompleted(const CalibrationData& calibration);
+    CalibrationData getSavedCalibration() const;
+
     // 雲端同步端點 (支援 Google 試算表 Web App 或科研中心 API)
     std::string getCloudSyncEndpoint() const;
     void setCloudSyncEndpoint(const std::string& endpoint);
@@ -68,11 +74,16 @@ private:
     int m_startDate = 0;
     int m_launchCount = 0;
     bool m_hasCompletedInitialSetup = false;
+    float m_savedBaselineEar = 0.0f;
+    float m_savedEarStdDev = 0.0f;
+    float m_savedThresholdEar = 0.0f;
     std::string m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
     int m_lastSyncedDate = 0;
     mutable std::mutex m_mutex;
 
     int refreshStudyProgressUnlocked();
+    bool initializeUnlocked();
+    void resetInMemoryUnlocked();
     static int toJdn(int y, int m, int d);
     static int fromJdn(int jdn);
     static int getTodayDateInt();

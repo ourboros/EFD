@@ -39,6 +39,8 @@ struct SyncResult {
 class NetworkSyncWorker {
 public:
     using SyncCallback = std::function<void(const SyncResult& result)>;
+    // 實際 HTTP 上傳函式 (回傳是否成功，response 填入伺服器回應)；可替換以便測試
+    using Uploader = std::function<bool(const std::string& url, const std::string& jsonBody, std::string& response)>;
 
     explicit NetworkSyncWorker(DatabaseService& dbService, const std::string& endpointUrl = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec");
     ~NetworkSyncWorker();
@@ -46,6 +48,12 @@ public:
     // 設定科研雲端端點
     void setEndpointUrl(const std::string& url);
     std::string getEndpointUrl() const;
+
+    // 本機同步封裝 JSON 的存放路徑 (預設為工作目錄下 efd_daily_sync.json)
+    void setDumpPath(const std::string& path);
+
+    // 替換上傳實作 (未設定時使用平台預設：Windows PowerShell / Apple NSURLSession)
+    void setUploader(Uploader uploader);
 
     // 觸發非同步科研資料同步 (包含問卷答案上傳與解鎖 Token 交換)
     bool triggerSync(const std::string& subjectUuid, int studyDay, const std::string& questionnaireResponse, SyncCallback callback = nullptr);
@@ -69,6 +77,8 @@ public:
 private:
     DatabaseService& m_dbService;
     std::string m_endpointUrl;
+    std::string m_dumpPath = "efd_daily_sync.json";
+    Uploader m_uploader;
     std::atomic<SyncStatus> m_status{SyncStatus::Idle};
     std::string m_latestUnlockToken;
     std::string m_lastSyncTimeStr;
@@ -86,7 +96,9 @@ private:
     std::thread m_workerThread;
 
     void workerLoop();
-    SyncResult executeSync(const SyncPayload& payload);
+    SyncResult executeSync(SyncPayload payload);
+    bool uploadWithPlatformDefault(const std::string& url, const std::string& jsonBody,
+                                   const std::string& dumpPath, std::string& response);
 };
 
 } // namespace efd

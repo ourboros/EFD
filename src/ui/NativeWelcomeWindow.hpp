@@ -95,6 +95,7 @@ private:
     float m_targetDotX = 0.5f;
     float m_targetDotY = 0.5f;
     float m_calibrationProgress = 0.0f;
+    bool m_lastCalibrationOk = true;      // 最近一次校準是否取得足夠有效人臉幀
 
     // 頂部導覽列按鈕區域 (Tab Navigation)
     std::vector<RECT> m_navTabRects;

@@ -18,7 +18,7 @@ public class EfdBootReceiver extends BroadcastReceiver {
             "android.intent.action.QUICKBOOT_POWERON".equals(action) ||
             Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
 
-            Log.i(TAG, "📱 手機開機/重啟，自動發動 EFD 背景疲勞常駐監控服務...");
+            Log.i(TAG, "📱 手機開機/重啟，自動發動 EFD 背景疲勞常駐監控服務與資料同步...");
             try {
                 Intent serviceIntent = new Intent(context, EfdForegroundService.class);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -26,6 +26,15 @@ public class EfdBootReceiver extends BroadcastReceiver {
                 } else {
                     context.startService(serviceIntent);
                 }
+
+                // 開機自動嘗試同步眼動資料至 Google 試算表
+                EfdHttpSyncBridge.uploadFullPayloadAsync(null, (success, msg) -> {
+                    if (success) {
+                        Log.i(TAG, "開機自動同步 Google 試算表成功: " + msg);
+                    } else {
+                        Log.w(TAG, "開機自動同步 Google 試算表暫未完成: " + msg);
+                    }
+                });
             } catch (Throwable t) {
                 Log.e(TAG, "開機自動啟動服務失敗: " + t.getMessage(), t);
             }

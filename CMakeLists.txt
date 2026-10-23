@@ -233,7 +233,6 @@ if(IOS)
         ios/AppDelegate.mm
         ios/ViewController.h
         ios/ViewController.mm
-        ios/Asset10Data.h
         ${EFD_IOS_RESOURCES}
     )
     target_include_directories(EFD_iOS PRIVATE

@@ -36,6 +36,7 @@ enum class MacUIStage : uint8_t {
     float _targetDotX;
     float _targetDotY;
     float _calibrationProgress;
+    BOOL _lastCalibrationOk;
     int _sensitivityLevel;
 
     // Hover 狀態
@@ -133,8 +134,15 @@ enum class MacUIStage : uint8_t {
         _isHoveringAutoStartBtn = NO;
         _hoveredNavTab = -1;
 
+        _lastCalibrationOk = YES;
         if (_engine && _engine->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest) {
             _currentStage = efd::MacUIStage::StudyCompletedGate;
+        } else if (_engine && _engine->hasSavedCalibration()) {
+            // 已完成初次校準：直接進入監控中心，沿用保存的個人化基準
+            _currentStage = efd::MacUIStage::MainDashboard;
+            if (!_engine->isRunning()) {
+                _engine->start();
+            }
         }
 
         // 載入資產 9 Logo
@@ -201,8 +209,12 @@ enum class MacUIStage : uint8_t {
     _stageTimeSec = 0.0f;
     if (stage == efd::MacUIStage::ActiveCalibration) {
         _calibrationProgress = 0.0f;
+        if (_engine) {
+            if (!_engine->isRunning()) _engine->start();
+            _engine->beginCalibration();
+        }
     }
-    if (stage == efd::MacUIStage::CalibrationInstruction || 
+    if (stage == efd::MacUIStage::CalibrationInstruction ||
         stage == efd::MacUIStage::ActiveCalibration || 
         stage == efd::MacUIStage::MainDashboard) {
         if (_engine && !_engine->isRunning()) {
@@ -278,7 +290,7 @@ enum class MacUIStage : uint8_t {
         _targetDotY = p0.y + (p1.y - p0.y) * smoothT;
 
         if (_calibrationProgress >= 1.0f) {
-            if (_engine) _engine->calibrate(3.0f);
+            _lastCalibrationOk = _engine ? _engine->finishCalibration() : NO;
             [self setStage:efd::MacUIStage::CalibrationResult];
         }
         [self setNeedsDisplay:YES];
@@ -685,7 +697,9 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     CGFloat titleY = h / 2.0 - 170.0;
     if (titleY < 45.0) titleY = 45.0;
     NSRect titleRect = NSMakeRect(0, titleY, w, 44.0);
-    drawCenteredText(@"眼動特徵提取與基準校準完成！", titleRect, [NSFont boldSystemFontOfSize:31], [NSColor whiteColor]);
+    drawCenteredText(_lastCalibrationOk ? @"眼動特徵提取與基準校準完成！"
+                                        : @"校準未完成：未穩定偵測到臉部，請重新校準",
+                     titleRect, [NSFont boldSystemFontOfSize:31], [NSColor whiteColor]);
 
     CGFloat cardW = std::min(w - 60.0, 560.0);
     CGFloat cardH = 145.0;
@@ -756,7 +770,7 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     float curEar = hasFace ? _latestTelemetry.eyeMetrics.earAvg : 0.0f;
     float curPerclos = hasFace ? (_latestTelemetry.eyeMetrics.perclos * 100.0f) : 0.0f;
     float curMse = hasFace ? _latestTelemetry.complexityMetrics.complexityIndex : 0.0f;
-    float curScore = hasFace ? _latestTelemetry.systemState.currentFatigueScore : 0.0f;
+    float curScore = hasFace ? _latestTelemetry.systemState.smoothedFatigueScore : 0.0f;
 
     // 1. 中央核心攝影機與狀態預覽卡片 (白底黑字)
     CGFloat cardW = std::min(w - 60.0, 720.0);
@@ -1190,7 +1204,19 @@ public:
     EFDMainCanvasView* canvasView = nil;
 
     Impl(int w, int h)
-        : width(w), height(h), engine(PlatformType::macOS) {}
+        : width(w), height(h), engine(PlatformType::macOS) {
+        // 從 Finder 開啟的 .app 工作目錄為唯讀的 "/"，資料需改存至 Application Support
+        NSArray<NSURL*>* urls = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
+                                                                       inDomains:NSUserDomainMask];
+        if (urls.count > 0) {
+            NSURL* dirUrl = [urls.firstObject URLByAppendingPathComponent:@"EFD" isDirectory:YES];
+            [[NSFileManager defaultManager] createDirectoryAtURL:dirUrl
+                                     withIntermediateDirectories:YES
+                                                      attributes:nil
+                                                           error:nil];
+            engine.setDataDirectory(std::string(dirUrl.path.UTF8String));
+        }
+    }
 
     ~Impl() {
         engine.stop();
@@ -1313,7 +1339,7 @@ int MacWelcomeWindow::run() {
         m_impl->engine.setTelemetryCallback([this](const EngineTelemetry& t) {
             this->m_impl->statusItemManager.updateStatus(
                 t.systemState.fatigueLevel,
-                t.systemState.currentFatigueScore,
+                t.systemState.smoothedFatigueScore,
                 t.lifecycleSummary
             );
 
@@ -1330,7 +1356,7 @@ int MacWelcomeWindow::run() {
                           << (t.eyeMetrics.isEyeClosed ? " (閉眼)" : " (睜眼)")
                           << " | 閉眼比 (PERCLOS): " << std::setprecision(1) << (t.eyeMetrics.perclos * 100.0f) << "%"
                           << " | 複雜度 (MSE): " << std::setprecision(2) << t.complexityMetrics.complexityIndex
-                          << " | 疲勞分數: " << std::setprecision(1) << t.systemState.currentFatigueScore
+                          << " | 疲勞分數: " << std::setprecision(1) << t.systemState.smoothedFatigueScore
                           << " | 生理狀態: " << levelStr;
 
                 if (t.systemState.cooldownState == CooldownState::InCooldown) {

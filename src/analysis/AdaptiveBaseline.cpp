@@ -27,8 +27,11 @@ void AdaptiveBaseline::calibrate(const std::vector<float>& awakeEarSamples) {
     }
     float stdDev = std::sqrt(sumSq / static_cast<float>(awakeEarSamples.size()));
 
-    m_currentThreshold = m_baselineEar - (m_k * stdDev);
-    m_currentThreshold = std::clamp(m_currentThreshold, m_baselineEar * 0.20f, m_baselineEar * 0.98f);
+    // 閉眼閾值落在清醒基準的 65%~85% (文獻常見 EAR 萎縮比)；
+    // 避免標準差極小時閾值貼近基準，導致正常睜眼也被判為閉眼
+    m_currentThreshold = std::clamp(m_baselineEar - (m_k * stdDev), m_baselineEar * 0.65f, m_baselineEar * 0.85f);
+    m_calibratedThreshold = m_currentThreshold;
+    m_calibratedStdDev = stdDev;
     m_isCalibrated = true;
 
     // 預填充滑動窗口
@@ -53,8 +56,7 @@ void AdaptiveBaseline::fastRecalibrate(const std::vector<float>& resumeSamples) 
         m_slidingWindow.push_back(val);
     }
 
-    m_currentThreshold = m_baselineEar * 0.70f;
-    m_currentThreshold = std::clamp(m_currentThreshold, m_baselineEar * 0.20f, m_baselineEar * 0.98f);
+    m_currentThreshold = applyCalibrationBounds(m_baselineEar * 0.80f);
 }
 
 float AdaptiveBaseline::update(float currentEar, bool isEyeClosed) {
@@ -97,7 +99,8 @@ float AdaptiveBaseline::update(float currentEar, bool isEyeClosed) {
         
         // 安全邊界限制：嚴格限制閉眼閾值下限 >= 0.18f，上限 <= m_baselineEar * 0.90f
         // 確保永遠與閉眼下限 (0.100) 保持至少 0.08 的辨別餘裕，杜絕閾值下陷癱瘓閉眼判定
-        m_currentThreshold = std::clamp(dynamicTarget, 0.18f, std::max(0.20f, m_baselineEar * 0.90f));
+        float bounded = std::clamp(dynamicTarget, 0.18f, std::max(0.20f, m_baselineEar * 0.90f));
+        m_currentThreshold = applyCalibrationBounds(bounded);
     }
 
     return m_currentThreshold;
@@ -110,14 +113,34 @@ float AdaptiveBaseline::getCurrentThreshold() const {
 CalibrationData AdaptiveBaseline::getCalibrationData() const {
     CalibrationData data;
     data.baselineEar = m_baselineEar;
-    data.thresholdEar = m_currentThreshold;
+    data.earStdDev = m_calibratedStdDev;
+    data.thresholdEar = m_isCalibrated ? m_calibratedThreshold : m_currentThreshold;
     data.isCalibrated = m_isCalibrated;
     return data;
+}
+
+void AdaptiveBaseline::restoreCalibration(const CalibrationData& data) {
+    if (!data.isCalibrated || data.baselineEar <= 0.0f || data.thresholdEar <= 0.0f) return;
+    m_baselineEar = data.baselineEar;
+    m_calibratedStdDev = data.earStdDev;
+    m_calibratedThreshold = data.thresholdEar;
+    m_currentThreshold = data.thresholdEar;
+    m_isCalibrated = true;
+    m_slidingWindow.clear();
+    m_consecutiveLowFrames = 0;
+}
+
+float AdaptiveBaseline::applyCalibrationBounds(float threshold) const {
+    if (!m_isCalibrated) return threshold;
+    return std::clamp(threshold,
+                      m_calibratedThreshold * (1.0f - kCalibratedDriftRatio),
+                      m_calibratedThreshold * (1.0f + kCalibratedDriftRatio));
 }
 
 void AdaptiveBaseline::reset() {
     m_slidingWindow.clear();
     m_isCalibrated = false;
+    m_consecutiveLowFrames = 0;
     m_currentThreshold = m_baselineEar * 0.70f;
 }
 

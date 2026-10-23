@@ -134,11 +134,13 @@ void CameraService::startWatchdog() {
             if (!m_watchdogRunning.load()) return;
         }
 
-        // 若 3 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)
+#ifndef __ANDROID__
+        // 若 3 秒內未收到任何影格 (實體相機被佔用、無權限或無訊號)，僅在非 Android 平台上回退至 Synthetic
         if (m_totalFramesDelivered.load() == 0 && !m_isSyntheticFallback) {
             std::cout << "[CameraService 看門狗] 偵測到實體攝影機無訊號輸出，自動無縫熱切換至 Synthetic 模擬驅動...\n";
             this->startSynthetic();
         }
+#endif
     });
 }
 

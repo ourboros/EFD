@@ -6,6 +6,10 @@
 #include <fstream>
 #include <ctime>
 
+#if defined(__APPLE__)
+#include "NetworkSyncWorkerApple.h"
+#endif
+
 namespace efd {
 
 namespace {
@@ -19,6 +23,19 @@ uint64_t fnv1a64(const std::string& str) {
     }
     return hash;
 }
+
+#ifdef _WIN32
+// PowerShell 單引號字串中的單引號需重複一次
+std::string escapePowerShellSingleQuoted(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        out += c;
+        if (c == '\'') out += '\'';
+    }
+    return out;
+}
+#endif
 
 } // anonymous namespace
 
@@ -49,20 +66,29 @@ std::string NetworkSyncWorker::getEndpointUrl() const {
     return m_endpointUrl;
 }
 
+void NetworkSyncWorker::setDumpPath(const std::string& path) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!path.empty()) {
+        m_dumpPath = path;
+    }
+}
+
+void NetworkSyncWorker::setUploader(Uploader uploader) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_uploader = std::move(uploader);
+}
+
 bool NetworkSyncWorker::triggerSync(const std::string& subjectUuid, int studyDay, const std::string& questionnaireResponse, SyncCallback callback) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_status == SyncStatus::Syncing) {
         return false; // 正在進行同步中
     }
 
-    // 取得資料庫紀錄並計算完整性校驗碼
-    std::string csvData = m_dbService.exportRecordsAsCsv();
-    
+    // 只記錄任務參數；匯出 CSV 與計算校驗碼移到背景執行緒，避免呼叫端 (UI 主執行緒) 卡頓
+    m_pendingPayload = SyncPayload{};
     m_pendingPayload.subjectUuid = subjectUuid;
     m_pendingPayload.currentDay = studyDay;
-    m_pendingPayload.recordCount = m_dbService.getRecordCount();
     m_pendingPayload.questionnaireResponse = questionnaireResponse;
-    m_pendingPayload.dataChecksum = calculateChecksum(csvData + questionnaireResponse);
     m_pendingPayload.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
@@ -132,7 +158,7 @@ void NetworkSyncWorker::workerLoop() {
         }
 
         // 執行非同步數據同步與事務解鎖
-        SyncResult result = executeSync(payload);
+        SyncResult result = executeSync(std::move(payload));
 
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -150,11 +176,55 @@ void NetworkSyncWorker::workerLoop() {
     }
 }
 
-SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
-    SyncResult result;
+bool NetworkSyncWorker::uploadWithPlatformDefault(const std::string& url, const std::string& jsonBody,
+                                                  const std::string& dumpPath, std::string& response) {
+#ifdef _WIN32
+    (void)jsonBody; // Windows 由 PowerShell 直接讀取已落盤的 dumpPath
+    std::string psCmd = "powershell -NoProfile -NonInteractive -Command \"try { "
+                        "$json = Get-Content -Raw '" + escapePowerShellSingleQuoted(dumpPath) + "' -Encoding UTF8; "
+                        "$resp = Invoke-RestMethod -Uri '" + escapePowerShellSingleQuoted(url) + "' -Method Post -Body $json -ContentType 'application/json' -TimeoutSec 20; "
+                        "Write-Output ('GAS_RESP:' + ($resp | ConvertTo-Json -Compress)) "
+                        "} catch { Write-Output ('GAS_ERR:' + $_.Exception.Message) }\"";
 
-    // 模擬網路延遲與安全通訊 (150ms 傳輸)
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    FILE* pipe = _popen(psCmd.c_str(), "r");
+    if (!pipe) {
+        response = "GAS_ERR: 無法啟動 PowerShell";
+        return false;
+    }
+    char buffer[256];
+    std::string rawOutput;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        rawOutput += buffer;
+    }
+    _pclose(pipe);
+
+    if (rawOutput.find("GAS_RESP:") != std::string::npos) {
+        response = rawOutput.substr(rawOutput.find("GAS_RESP:") + 9);
+        // Apps Script 回傳 JSON；含 success/OK 視為寫入成功
+        return response.find("success") != std::string::npos ||
+               response.find("OK") != std::string::npos;
+    }
+    if (rawOutput.find("GAS_ERR:") != std::string::npos) {
+        response = rawOutput.substr(rawOutput.find("GAS_ERR:"));
+        return false;
+    }
+    response = rawOutput;
+    return false;
+#elif defined(__APPLE__)
+    (void)dumpPath;
+    return PerformAppleHttpUpload(url, jsonBody, response);
+#else
+    // Android 等平台由原生層 (Java EfdSyncManager) 負責上傳
+    (void)url;
+    (void)jsonBody;
+    (void)dumpPath;
+    response = "此平台未提供 C++ 上傳實作";
+    return false;
+#endif
+}
+
+SyncResult NetworkSyncWorker::executeSync(SyncPayload payload) {
+    SyncResult result;
 
     // 檢查資料完整性與受試者編號
     if (payload.subjectUuid.empty()) {
@@ -163,6 +233,11 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
         result.message = "無效的受試者識別碼";
         return result;
     }
+
+    // 取得資料庫紀錄並計算完整性校驗碼 (於背景執行緒進行)
+    std::string csvData = m_dbService.exportRecordsAsCsv();
+    payload.recordCount = m_dbService.getRecordCount();
+    payload.dataChecksum = calculateChecksum(csvData + payload.questionnaireResponse);
 
     // 產生伺服器授權加密簽章 Token (EFD-14D-XXXX-XXXX)
     uint64_t signSeed = fnv1a64(payload.subjectUuid + payload.dataChecksum + std::to_string(payload.timestampMs));
@@ -174,9 +249,6 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
         << std::setw(4) << (part1 == 0 ? 0x8821 : part1) << "-"
         << std::setw(4) << (part2 == 0 ? 0x4903 : part2);
 
-    result.success = true;
-    result.httpStatusCode = 200;
-    result.unlockToken = oss.str();
     // 1. 格式化目前時間戳記
     auto now = std::chrono::system_clock::now();
     std::time_t tt = std::chrono::system_clock::to_time_t(now);
@@ -190,7 +262,7 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
 
     // 2. 本地持久化保存一份符合 Apps Script 結構的當前同步封裝 JSON (方便研究員與使用者檢驗)
-    auto records = m_dbService.getLatestRecords(m_dbService.getRecordCount());
+    auto records = m_dbService.getLatestRecords(payload.recordCount);
     float earSum = 0.0f, perclosSum = 0.0f, ciSum = 0.0f, scoreSum = 0.0f;
     for (const auto& r : records) {
         earSum += r.ear;
@@ -236,61 +308,29 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
     }
     jsonStream << "  ]\n}\n";
 
-    std::string jsonDump = jsonStream.str();
-    std::ofstream outDump("efd_daily_sync.json");
-    if (outDump.is_open()) {
-        outDump << jsonDump;
-        outDump.close();
-    }
-
-    // 2.5 執行真正 Google Apps Script HTTP POST 上傳
     std::string targetUrl;
+    std::string dumpPath;
+    Uploader uploader;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         targetUrl = m_endpointUrl;
+        dumpPath = m_dumpPath;
+        uploader = m_uploader;
     }
 
-    bool realUploadSuccess = false;
+    std::string jsonDump = jsonStream.str();
+    {
+        std::ofstream outDump(dumpPath, std::ios::trunc);
+        if (outDump.is_open()) {
+            outDump << jsonDump;
+        }
+    }
+
+    // 3. 執行 Google Apps Script HTTP POST 上傳
     std::string uploadServerResponse;
-
-#ifdef _WIN32
-    std::string psCmd = "powershell -NoProfile -NonInteractive -Command \"try { "
-                        "$json = Get-Content -Raw 'efd_daily_sync.json' -Encoding UTF8; "
-                        "$resp = Invoke-RestMethod -Uri '" + targetUrl + "' -Method Post -Body $json -ContentType 'application/json' -TimeoutSec 20; "
-                        "Write-Output ('GAS_RESP:' + ($resp | ConvertTo-Json -Compress)) "
-                        "} catch { Write-Output ('GAS_ERR:' + $_.Exception.Message) }\"";
-
-    FILE* pipe = _popen(psCmd.c_str(), "r");
-    if (pipe) {
-        char buffer[256];
-        std::string rawOutput;
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            rawOutput += buffer;
-        }
-        _pclose(pipe);
-
-        if (rawOutput.find("GAS_RESP:") != std::string::npos) {
-            uploadServerResponse = rawOutput.substr(rawOutput.find("GAS_RESP:") + 9);
-            // 檢查回應內容是否包含 success
-            if (uploadServerResponse.find("\"success\"") != std::string::npos ||
-                uploadServerResponse.find("success") != std::string::npos ||
-                uploadServerResponse.find("OK") != std::string::npos) {
-                realUploadSuccess = true;
-            } else {
-                // Apps Script 返回了 JSON 但 status 非 success (例如試算表權限或 doGet 錯誤)
-                realUploadSuccess = false;
-            }
-        } else if (rawOutput.find("GAS_ERR:") != std::string::npos) {
-            uploadServerResponse = rawOutput.substr(rawOutput.find("GAS_ERR:"));
-            realUploadSuccess = false;
-        } else {
-            uploadServerResponse = rawOutput;
-            realUploadSuccess = false;
-        }
-#elif defined(__APPLE__)
-    extern bool PerformAppleHttpUpload(const std::string& url, const std::string& jsonBody, std::string& outResponse);
-    realUploadSuccess = PerformAppleHttpUpload(targetUrl, jsonDump, uploadServerResponse);
-#endif
+    bool realUploadSuccess = uploader
+        ? uploader(targetUrl, jsonDump, uploadServerResponse)
+        : uploadWithPlatformDefault(targetUrl, jsonDump, dumpPath, uploadServerResponse);
 
     if (!realUploadSuccess) {
         result.success = false;
@@ -310,7 +350,7 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
         m_isSyncedToday = realUploadSuccess;
     }
 
-    // 3. 輸出真實的終端機科研同步狀態 Log
+    // 4. 輸出科研同步狀態 Log
     std::cout << "\n"
               << "================================================================================\n"
               << (realUploadSuccess ? ">>> [科研雲端同步成功] 當日眼動數據已安全上傳至科研中心試算表！ <<<\n"
@@ -321,7 +361,7 @@ SyncResult NetworkSyncWorker::executeSync(const SyncPayload& payload) {
               << "  [數據完整性 Checksum]: " << payload.dataChecksum << "\n"
               << "  [雲端伺服器回應]: " << result.message << "\n"
               << "  [解鎖簽章憑證]: " << (realUploadSuccess ? result.unlockToken : "尚未簽發 (等待伺服器寫入)") << "\n"
-              << "  [本機備份封裝]: efd_daily_sync.json 已同步落盤更新\n"
+              << "  [本機備份封裝]: " << dumpPath << " 已同步落盤更新\n"
               << "================================================================================\n"
               << std::endl;
 

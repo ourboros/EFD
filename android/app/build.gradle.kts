@@ -71,5 +71,6 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.4")
     implementation("androidx.lifecycle:lifecycle-service:2.8.5")
     implementation("androidx.lifecycle:lifecycle-common-java8:2.8.5")
+    implementation("androidx.cardview:cardview:1.0.0")
 }
 

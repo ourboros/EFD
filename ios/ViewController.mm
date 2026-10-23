@@ -1,4 +1,3 @@
-#include <pthread.h>
 #import "ViewController.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -10,7 +9,6 @@
 #include <iomanip>
 #include <sstream>
 #include "engine/AsyncPipelineEngine.hpp"
-#include "Asset10Data.h"
 
 // -----------------------------------------------------------------------------
 // EFD iOS 設計系統規範色碼 (5 大核心配色)
@@ -32,38 +30,23 @@ typedef NS_ENUM(NSInteger, EFDAppStage) {
 };
 
 static UIImage* EFDGetAsset10Logo() {
-    static UIImage *s_cachedLogo = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        // 1. 優先從記憶體內嵌的「資產 10」官方 PNG Base64 解碼 (最可靠、杜絕路徑與編碼問題)
-        if (kAsset10PngBase64.length > 100) {
-            NSData *data = [[NSData alloc] initWithBase64EncodedString:kAsset10PngBase64 options:NSDataBase64DecodingIgnoreUnknownCharacters];
-            if (data && data.length > 0) {
-                s_cachedLogo = [UIImage imageWithData:data];
-            }
-        }
-        // 2. 若有 Bundle 資源則作為後備
-        if (!s_cachedLogo) {
-            NSString *path = [[NSBundle mainBundle] pathForResource:@"logo" ofType:@"png"];
-            if (!path) {
-                path = [[NSBundle mainBundle] pathForResource:@"資產 10" ofType:@"png"];
-            }
-            if (path) {
-                s_cachedLogo = [UIImage imageWithContentsOfFile:path];
-            }
-        }
-        if (!s_cachedLogo) {
-            s_cachedLogo = [UIImage imageNamed:@"logo"] ?: [UIImage imageNamed:@"資產 10"];
-        }
-    });
-    return s_cachedLogo;
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"logo" ofType:@"png"];
+    if (!path) {
+        path = [[NSBundle mainBundle] pathForResource:@"資產 10" ofType:@"png"];
+    }
+    if (path) {
+        UIImage *img = [UIImage imageWithContentsOfFile:path];
+        if (img) return img;
+    }
+    UIImage *namedImg = [UIImage imageNamed:@"logo"] ?: [UIImage imageNamed:@"資產 10"];
+    if (namedImg) return namedImg;
+    return [UIImage systemImageNamed:@"eye.circle.fill"];
 }
 
 @interface ViewController () <UNUserNotificationCenterDelegate> {
     efd::AsyncPipelineEngine* _engine;
     efd::EngineTelemetry _latestTelemetry;
     BOOL _hasTelemetry;
-    BOOL _isTelemetryDispatchPending;
 }
 
 @property (nonatomic, assign) EFDAppStage currentStage;
@@ -119,37 +102,21 @@ static UIImage* EFDGetAsset10Logo() {
         self.currentStage = EFDAppStageStudyGate;
     }
 
-    // 遙測回呼 (弱引用與值拷貝保護，杜絕懸垂指標崩潰與主線程過載)
-    __weak typeof(self) weakSelf = self;
-    _engine->setTelemetryCallback([weakSelf](const efd::EngineTelemetry& t) {
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) return;
-
-        strongSelf->_latestTelemetry = t;
-        strongSelf->_hasTelemetry = YES;
-
-        if (!strongSelf->_isTelemetryDispatchPending) {
-            strongSelf->_isTelemetryDispatchPending = YES;
-            efd::EngineTelemetry snapshot = t; // 完整值拷貝，防止多線程 stack 變數釋放崩潰
-            dispatch_async(dispatch_get_main_queue(), ^{
-                __strong typeof(weakSelf) s = weakSelf;
-                if (s) {
-                    s->_isTelemetryDispatchPending = NO;
-                    [s updateTelemetryUI:snapshot];
-                }
-            });
-        }
+    // 遙測回呼
+    _engine->setTelemetryCallback([self](const efd::EngineTelemetry& t) {
+        self->_latestTelemetry = t;
+        self->_hasTelemetry = YES;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self updateTelemetryUI:t];
+        });
     });
 
-    // 警報回呼 (疲勞超標警報與震動，弱引用保護)
-    _engine->setAlertCallback([weakSelf](efd::FatigueLevel level, float score, const std::string& msg) {
+    // 警報回呼 (疲勞超標警報與震動)
+    _engine->setAlertCallback([self](efd::FatigueLevel level, float score, const std::string& msg) {
         (void)msg;
         if (level == efd::FatigueLevel::SevereWarning || score >= 70.0f) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                __strong typeof(weakSelf) s = weakSelf;
-                if (s) {
-                    [s triggerFatigueAlertNotification:score];
-                }
+                [self triggerFatigueAlertNotification:score];
             });
         }
     });
@@ -685,29 +652,23 @@ static UIImage* EFDGetAsset10Logo() {
 - (void)attachCameraPreviewIfNeeded {
     if (!self.cameraAspectBox || !_engine) return;
 
-    @try {
-        void* sessionHandle = _engine ? _engine->getNativeCameraHandle() : nullptr;
-        if (sessionHandle) {
-            AVCaptureSession *session = (__bridge AVCaptureSession*)sessionHandle;
-            if (!self.cameraPreviewLayer && self.cameraAspectBox) {
-                self.cameraPreviewLayer = [AVCaptureVideoPreviewLayer layerWithSession:session];
-                self.cameraPreviewLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-                self.cameraPreviewLayer.frame = self.cameraAspectBox.bounds;
-                [self.cameraAspectBox.layer insertSublayer:self.cameraPreviewLayer atIndex:0];
-                self.cameraStatusLabel.text = @"📷 前置攝影機 (實體鏡頭即時串流運作中)";
-            }
-        } else {
-            // 若相機仍在啟動中，安排 0.5 秒後重試一次掛載
-            __weak typeof(self) weakSelf = self;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                __strong typeof(weakSelf) strongSelf = weakSelf;
-                if (strongSelf && strongSelf.currentStage == EFDAppStageDashboard && !strongSelf.cameraPreviewLayer) {
-                    [strongSelf attachCameraPreviewIfNeeded];
-                }
-            });
+    void* sessionHandle = _engine->getNativeCameraHandle();
+    if (sessionHandle) {
+        AVCaptureSession *session = (__bridge AVCaptureSession*)sessionHandle;
+        if (!self.cameraPreviewLayer) {
+            self.cameraPreviewLayer = [AVCaptureVideoPreviewLayer layerWithSession:session];
+            self.cameraPreviewLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+            self.cameraPreviewLayer.frame = self.cameraAspectBox.bounds;
+            [self.cameraAspectBox.layer insertSublayer:self.cameraPreviewLayer atIndex:0];
+            self.cameraStatusLabel.text = @"📷 前置攝影機 (實體鏡頭即時串流運作中)";
         }
-    } @catch (NSException *e) {
-        NSLog(@"[EFD] Exception in attachCameraPreviewIfNeeded: %@", e);
+    } else {
+        // 若相機仍在啟動中，安排 0.5 秒後重試一次掛載
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (self.currentStage == EFDAppStageDashboard && !self.cameraPreviewLayer) {
+                [self attachCameraPreviewIfNeeded];
+            }
+        });
     }
 }
 
@@ -723,19 +684,11 @@ static UIImage* EFDGetAsset10Logo() {
     // 偏好 A：背景運行模式彈窗說明並啟動本地鬧鐘守護
     [self scheduleFatigueReminderNotificationInMinutes:20];
 
-    if (self.presentedViewController != nil) {
-        return;
-    }
-
-    @try {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"守護中：背景定時提醒已啟動"
-                                                                       message:@"受限於 iOS 隱私安全政策，切換至其他 App 時相機將安全休眠以節省電力。\n\n系統已為您排定「用眼超時鬧鐘提醒」（20 分鐘後響鈴提醒閉眼休息 5 分鐘）。"
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"確定" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-    } @catch (NSException *e) {
-        NSLog(@"[EFD] Exception presenting background alert: %@", e);
-    }
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"守護中：背景定時提醒已啟動"
+                                                                   message:@"受限於 iOS 隱私安全政策，切換至其他 App 時相機將安全休眠以節省電力。\n\n系統已為您排定「用眼超時鬧鐘提醒」（20 分鐘後響鈴提醒閉眼休息 5 分鐘）。"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"確定" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 // -----------------------------------------------------------------------------
@@ -954,7 +907,7 @@ static UIImage* EFDGetAsset10Logo() {
         self.mseValueLabel.text = [NSString stringWithFormat:@"%.2f", t.complexityMetrics.complexityIndex];
     }
     if (self.fatigueScoreLabel) {
-        self.fatigueScoreLabel.text = [NSString stringWithFormat:@"%.1f", t.systemState.currentFatigueScore];
+        self.fatigueScoreLabel.text = [NSString stringWithFormat:@"%.1f", t.systemState.smoothedFatigueScore];
     }
 }
 
@@ -974,19 +927,11 @@ static UIImage* EFDGetAsset10Logo() {
         AudioServicesPlaySystemSound(1005);
     }
 
-    if (self.presentedViewController != nil) {
-        return; // 避免同時重複彈窗導致 iOS 拋出 NSInvalidArgumentException 閃退
-    }
-
-    @try {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"🚨 眼睛疲勞提醒"
-                                                                       message:[NSString stringWithFormat:@"疲勞綜合評分已達 %.1f 分！\n你的眼睛處於疲勞狀態，請適當休息放鬆 5 分鐘。", score]
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"我知道了，閉眼休息" style:UIAlertActionStyleDestructive handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-    } @catch (NSException *exception) {
-        NSLog(@"[EFD] Exception presenting fatigue alert: %@", exception);
-    }
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"🚨 眼睛疲勞提醒"
+                                                                   message:[NSString stringWithFormat:@"疲勞綜合評分已達 %.1f 分！\n你的眼睛處於疲勞狀態，請適當休息放鬆 5 分鐘。", score]
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"我知道了，閉眼休息" style:UIAlertActionStyleDestructive handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 @end

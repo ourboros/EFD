@@ -107,8 +107,38 @@ int StudyWorkflowTracker::refreshStudyProgress() {
     return refreshStudyProgressUnlocked();
 }
 
+void StudyWorkflowTracker::setConfigPath(const std::string& path) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!path.empty()) {
+        // 切換到新路徑時清掉舊路徑載入的內容，避免沿用預設路徑產生的 UUID
+        resetInMemoryUnlocked();
+        m_configPath = path;
+        initializeUnlocked();
+    }
+}
+
+void StudyWorkflowTracker::resetInMemoryUnlocked() {
+    m_subjectUuid.clear();
+    m_currentDay = 1;
+    m_status = StudyStatus::ActiveMonitoring;
+    m_unlockToken.clear();
+    m_studyStartTimestamp = 0;
+    m_startDate = 0;
+    m_launchCount = 0;
+    m_hasCompletedInitialSetup = false;
+    m_savedBaselineEar = 0.0f;
+    m_savedEarStdDev = 0.0f;
+    m_savedThresholdEar = 0.0f;
+    m_cloudSyncEndpoint.clear();
+    m_lastSyncedDate = 0;
+}
+
 bool StudyWorkflowTracker::initialize() {
     std::lock_guard<std::mutex> lock(m_mutex);
+    return initializeUnlocked();
+}
+
+bool StudyWorkflowTracker::initializeUnlocked() {
     loadConfigUnlocked();
     int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -180,6 +210,25 @@ void StudyWorkflowTracker::setInitialSetupCompleted(bool completed) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_hasCompletedInitialSetup = completed;
     saveConfigUnlocked();
+}
+
+void StudyWorkflowTracker::markInitialSetupCompleted(const CalibrationData& calibration) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_hasCompletedInitialSetup = true;
+    m_savedBaselineEar = calibration.baselineEar;
+    m_savedEarStdDev = calibration.earStdDev;
+    m_savedThresholdEar = calibration.thresholdEar;
+    saveConfigUnlocked();
+}
+
+CalibrationData StudyWorkflowTracker::getSavedCalibration() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    CalibrationData data;
+    data.baselineEar = m_savedBaselineEar;
+    data.earStdDev = m_savedEarStdDev;
+    data.thresholdEar = m_savedThresholdEar;
+    data.isCalibrated = m_hasCompletedInitialSetup && m_savedBaselineEar > 0.0f && m_savedThresholdEar > 0.0f;
+    return data;
 }
 
 std::string StudyWorkflowTracker::getCloudSyncEndpoint() const {
@@ -312,6 +361,9 @@ void StudyWorkflowTracker::saveConfigUnlocked() {
         << "  \"startDate\": " << m_startDate << ",\n"
         << "  \"launchCount\": " << m_launchCount << ",\n"
         << "  \"hasCompletedInitialSetup\": " << (m_hasCompletedInitialSetup ? "true" : "false") << ",\n"
+        << "  \"calibBaselineEar\": " << m_savedBaselineEar << ",\n"
+        << "  \"calibEarStdDev\": " << m_savedEarStdDev << ",\n"
+        << "  \"calibThresholdEar\": " << m_savedThresholdEar << ",\n"
         << "  \"cloudSyncEndpoint\": \"" << m_cloudSyncEndpoint << "\",\n"
         << "  \"lastSyncedDate\": " << m_lastSyncedDate << "\n"
         << "}\n";
@@ -339,16 +391,29 @@ void StudyWorkflowTracker::loadConfigUnlocked() {
         trim(key);
         trim(val);
 
-        if (key == "subjectUuid") m_subjectUuid = val;
-        else if (key == "currentDay") m_currentDay = std::stoi(val);
-        else if (key == "status") m_status = static_cast<StudyStatus>(std::stoi(val));
-        else if (key == "unlockToken") m_unlockToken = val;
-        else if (key == "studyStartTimestamp") m_studyStartTimestamp = std::stoll(val);
-        else if (key == "startDate") m_startDate = std::stoi(val);
-        else if (key == "launchCount") m_launchCount = std::stoi(val);
-        else if (key == "hasCompletedInitialSetup") m_hasCompletedInitialSetup = (val == "true" || val == "1");
-        else if (key == "cloudSyncEndpoint") m_cloudSyncEndpoint = val;
-        else if (key == "lastSyncedDate") m_lastSyncedDate = std::stoi(val);
+        // 單一欄位損毀時略過該欄位 (保留預設值)，不讓整個 App 因 stoi 例外而閃退
+        try {
+            if (key == "subjectUuid") m_subjectUuid = val;
+            else if (key == "currentDay") m_currentDay = std::clamp(std::stoi(val), 1, 14);
+            else if (key == "status") {
+                int st = std::stoi(val);
+                if (st >= 0 && st <= static_cast<int>(StudyStatus::CompletedUnlocked)) {
+                    m_status = static_cast<StudyStatus>(st);
+                }
+            }
+            else if (key == "unlockToken") m_unlockToken = val;
+            else if (key == "studyStartTimestamp") m_studyStartTimestamp = std::stoll(val);
+            else if (key == "startDate") m_startDate = std::stoi(val);
+            else if (key == "launchCount") m_launchCount = std::stoi(val);
+            else if (key == "hasCompletedInitialSetup") m_hasCompletedInitialSetup = (val == "true" || val == "1");
+            else if (key == "calibBaselineEar") m_savedBaselineEar = std::stof(val);
+            else if (key == "calibEarStdDev") m_savedEarStdDev = std::stof(val);
+            else if (key == "calibThresholdEar") m_savedThresholdEar = std::stof(val);
+            else if (key == "cloudSyncEndpoint") m_cloudSyncEndpoint = val;
+            else if (key == "lastSyncedDate") m_lastSyncedDate = std::stoi(val);
+        } catch (const std::exception&) {
+            std::cerr << "[StudyWorkflowTracker] 設定欄位損毀，已略過: " << key << "\n";
+        }
     }
 }
 

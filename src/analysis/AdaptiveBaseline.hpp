@@ -28,6 +28,12 @@ public:
     // 取得校準基準資料
     CalibrationData getCalibrationData() const;
 
+    // 還原先前保存的校準結果 (App 重啟時免重新校準)
+    void restoreCalibration(const CalibrationData& data);
+
+    // 校準後，動態閾值只能在校準閾值的 ±kCalibratedDriftRatio 內浮動
+    static constexpr float kCalibratedDriftRatio = 0.15f;
+
     // 重置滑動窗口與基準
     void reset();
 
@@ -36,7 +42,11 @@ private:
     float m_alpha = 0.7f;       // 歷史基準衰減係數
     float m_k = 1.5f;           // 標準差倍率
     float m_currentThreshold = 0.21f;
+    float m_calibratedThreshold = 0.21f;
+    float m_calibratedStdDev = 0.03f;
     bool  m_isCalibrated = false;
+
+    float applyCalibrationBounds(float threshold) const;
 
     size_t m_windowSize = 600;  // 滑動窗口大小
     std::deque<float> m_slidingWindow;

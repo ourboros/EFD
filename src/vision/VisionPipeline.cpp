@@ -6,7 +6,7 @@ namespace efd {
 VisionPipeline::VisionPipeline()
     : m_camera(std::make_unique<CameraService>(640, 480, 30.0f)),
       m_landmarker(std::make_unique<FaceLandmarker>()),
-      m_extractor(300, 0.21f),
+      m_extractor(60.0f, 0.21f),
       m_baseline(0.31f, 0.7f, 1.5f, 300),
       m_emdCalculator(4, 15, 0.05f),
       m_mseCalculator(5, 2, 0.15f),

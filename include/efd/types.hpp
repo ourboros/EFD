@@ -59,8 +59,7 @@ enum class FatigueLevel : uint8_t {
 enum class CooldownState : uint8_t {
     NormalTracking,    // 正常全量追蹤
     InCooldown,        // 20 分鐘冷卻中 (防頻繁警報)
-    FastScreening,     // 5 分鐘輕量快篩中 (僅 PERCLOS/眨眼率)
-    AwayPaused         // 離座暫停倒數中
+    FastScreening      // 冷卻期滿後，每 5 分鐘以平均分數快篩一次
 };
 
 // 系統綜合狀態快照
@@ -68,9 +67,9 @@ struct SystemState {
     FatigueLevel  fatigueLevel             = FatigueLevel::Relaxed;
     CooldownState cooldownState            = CooldownState::NormalTracking;
     float         currentFatigueScore      = 0.0f; // 即時疲勞分數 0.0 ~ 100.0
-    float         smoothedFatigueScore     = 0.0f; // 60 秒 EWMA 趨勢分數
+    float         smoothedFatigueScore     = 0.0f; // 60 秒 EWMA 趨勢分數 (警報與等級判定依據)
     int           cooldownRemainingSeconds = 0;
-    int           cooldownRemainingSec     = 0;    // 相容別名
+    int           screeningRemainingSeconds = 0;   // 本輪 5 分鐘快篩剩餘秒數
     int           awaySeconds              = 0;
     int           studyDay                 = 1;    // 1 ~ 14
     bool          isStudyLocked            = false;// 14 天實驗期滿鎖定

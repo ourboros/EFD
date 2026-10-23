@@ -23,6 +23,16 @@ public class EfdForegroundService extends LifecycleService {
     private boolean mHasAlerted = false;
     private boolean mIsSyncInProgress = false;
 
+    private static EfdForegroundService sInstance = null;
+
+    public static EfdForegroundService getInstance() {
+        return sInstance;
+    }
+
+    public EfdCameraXManager getCameraManager() {
+        return mCameraManager;
+    }
+
     public class LocalBinder extends Binder {
         public EfdForegroundService getService() {
             return EfdForegroundService.this;
@@ -32,19 +42,56 @@ public class EfdForegroundService extends LifecycleService {
     @Override
     public void onCreate() {
         super.onCreate();
+        sInstance = this;
         Log.i(TAG, "EfdForegroundService onCreate");
 
         mHudManager = new EfdNotificationHudManager(this);
         startForeground(EfdNotificationHudManager.SERVICE_NOTIFICATION_ID, 
                 mHudManager.buildForegroundNotification());
 
-        EfdNativeBridge.initEngine();
+        try {
+            EfdNativeBridge.initEngineWithPath(getFilesDir().getAbsolutePath());
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to init native engine with path: " + t.getMessage());
+        }
 
         mCameraManager = new EfdCameraXManager(this, this);
         mCameraManager.startCamera();
 
+        scheduleNightlySyncAlarm();
+
         mHandler = new Handler(Looper.getMainLooper());
         startTelemetryLoop();
+    }
+
+    private void scheduleNightlySyncAlarm() {
+        try {
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 21);
+            cal.set(java.util.Calendar.MINUTE, 0);
+            cal.set(java.util.Calendar.SECOND, 0);
+            if (cal.getTimeInMillis() < System.currentTimeMillis()) {
+                cal.add(java.util.Calendar.DAY_OF_YEAR, 1);
+            }
+
+            Intent alarmIntent = new Intent(this, EfdSyncAlarmReceiver.class);
+            android.app.PendingIntent pendingIntent = android.app.PendingIntent.getBroadcast(
+                    this, 2100, alarmIntent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT | (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M ? android.app.PendingIntent.FLAG_IMMUTABLE : 0));
+
+            android.app.AlarmManager alarmManager = (android.app.AlarmManager) getSystemService(android.content.Context.ALARM_SERVICE);
+            if (alarmManager != null) {
+                alarmManager.setInexactRepeating(
+                        android.app.AlarmManager.RTC_WAKEUP,
+                        cal.getTimeInMillis(),
+                        android.app.AlarmManager.INTERVAL_DAY,
+                        pendingIntent
+                );
+                Log.i(TAG, "每日 21:00 (9 PM) 背景自動同步鬧鐘註冊成功！預計下次執行時間: " + cal.getTime());
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "註冊 21:00 鬧鐘失敗: " + t.getMessage());
+        }
     }
 
     @Override
@@ -61,45 +108,19 @@ public class EfdForegroundService extends LifecycleService {
                     String jsonStr = EfdNativeBridge.getTelemetryJson();
                     if (jsonStr != null && jsonStr.length() > 0 && !jsonStr.startsWith("{\"error\"")) {
                         JSONObject obj = new JSONObject(jsonStr);
-                        int level = obj.optInt("fatigueLevel", 0);
+                        int lastAlertLevel = obj.optInt("lastAlertLevel", 0);
 
-                        // 僅在「過度疲勞 (level == 2 / SevereWarning)」時觸發警告提醒通知，平時靜默不騷擾
-                        if (level == 2) {
-                            if (!mHasAlerted) {
-                                mHasAlerted = true;
-                                Log.w(TAG, "偵測到過度疲勞 (SevereWarning)，調出疲勞警告提醒！");
-                                mHudManager.triggerSevereFatigueAlert(
-                                        "🚨 EFD 重度疲勞警告提醒",
-                                        "你的眼睛處於過度疲勞狀態，請立即閉眼休息 5 分鐘！"
-                                );
-                            }
-                        } else {
-                            mHasAlerted = false; // 恢復正常時重置，以便下次過度疲勞時能再次觸發提醒
+                        // 僅當 C++ 狀態機發射單次警報脈衝 (lastAlertLevel == 2) 時調出提醒，20 分鐘冷卻期內絕對靜默
+                        if (lastAlertLevel == 2) {
+                            Log.w(TAG, "C++ 狀態機發射重度疲勞警報脈衝，調出疲勞警告提醒！");
+                            mHudManager.triggerSevereFatigueAlert(
+                                    "🚨 EFD 重度疲勞警告提醒",
+                                    "你的眼睛處於過度疲勞狀態，請立即閉眼休息 5 分鐘！"
+                            );
                         }
 
-                        // 每晚 21:00 (9 PM) 自動上傳當日眼動資料至 Google 試算表，失敗會自動重試直到 200 OK 成功為止
-                        android.content.SharedPreferences prefs = getSharedPreferences("efd_sync_prefs", MODE_PRIVATE);
-                        int lastSyncedDate = prefs.getInt("last_success_sync_date", 0);
-
-                        java.util.Calendar cal = java.util.Calendar.getInstance();
-                        int hour = cal.get(java.util.Calendar.HOUR_OF_DAY);
-                        int todayDateInt = cal.get(java.util.Calendar.YEAR) * 10000 +
-                                (cal.get(java.util.Calendar.MONTH) + 1) * 100 +
-                                cal.get(java.util.Calendar.DAY_OF_MONTH);
-
-                        if (hour >= 21 && lastSyncedDate != todayDateInt && !mIsSyncInProgress) {
-                            mIsSyncInProgress = true;
-                            Log.i(TAG, "21:00 定時觸發：開始自動上傳當日眼動資料至 Google 試算表...");
-                            EfdHttpSyncBridge.uploadEyelidDataAsync("SUBJ-ANDROID-001", 1, "Daily_2100_Evening_Sync", (success, responseMessage) -> {
-                                mIsSyncInProgress = false;
-                                if (success) {
-                                    prefs.edit().putInt("last_success_sync_date", todayDateInt).apply();
-                                    Log.i(TAG, "21:00 自動上傳 Google 試算表成功落盤註記！");
-                                } else {
-                                    Log.w(TAG, "21:00 上傳 Google 試算表失敗，稍後重試: " + responseMessage);
-                                }
-                            });
-                        }
+                        // 每日 21:00 (9 PM) 檢查是否需要同步當日資料 (透過 EfdSyncManager 鎖定單次同步)
+                        EfdSyncManager.checkAndPerformDailySync(EfdForegroundService.this, "EfdForegroundService");
                     }
                 } catch (Throwable t) {
                     // ignore
@@ -120,6 +141,9 @@ public class EfdForegroundService extends LifecycleService {
     public void onDestroy() {
         super.onDestroy();
         Log.i(TAG, "EfdForegroundService onDestroy");
+        if (sInstance == this) {
+            sInstance = null;
+        }
         if (mHandler != null && mTelemetryRunnable != null) {
             mHandler.removeCallbacks(mTelemetryRunnable);
         }

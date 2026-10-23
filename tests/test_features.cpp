@@ -5,6 +5,10 @@
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <tuple>
 
 #include "efd/types.hpp"
 #include "analysis/FeatureExtractor.hpp"
@@ -107,56 +111,364 @@ void testEmdDecomposition() {
     std::cout << " [PASS] (成功分解出 " << result.imfs.size() << " 個 IMF)\n";
 }
 
+// 以 1 秒步進模擬 seconds 秒的輸入，回傳期間觸發的警報次數
+struct FsmInput { bool present; float perclos; float blink; float ci; };
+static const FsmInput kRelaxedInput { true, 0.02f, 16.0f, 4.5f };  // 約 4 分
+static const FsmInput kMidInput     { true, 0.10f, 6.0f, 1.5f };   // 約 47 分 (注意區間)
+static const FsmInput kSevereInput  { true, 0.30f, 4.0f, 1.0f };   // 約 84 分
+static const FsmInput kAwayInput    { false, 0.0f, 0.0f, 0.0f };
+
+static int feedFsm(efd::FatigueStateMachine& fsm, const FsmInput& in, int seconds, int& alertCount, efd::SystemState* last = nullptr) {
+    int before = alertCount;
+    efd::SystemState s;
+    for (int i = 0; i < seconds; ++i) {
+        s = fsm.update(in.present, in.perclos, in.blink, in.ci, 1.0f);
+    }
+    if (last) *last = s;
+    return alertCount - before;
+}
+
 void testFatigueStateMachineFullCycle() {
-    std::cout << "[TEST] 5. 測試 20/5/5 智能冷卻、快篩與離座重置狀態機...";
+    std::cout << "[TEST] 5. 測試 20/5/5 狀態機 (持續 10 秒觸發、20 分冷卻、5 分快篩、離座清零)...";
     efd::FatigueStateMachine fsm(1200, 300, 300);
 
-    bool alertTriggered = false;
-    efd::FatigueLevel lastAlertLevel = efd::FatigueLevel::Relaxed;
+    int alertCount = 0;
     std::string lastAlertMsg;
     fsm.setAlertCallback([&](efd::FatigueLevel level, float, const std::string& msg) {
-        alertTriggered = true;
-        lastAlertLevel = level;
+        assert(level == efd::FatigueLevel::SevereWarning);
+        alertCount++;
         lastAlertMsg = msg;
     });
+    efd::SystemState s;
 
-    // 1. 正常清醒狀態
-    efd::SystemState s1 = fsm.update(true, 0.02f, 16.0f, 4.5f, 1.0f);
-    assert(s1.fatigueLevel == efd::FatigueLevel::Relaxed);
-    assert(s1.cooldownState == efd::CooldownState::NormalTracking);
+    // 1. 正常清醒 60 秒：不提醒
+    assert(feedFsm(fsm, kRelaxedInput, 60, alertCount, &s) == 0);
+    assert(s.fatigueLevel == efd::FatigueLevel::Relaxed);
+    assert(s.cooldownState == efd::CooldownState::NormalTracking);
 
-    // 2. 觸發嚴重疲勞警報 (PERCLOS 升高，CI 降低) -> 進入 20 分鐘絕對靜默冷卻期
-    alertTriggered = false;
-    efd::SystemState s2 = fsm.update(true, 0.30f, 6.0f, 1.2f, 1.0f);
-    assert(s2.fatigueLevel == efd::FatigueLevel::SevereWarning);
-    assert(s2.cooldownState == efd::CooldownState::InCooldown);
-    assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::SevereWarning);
+    // 2. 短暫高分 (例如揉眼 5 秒) 不應觸發
+    assert(feedFsm(fsm, kSevereInput, 5, alertCount) == 0);
+    assert(feedFsm(fsm, kRelaxedInput, 60, alertCount) == 0);
+
+    // 3. 持續高分：平滑分數需爬升到 65 並維持 10 秒才提醒 (不會在第 1 秒就跳出)
+    assert(feedFsm(fsm, kSevereInput, 60, alertCount) == 0);
+    assert(feedFsm(fsm, kSevereInput, 90, alertCount, &s) == 1);
     assert(lastAlertMsg == "你的眼睛處於疲勞狀態，請適當休息");
+    assert(s.cooldownState == efd::CooldownState::InCooldown);
 
-    // 3. 20 分鐘冷卻期間內 (如第 10 分鐘)，絕對靜默不彈窗
-    alertTriggered = false;
-    efd::SystemState s3 = fsm.update(true, 0.35f, 5.0f, 1.0f, 600.0f);
-    assert(s3.cooldownState == efd::CooldownState::InCooldown);
-    assert(!alertTriggered); // 絕對靜默，不重複彈窗
+    // 4. 20 分鐘冷卻內即使持續疲勞也完全靜默
+    assert(feedFsm(fsm, kSevereInput, 1000, alertCount, &s) == 0);
+    assert(s.cooldownState == efd::CooldownState::InCooldown);
+    assert(s.fatigueLevel == efd::FatigueLevel::SevereWarning); // 等級仍反映真實狀態
 
-    // 4. 20 分鐘冷卻期滿 (再經過 601 秒)，自動切換至 5 分鐘快篩期 (Fast Screening)
-    efd::SystemState s4 = fsm.update(true, 0.20f, 14.0f, 3.5f, 601.0f);
-    assert(s4.cooldownState == efd::CooldownState::FastScreening);
+    // 5. 冷卻期滿後進入快篩，快篩要滿 5 分鐘才判定
+    int remaining = s.cooldownRemainingSeconds;
+    assert(feedFsm(fsm, kSevereInput, remaining, alertCount, &s) == 0);
+    assert(s.cooldownState == efd::CooldownState::FastScreening);
+    assert(feedFsm(fsm, kSevereInput, 298, alertCount, &s) == 0);
+    assert(s.cooldownState == efd::CooldownState::FastScreening);
 
-    // 5. 快篩期內若偵測到仍為嚴重疲勞 -> 發送升級提醒並立刻重置 20 分鐘冷卻
-    alertTriggered = false;
-    efd::SystemState s5 = fsm.update(true, 0.35f, 4.0f, 1.0f, 1.0f);
-    assert(alertTriggered && lastAlertLevel == efd::FatigueLevel::SevereWarning);
-    assert(s5.cooldownState == efd::CooldownState::InCooldown);
-    assert(s5.cooldownRemainingSeconds >= 1199);
+    // 6. 快篩窗口平均 >= 65：再提醒一次並重新冷卻 20 分鐘
+    assert(feedFsm(fsm, kSevereInput, 2, alertCount, &s) == 1);
+    assert(s.cooldownState == efd::CooldownState::InCooldown);
+    assert(s.cooldownRemainingSeconds >= 1199);
 
-    // 6. 離座達 5 分鐘 (300 秒)，自動跳回 20 分鐘冷卻保護
-    efd::SystemState s6 = fsm.update(false, 0.0f, 0.0f, 0.0f, 305.0f);
-    assert(s6.fatigueLevel == efd::FatigueLevel::UserAway);
-    assert(s6.cooldownState == efd::CooldownState::InCooldown);
-    assert(s6.cooldownRemainingSeconds >= 1199);
+    // 7. 離座未滿 5 分鐘：冷卻照常倒數，不清零
+    assert(feedFsm(fsm, kAwayInput, 200, alertCount, &s) == 0);
+    assert(s.fatigueLevel == efd::FatigueLevel::UserAway);
+    assert(s.cooldownState == efd::CooldownState::InCooldown);
+    assert(s.cooldownRemainingSeconds <= 1001 && s.cooldownRemainingSeconds >= 999);
 
-    std::cout << " [PASS] (涵蓋 20分鐘絕對靜默 -> 5分鐘快篩總評 -> 嚴重疲勞重鎖20分 -> 離座5分跳回20分冷卻)\n";
+    // 8. 回座後再離座滿 5 分鐘：視為已休息，清除冷卻與平滑分數
+    feedFsm(fsm, kRelaxedInput, 1, alertCount);
+    assert(feedFsm(fsm, kAwayInput, 300, alertCount, &s) == 0);
+    assert(s.cooldownState == efd::CooldownState::NormalTracking);
+    assert(s.smoothedFatigueScore == 0.0f);
+
+    // 9. 快篩平均落在 45~65：不提醒，繼續下一輪快篩；之後 5 分鐘平均 < 45 才回到常態
+    efd::FatigueStateMachine fsm2(1200, 300, 300);
+    int alert2 = 0;
+    fsm2.setAlertCallback([&](efd::FatigueLevel, float, const std::string&) { alert2++; });
+    assert(feedFsm(fsm2, kSevereInput, 200, alert2, &s) == 1);
+    // 剛好餵到冷卻結束，讓快篩窗口從頭開始
+    assert(feedFsm(fsm2, kRelaxedInput, s.cooldownRemainingSeconds, alert2, &s) == 0);
+    assert(s.cooldownState == efd::CooldownState::FastScreening);
+    assert(feedFsm(fsm2, kMidInput, 300, alert2, &s) == 0);
+    assert(s.cooldownState == efd::CooldownState::FastScreening);
+    assert(feedFsm(fsm2, kRelaxedInput, 100, alert2, &s) == 0);
+    assert(s.cooldownState == efd::CooldownState::FastScreening); // 窗口未滿不提前判定
+    assert(feedFsm(fsm2, kRelaxedInput, 200, alert2, &s) == 0);
+    assert(s.cooldownState == efd::CooldownState::NormalTracking);
+
+    std::cout << " [PASS] (共 " << alertCount << " 次提醒：持續觸發 1 次 + 快篩升級 1 次)\n";
+}
+
+void testFatigueStateMachinePersistence() {
+    std::cout << "[TEST] 13. 測試冷卻狀態持久化 (App 重啟延續冷卻、關閉滿 5 分鐘清零)...";
+    efd::FatigueStateMachine fsm(1200, 300, 300);
+    int alerts = 0;
+    fsm.setAlertCallback([&](efd::FatigueLevel, float, const std::string&) { alerts++; });
+    efd::SystemState s;
+    feedFsm(fsm, kSevereInput, 200, alerts, &s);
+    assert(alerts == 1 && s.cooldownState == efd::CooldownState::InCooldown);
+    int remainingBefore = s.cooldownRemainingSeconds;
+
+    const int64_t savedAt = 1800000000;
+    std::string data = fsm.serialize(savedAt);
+
+    // 關閉 100 秒後重啟：冷卻延續並扣掉關閉期間
+    efd::FatigueStateMachine restored(1200, 300, 300);
+    assert(restored.restore(data, savedAt + 100));
+    efd::SystemState r = restored.getState();
+    assert(r.cooldownState == efd::CooldownState::InCooldown);
+    assert(std::abs(r.cooldownRemainingSeconds - (remainingBefore - 100)) <= 1);
+
+    // 關閉 400 秒 (>= 5 分鐘) 後重啟：比照離座清零
+    efd::FatigueStateMachine restoredLate(1200, 300, 300);
+    assert(restoredLate.restore(data, savedAt + 400));
+    assert(restoredLate.getState().cooldownState == efd::CooldownState::NormalTracking);
+
+    // 損毀資料不應崩潰
+    efd::FatigueStateMachine broken(1200, 300, 300);
+    assert(!broken.restore("savedAt=abc\nstate=9\n", savedAt));
+    std::cout << " [PASS] (重啟後剩餘 " << r.cooldownRemainingSeconds << " 秒)\n";
+}
+
+void testTimeBasedFeatureWindow() {
+    std::cout << "[TEST] 14. 測試 60 秒時間窗口 PERCLOS 與眨眼率 (不同幀率結果一致)...";
+    // 每 4 秒眨眼一次 (閉眼 200ms) = 15 次/分，分別以 30 FPS 與 10 FPS 模擬 90 秒
+    auto simulate = [](float fps) {
+        efd::FeatureExtractor fx(60.0f, 0.20f);
+        efd::EyeMetrics m;
+        const int total = static_cast<int>(90.0f * fps);
+        const float stepMs = 1000.0f / fps;
+        for (int i = 0; i < total; ++i) {
+            float tMs = i * stepMs;
+            bool closed = std::fmod(tMs, 4000.0f) < 200.0f;
+            float ear = closed ? 0.10f : 0.30f;
+            m = fx.processEar(ear, ear, fps);
+        }
+        assert(std::fabs(fx.getWindowDurationSeconds() - 60.0f) < 1.0f);
+        return m;
+    };
+    efd::EyeMetrics m30 = simulate(30.0f);
+    efd::EyeMetrics m10 = simulate(10.0f);
+    assert(std::fabs(m30.perclos - 0.05f) < 0.01f);
+    assert(std::fabs(m10.perclos - 0.05f) < 0.01f);
+    assert(std::fabs(m30.blinkRatePerMin - 15.0f) <= 1.5f);
+    assert(std::fabs(m10.blinkRatePerMin - 15.0f) <= 1.5f);
+
+    // 窗口未滿 30 秒時不輸出眨眼率 (不計分)
+    efd::FeatureExtractor shortFx(60.0f, 0.20f);
+    efd::EyeMetrics early;
+    for (int i = 0; i < 20 * 30; ++i) early = shortFx.processEar(0.30f, 0.30f, 30.0f);
+    assert(early.blinkRatePerMin == 0.0f);
+
+    // 一次 1 秒的揉眼在 60 秒窗口內只佔約 1.7%
+    efd::FeatureExtractor rubFx(60.0f, 0.20f);
+    efd::EyeMetrics rub;
+    for (int i = 0; i < 60 * 30; ++i) {
+        float ear = (i >= 900 && i < 930) ? 0.10f : 0.30f;
+        rub = rubFx.processEar(ear, ear, 30.0f);
+    }
+    assert(rub.perclos < 0.02f);
+
+    std::vector<float> resampled = rubFx.getEarHistoryResampled(10.0f);
+    assert(resampled.size() >= 595 && resampled.size() <= 601);
+    std::cout << " [PASS] (30FPS: PERCLOS=" << m30.perclos << " 眨眼=" << m30.blinkRatePerMin
+              << "/分; 10FPS: PERCLOS=" << m10.perclos << " 眨眼=" << m10.blinkRatePerMin << "/分)\n";
+}
+
+void testCalibrationBoundsAndRestore() {
+    std::cout << "[TEST] 15. 測試校準閾值不被自動調整覆蓋、校準結果可還原...";
+    efd::AdaptiveBaseline baseline(0.31f, 0.7f, 1.5f, 300);
+    std::vector<float> awake(90);
+    for (size_t i = 0; i < awake.size(); ++i) awake[i] = 0.28f + 0.004f * std::sin(static_cast<float>(i));
+    baseline.calibrate(awake);
+    efd::CalibrationData cal = baseline.getCalibrationData();
+    assert(cal.isCalibrated);
+    // 閾值落在基準的 65%~85%
+    assert(cal.thresholdEar >= cal.baselineEar * 0.649f && cal.thresholdEar <= cal.baselineEar * 0.851f);
+
+    // 長時間餵入偏高的睜眼樣本，閾值最多漂移 15%
+    for (int i = 0; i < 600; ++i) baseline.update(0.40f, false);
+    float drifted = baseline.getCurrentThreshold();
+    assert(drifted <= cal.thresholdEar * 1.151f);
+
+    efd::AdaptiveBaseline restored(0.31f, 0.7f, 1.5f, 300);
+    restored.restoreCalibration(cal);
+    assert(restored.getCalibrationData().isCalibrated);
+    assert(std::fabs(restored.getCurrentThreshold() - cal.thresholdEar) < 1e-6f);
+    std::cout << " [PASS] (校準閾值=" << cal.thresholdEar << ", 漂移後=" << drifted << ")\n";
+}
+
+static std::string makeTestDir(const std::string& name) {
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / name;
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    return dir.string();
+}
+
+void testEngineCalibrationAndDataDirectory() {
+    std::cout << "[TEST] 16. 測試資料目錄持久化與兩段式校準 (無臉時校準失敗、成功後重啟免重測)...";
+    std::string dir = makeTestDir("efd_test_engine_calib");
+    std::string uuid;
+    {
+        efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+        engine.setAutoNightlySyncEnabled(false);
+        engine.setDataDirectory(dir);
+        uuid = engine.getStudyTracker().getSubjectUuid();
+        assert(!uuid.empty());
+        assert(!engine.hasSavedCalibration());
+
+        engine.getCameraService().setForceSynthetic(true); // 不使用開發機的實體鏡頭
+        engine.getCameraService().startSynthetic();
+        assert(engine.start());
+
+        // 模擬使用者不在鏡頭前：校準必須失敗，不得寫入基準
+        engine.setSimulatedEyeOpenness(-1.0f);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1300)); // 超過 1 秒離座判定
+        engine.beginCalibration();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+        assert(!engine.finishCalibration());
+        assert(!engine.hasSavedCalibration());
+
+        // 使用者在鏡頭前：校準成功並保存
+        engine.setSimulatedEyeOpenness(1.0f);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+        engine.beginCalibration();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+        assert(engine.finishCalibration());
+        assert(engine.hasSavedCalibration());
+        engine.stop();
+    }
+    assert(std::filesystem::exists(std::filesystem::path(dir) / "efd_study_config.json"));
+    assert(std::filesystem::exists(std::filesystem::path(dir) / "efd_fsm_state.txt"));
+
+    // 重新開啟：同一位受試者、沿用校準
+    {
+        efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+        engine.setAutoNightlySyncEnabled(false);
+        engine.setDataDirectory(dir);
+        assert(engine.getStudyTracker().getSubjectUuid() == uuid);
+        assert(engine.hasSavedCalibration());
+        assert(engine.getAdaptiveBaseline().getCalibrationData().isCalibrated);
+    }
+    std::filesystem::remove_all(dir);
+    std::cout << " [PASS] (受試者 " << uuid << " 重啟後資料與校準皆保留)\n";
+}
+
+void testCorruptedConfigDoesNotCrash() {
+    std::cout << "[TEST] 17. 測試設定檔與資料庫損毀時不閃退...";
+    std::string dir = makeTestDir("efd_test_corrupt");
+    std::string cfg = (std::filesystem::path(dir) / "cfg.json").string();
+    {
+        std::ofstream out(cfg);
+        out << "{\n  \"subjectUuid\": \"SUBJ-KEEP\",\n  \"currentDay\": abc,\n  \"status\": 99,\n"
+               "  \"studyStartTimestamp\": ,\n  \"lastSyncedDate\": 2026x\n}\n";
+    }
+    efd::StudyWorkflowTracker tracker(cfg);
+    assert(tracker.initialize());
+    assert(tracker.getSubjectUuid() == "SUBJ-KEEP");
+    assert(tracker.getStatus() == efd::StudyStatus::ActiveMonitoring);
+
+    std::string db = (std::filesystem::path(dir) / "db.dat").string();
+    {
+        std::ofstream out(db);
+        out << "TimestampMs,SubjectUUID,EAR,PERCLOS,ComplexityIndex,FatigueScore,AlertLevel\n"
+            << "1700000000000,S,0.3,0.01,4.5,5,0\n"
+            << "17000000000\n"          // 斷電留下的半行
+            << "garbage,line,x,y\n";
+    }
+    efd::DatabaseService dbs(db);
+    assert(dbs.initialize());
+    assert(dbs.getRecordCount() == 1);
+    assert(dbs.getOldestRecordTimestampMs() == 1700000000000LL);
+    std::filesystem::remove_all(dir);
+    std::cout << " [PASS]\n";
+}
+
+static int dateIntDaysAgo(int days) {
+    std::time_t t = std::time(nullptr) - static_cast<std::time_t>(days) * 86400;
+    std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv, &t);
+#else
+    localtime_r(&t, &tmv);
+#endif
+    return (tmv.tm_year + 1900) * 10000 + (tmv.tm_mon + 1) * 100 + tmv.tm_mday;
+}
+
+void testNightlySyncMarksOnlyOnSuccess() {
+    std::cout << "[TEST] 18. 測試補傳：上傳失敗不標記已同步、成功才標記...";
+    const int64_t twoDaysAgoMs = (static_cast<int64_t>(std::time(nullptr)) - 2 * 86400) * 1000;
+
+    auto runCase = [&](const std::string& dirName, bool uploadOk) {
+        std::string dir = makeTestDir(dirName);
+        efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+        engine.setDataDirectory(dir);
+        std::atomic<int> uploads{0};
+        engine.getSyncWorker().setUploader([&](const std::string&, const std::string&, std::string& resp) {
+            uploads++;
+            resp = uploadOk ? "{\"status\":\"success\"}" : "GAS_ERR: offline";
+            return uploadOk;
+        });
+        efd::FatigueRecord r;
+        r.timestampMs = twoDaysAgoMs; // 前天的資料尚未上傳
+        r.subjectUuid = engine.getStudyTracker().getSubjectUuid();
+        engine.getDatabaseService().logRecord(r);
+        assert(engine.getStudyTracker().getLastSyncedDate() == 0);
+
+        assert(engine.checkAndTriggerNightlySync());
+        for (int i = 0; i < 300 && engine.getSyncWorker().isSyncing(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        int lastSynced = engine.getStudyTracker().getLastSyncedDate();
+        bool retriggered = engine.checkAndTriggerNightlySync();
+        std::filesystem::remove_all(dir);
+        return std::make_tuple(uploads.load(), lastSynced, retriggered);
+    };
+
+    auto [failUploads, failMarked, failRetry] = runCase("efd_test_sync_fail", false);
+    assert(failUploads == 1);
+    assert(failMarked == 0);   // 失敗不標記
+    assert(!failRetry);        // 10 分鐘內不重複打伺服器
+
+    auto [okUploads, okMarked, okRetry] = runCase("efd_test_sync_ok", true);
+    assert(okUploads == 1);
+    assert(okMarked >= dateIntDaysAgo(1)); // 補傳標記昨天 (21:00 後則為今天)
+    assert(!okRetry);
+    std::cout << " [PASS] (失敗: 標記=" << failMarked << "; 成功: 標記=" << okMarked << ")\n";
+}
+
+void testPresenceRejectsUniformSkinColoredObject() {
+    std::cout << "[TEST] 19. 測試膚色但無眼睛特徵的物體 (牆面/木頭) 不被判定為人臉...";
+    efd::FaceLandmarker landmarker;
+    landmarker.initialize();
+    const int w = 320, h = 240;
+    std::vector<uint8_t> pixels(static_cast<size_t>(w * h * 3));
+    // 灰藍色背景
+    for (size_t i = 0; i < pixels.size(); i += 3) {
+        pixels[i] = 90; pixels[i + 1] = 100; pixels[i + 2] = 120;
+    }
+    // 中央一塊帶輕微紋理的膚色物體 (輪廓像頭部，例如木頭椅背或紙箱，但沒有眼睛暗點)
+    for (int y = 60; y < 200; ++y) {
+        for (int x = 110; x < 210; ++x) {
+            size_t idx = static_cast<size_t>((y * w + x) * 3);
+            int n = ((x * 7 + y * 13) % 9) - 4;
+            pixels[idx] = static_cast<uint8_t>(205 + n);
+            pixels[idx + 1] = static_cast<uint8_t>(155 + n);
+            pixels[idx + 2] = static_cast<uint8_t>(125 + n);
+        }
+    }
+    bool everDetected = false;
+    for (int i = 0; i < 10; ++i) {
+        efd::LandmarkDetectionResult r = landmarker.detect(pixels.data(), w, h, efd::PixelFormat::RGB888, false);
+        everDetected = everDetected || r.hasFace;
+    }
+    assert(!everDetected);
+    std::cout << " [PASS] (原因: " << landmarker.getLatestPresenceDiagnostic().unconfirmedReason << ")\n";
 }
 
 void testPlatformLifecycleAdapter() {
@@ -189,6 +501,10 @@ void testPlatformLifecycleAdapter() {
 void testAsyncPipelineEngine() {
     std::cout << "[TEST] 7. 測試五執行緒非同步管線引擎 (AsyncPipelineEngine)...";
     efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+    engine.setAutoNightlySyncEnabled(false); // 測試不可觸發真實雲端上傳
+    std::filesystem::path pipelineDir = std::filesystem::temp_directory_path() / "efd_test_pipeline";
+    std::filesystem::create_directories(pipelineDir);
+    engine.setDataDirectory(pipelineDir.string());
 
     std::atomic<int> telemetryCount{0};
     engine.setTelemetryCallback([&](const efd::EngineTelemetry& t) {
@@ -198,6 +514,7 @@ void testAsyncPipelineEngine() {
     });
 
     // 啟動五執行緒管線 (在單元測試環境中使用 Synthetic 測試相機)
+    engine.getCameraService().setForceSynthetic(true); // 不使用開發機的實體鏡頭
     engine.getCameraService().startSynthetic();
     assert(engine.start());
     assert(engine.isRunning());
@@ -365,6 +682,13 @@ void testNetworkSyncWorker() {
     efd::NetworkSyncWorker worker(db, "https://api.efd-research.org/v1/sync");
     assert(worker.getStatus() == efd::SyncStatus::Idle);
     assert(worker.getEndpointUrl() == "https://api.efd-research.org/v1/sync");
+    // 單元測試不連真實網路：以假上傳函式模擬伺服器成功回應
+    worker.setUploader([](const std::string&, const std::string& body, std::string& resp) {
+        assert(body.find("SUBJ-SYNC-101") != std::string::npos);
+        resp = "{\"status\":\"success\"}";
+        return true;
+    });
+    worker.setDumpPath((std::filesystem::temp_directory_path() / "efd_test_sync_dump.json").string());
 
     std::atomic<bool> callbackFired{false};
     efd::SyncResult receivedResult;
@@ -485,7 +809,14 @@ int main() {
     testStudyWorkflowTrackerAndGatekeeper();
     testNetworkSyncWorker();
     testFloatingIndicatorAndSystemTray();
+    testFatigueStateMachinePersistence();
+    testTimeBasedFeatureWindow();
+    testCalibrationBoundsAndRestore();
+    testEngineCalibrationAndDataDirectory();
+    testCorruptedConfigDoesNotCrash();
+    testNightlySyncMarksOnlyOnSuccess();
+    testPresenceRejectsUniformSkinColoredObject();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 12 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 19 項測試順利通過！\n";
     return 0;
 }

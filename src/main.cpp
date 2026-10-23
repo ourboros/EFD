@@ -79,7 +79,7 @@ int runCliSimulation() {
             const char* stateStr = "Normal";
             if (telemetry.systemState.cooldownState == efd::CooldownState::InCooldown) stateStr = "Cooldown";
             else if (telemetry.systemState.cooldownState == efd::CooldownState::FastScreening) stateStr = "Screening";
-            else if (telemetry.systemState.cooldownState == efd::CooldownState::AwayPaused) stateStr = "Away";
+            if (telemetry.systemState.fatigueLevel == efd::FatigueLevel::UserAway) stateStr = "Away";
 
             std::cout << std::setw(6)  << telemetry.totalFramesProcessed
                       << std::setw(10) << std::fixed << std::setprecision(3) << telemetry.eyeMetrics.earAvg
@@ -92,12 +92,7 @@ int runCliSimulation() {
         }
     });
 
-    std::cout << "[Step 1] 進行動態自適應基準校準 (Baseline Calibration)...\n";
-    engine.calibrate(3.0f);
-    std::cout << " -> 校準完成: 初始判定閾值 = " 
-              << engine.getAdaptiveBaseline().getCurrentThreshold() << "\n\n";
-
-    std::cout << "[Step 2] 啟動非同步多執行緒管線 (Thread 1: Capture, Thread 2: Inference, Thread 3: Signal/State)...\n";
+    std::cout << "[Step 1] 啟動非同步多執行緒管線 (Thread 1: Capture, Thread 2: Inference, Thread 3: Signal/State)...\n";
     std::cout << " -> 平台生命週期適配: " << engine.getLifecycleAdapter().getStatusSummary() << "\n";
     std::cout << std::string(75, '-') << "\n";
     std::cout << std::setw(6)  << "Frame"
@@ -111,6 +106,15 @@ int runCliSimulation() {
     std::cout << std::string(75, '-') << "\n";
 
     engine.start();
+
+    // 校準需在管線運作中收集真實樣本 (兩段式：開始收集 -> 等待 -> 驗證有效幀)
+    std::cout << "[Step 2] 進行動態自適應基準校準 (Baseline Calibration)...\n";
+    engine.setSimulatedEyeOpenness(1.0f);
+    engine.beginCalibration();
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    bool calibrated = engine.finishCalibration();
+    std::cout << (calibrated ? " -> 校準完成: 初始判定閾值 = " : " -> 校準失敗 (有效幀不足)，沿用預設閾值 = ")
+              << engine.getAdaptiveBaseline().getCurrentThreshold() << "\n\n";
 
     // 階段 A: 正常清醒睜眼
     engine.setSimulatedEyeOpenness(1.0f);

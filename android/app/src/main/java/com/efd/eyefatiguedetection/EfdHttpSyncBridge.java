@@ -23,18 +23,21 @@ public class EfdHttpSyncBridge {
         void onSyncResult(boolean success, String responseMessage);
     }
 
-    public static void uploadEyelidDataAsync(String subjectUuid, int studyDay, String questionnaireData, SyncCallback callback) {
+    public static void uploadFullPayloadAsync(String jsonPayload, SyncCallback callback) {
         sExecutor.execute(() -> {
             try {
-                JSONObject payload = new JSONObject();
-                payload.put("subjectUuid", subjectUuid);
-                payload.put("studyDay", studyDay);
-                payload.put("syncType", "Daily_Evening_Data_Sync");
-                payload.put("timestampMs", System.currentTimeMillis());
-                payload.put("questionnaireData", questionnaireData);
+                String jsonStr = jsonPayload;
+                if (jsonStr == null || jsonStr.trim().isEmpty()) {
+                    jsonStr = EfdNativeBridge.getCloudSyncPayloadJson();
+                }
 
-                String jsonStr = payload.toString();
-                Log.i(TAG, "正在準備上傳眼動資料至 Google 試算表: " + jsonStr);
+                if (jsonStr == null || jsonStr.trim().isEmpty()) {
+                    Log.w(TAG, "無可用的同步 Payload JSON，取消上傳");
+                    if (callback != null) callback.onSyncResult(false, "Empty JSON");
+                    return;
+                }
+
+                Log.i(TAG, "正在發送全欄位 Google 試算表 JSON 封裝:\n" + jsonStr);
 
                 URL url = new URL(GOOGLE_SHEETS_ENDPOINT);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -83,5 +86,9 @@ public class EfdHttpSyncBridge {
                 }
             }
         });
+    }
+
+    public static void uploadEyelidDataAsync(String subjectUuid, int studyDay, String questionnaireData, SyncCallback callback) {
+        uploadFullPayloadAsync(null, callback);
     }
 }

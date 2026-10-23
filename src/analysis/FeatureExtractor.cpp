@@ -12,10 +12,14 @@ namespace {
         float dz = a.z - b.z;
         return std::sqrt(dx * dx + dy * dy + dz * dz);
     }
+
+    inline bool isBlinkDuration(float ms) {
+        return ms >= FeatureExtractor::kMinBlinkMs && ms <= FeatureExtractor::kMaxBlinkMs;
+    }
 }
 
-FeatureExtractor::FeatureExtractor(size_t windowSize, float defaultThreshold)
-    : m_threshold(defaultThreshold), m_maxHistorySize(windowSize) {
+FeatureExtractor::FeatureExtractor(float windowSeconds, float defaultThreshold)
+    : m_threshold(defaultThreshold), m_windowMs(std::max(1.0f, windowSeconds) * 1000.0f) {
 }
 
 float FeatureExtractor::calculateSingleEar(const std::array<Point3D, 6>& p) {
@@ -55,73 +59,51 @@ EyeMetrics FeatureExtractor::processFrame(const std::vector<Point3D>& landmarks,
 EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps) {
     float earAvg = (earLeft + earRight) * 0.5f;
     bool isClosed = (earAvg < m_threshold);
+    float sampleMs = (fps > 0.0f) ? (1000.0f / fps) : 33.33f;
 
-    // 更新歷史序列
-    m_earHistory.push_back(earAvg);
-    if (m_earHistory.size() > m_maxHistorySize) {
-        m_earHistory.pop_front();
+    // 更新時間窗口
+    m_samples.push_back({earAvg, isClosed, sampleMs});
+    m_windowTotalMs += sampleMs;
+    if (isClosed) m_windowClosedMs += sampleMs;
+    while (m_samples.size() > 1 && m_windowTotalMs - m_samples.front().durationMs >= m_windowMs) {
+        const Sample& old = m_samples.front();
+        m_windowTotalMs -= old.durationMs;
+        if (old.closed) m_windowClosedMs -= old.durationMs;
+        m_samples.pop_front();
     }
 
-    m_closedHistory.push_back(isClosed);
-    if (m_closedHistory.size() > m_maxHistorySize) {
-        m_closedHistory.pop_front();
-    }
-
-    // 眨眼檢測狀態機
-    float frameDurationMs = (fps > 0.0f) ? (1000.0f / fps) : 33.33f;
+    // 眨眼檢測狀態機 (以閉眼持續時間判斷)
     if (isClosed) {
-        m_currentClosedFrames++;
-    } else {
-        if (m_wasClosed) {
-            // 一次眨眼完成 (需超過 1 幀以避免雜訊，通常 2~15 幀)
-            if (m_currentClosedFrames >= 2 && m_currentClosedFrames <= 25) {
-                m_totalBlinks++;
-                m_totalBlinkDurationMs += (m_currentClosedFrames * frameDurationMs);
-            }
-            m_currentClosedFrames = 0;
+        m_currentClosedMs += sampleMs;
+    } else if (m_wasClosed) {
+        if (isBlinkDuration(m_currentClosedMs)) {
+            m_totalBlinks++;
+            m_totalBlinkDurationMs += m_currentClosedMs;
         }
+        m_currentClosedMs = 0.0f;
     }
     m_wasClosed = isClosed;
 
-    // 計算 PERCLOS (閉眼幀數佔窗口比例)
-    float perclos = 0.0f;
-    if (!m_closedHistory.empty()) {
-        int closedCount = 0;
-        for (bool c : m_closedHistory) {
-            if (c) closedCount++;
-        }
-        perclos = static_cast<float>(closedCount) / static_cast<float>(m_closedHistory.size());
-    }
+    float perclos = (m_windowTotalMs > 0.0f)
+        ? std::clamp(m_windowClosedMs / m_windowTotalMs, 0.0f, 1.0f) : 0.0f;
 
-    // [修正 D & 生理學約束] 計算眨眼率：
-    // 使用滑動窗口內的完整眨眼段落計數 (要求閉眼持續 2~25 幀，約 67ms~800ms，符合眨眼生理學特徵)
+    // 窗口內完整眨眼段落計數
     int windowBlinkCount = 0;
-    {
-        int segLen = 0;
-        for (bool c : m_closedHistory) {
-            if (c) {
-                segLen++;
-            } else {
-                if (segLen >= 2 && segLen <= 25) {
-                    windowBlinkCount++;
-                }
-                segLen = 0;
+    float segMs = 0.0f;
+    for (const Sample& s : m_samples) {
+        if (s.closed) {
+            segMs += s.durationMs;
+        } else {
+            if (isBlinkDuration(segMs)) {
+                windowBlinkCount++;
             }
+            segMs = 0.0f;
         }
     }
-    float windowDurationSec = (m_closedHistory.size() > 0 && fps > 0.0f)
-                                  ? (static_cast<float>(m_closedHistory.size()) / fps)
-                                  : 1.0f;
-    // 只有窗口累積到 >= 5 秒才開始計算，避免初始短窗口產生誇大的眨眼率
-    // 同時加入生理學合理性上限 (正常人類最大眨眼頻率不超過 60 次/分)
-    float rawRate = (windowDurationSec >= 5.0f)
-                        ? ((static_cast<float>(windowBlinkCount) / windowDurationSec) * 60.0f)
-                        : 0.0f;
-    float blinkRatePerMin = std::clamp(rawRate, 0.0f, 60.0f);
-
-    float avgDurationMs = (m_totalBlinks > 0)
-                              ? (m_totalBlinkDurationMs / static_cast<float>(m_totalBlinks))
-                              : 0.0f;
+    float windowSec = m_windowTotalMs / 1000.0f;
+    float rawRate = (windowSec >= kMinBlinkRateWindowSec)
+        ? (static_cast<float>(windowBlinkCount) / windowSec) * 60.0f
+        : 0.0f;
 
     EyeMetrics metrics;
     metrics.earLeft = earLeft;
@@ -129,10 +111,10 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
     metrics.earAvg = earAvg;
     metrics.perclos = perclos;
     metrics.blinkCount = m_totalBlinks;
-    metrics.blinkRatePerMin = blinkRatePerMin;
-    metrics.avgBlinkDurationMs = avgDurationMs;
+    metrics.blinkRatePerMin = std::clamp(rawRate, 0.0f, 60.0f);
+    metrics.avgBlinkDurationMs = (m_totalBlinks > 0)
+        ? (m_totalBlinkDurationMs / static_cast<float>(m_totalBlinks)) : 0.0f;
     metrics.isEyeClosed = isClosed;
-
     return metrics;
 }
 
@@ -145,22 +127,57 @@ float FeatureExtractor::getEyeClosedThreshold() const {
 }
 
 std::vector<float> FeatureExtractor::getEarHistory() const {
-    return std::vector<float>(m_earHistory.begin(), m_earHistory.end());
+    std::vector<float> out;
+    out.reserve(m_samples.size());
+    for (const Sample& s : m_samples) out.push_back(s.ear);
+    return out;
+}
+
+std::vector<float> FeatureExtractor::getEarHistoryResampled(float targetHz) const {
+    std::vector<float> out;
+    if (m_samples.empty() || targetHz <= 0.0f) return out;
+
+    // 以固定時間桶 (1/targetHz) 取平均，桶內無樣本時沿用前一值
+    const float bucketMs = 1000.0f / targetHz;
+    float bucketEnd = bucketMs;
+    float t = 0.0f;
+    float sum = 0.0f;
+    int n = 0;
+    float last = m_samples.front().ear;
+    for (const Sample& s : m_samples) {
+        t += s.durationMs;
+        sum += s.ear;
+        n++;
+        while (t >= bucketEnd) {
+            if (n > 0) {
+                last = sum / static_cast<float>(n);
+                sum = 0.0f;
+                n = 0;
+            }
+            out.push_back(last);
+            bucketEnd += bucketMs;
+        }
+    }
+    return out;
+}
+
+float FeatureExtractor::getWindowDurationSeconds() const {
+    return m_windowTotalMs / 1000.0f;
 }
 
 void FeatureExtractor::reset() {
-    m_earHistory.clear();
-    m_closedHistory.clear();
+    m_samples.clear();
+    m_windowTotalMs = 0.0f;
+    m_windowClosedMs = 0.0f;
     m_wasClosed = false;
-    m_currentClosedFrames = 0;
+    m_currentClosedMs = 0.0f;
     m_totalBlinks = 0;
     m_totalBlinkDurationMs = 0.0f;
 }
 
 void FeatureExtractor::resetTemporaryCounters() {
     m_wasClosed = false;
-    m_currentClosedFrames = 0;
+    m_currentClosedMs = 0.0f;
 }
 
 } // namespace efd
-

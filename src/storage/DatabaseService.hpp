@@ -23,11 +23,14 @@ public:
     explicit DatabaseService(const std::string& dbPath = "efd_study_data.dat");
     ~DatabaseService();
 
+    void setDatabasePath(const std::string& path);
     bool initialize();
     bool logRecord(const FatigueRecord& record);
     bool logBatch(const std::vector<FatigueRecord>& records);
     
     size_t getRecordCount() const;
+    // 最舊一筆紀錄的時間戳 (無紀錄回傳 0)，用於判斷是否有前幾天未上傳的資料
+    int64_t getOldestRecordTimestampMs() const;
     std::vector<FatigueRecord> getLatestRecords(size_t count) const;
     std::string exportRecordsAsJson() const;
     std::string exportRecordsAsCsv() const;
@@ -43,6 +46,7 @@ private:
 
     void flushToDiskUnlocked();
     void loadFromDiskUnlocked();
+    static bool parseRecordLine(const std::string& line, FatigueRecord& record);
 };
 
 } // namespace efd

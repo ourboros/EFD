@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <deque>
+#include <cstdint>
 
 namespace efd {
 
@@ -50,6 +52,14 @@ public:
     bool isPositionBiasCalibrated() const;
     void resetTracking();
 
+    // 重置睜眼暗部基準 (重新校準時呼叫)
+    void resetEyeBaseline();
+
+    // 連續多久未偵測到人臉才判定離開 (以時間計，與幀率無關)
+    static constexpr int64_t kFaceLostTimeoutMs = 1000;
+    // 睜眼暗部基準取最近 60 秒暗部比例的第 90 百分位
+    static constexpr int64_t kEyeBaselineWindowMs = 60000;
+
 private:
     bool m_isInitialized = false;
     bool m_useSyntheticEngine = true;
@@ -68,7 +78,17 @@ private:
     float m_userBiasY = 0.0f;
     bool m_isPositionBiasCalibrated = false;
     bool m_isFaceConfirmed = false;
+    int64_t m_lastFaceSeenMs = 0;
     PresenceDiagnostic m_lastDiag;
+
+    struct DarkRatioSample {
+        int64_t timestampMs = 0;
+        float ratio = 0.0f;
+    };
+    std::deque<DarkRatioSample> m_darkRatioHistory;
+    float m_openEyeDarkBaseline = 0.18f;
+
+    float updateOpenEyeBaseline(float darkRatio, int64_t nowMs);
 
     std::vector<Point3D> generateCanonicalFaceMesh(int frameWidth, int frameHeight, float openness, float customCx = 0.0f, float customCy = 0.0f, float customScale = 0.0f) const;
 };
