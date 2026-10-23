@@ -58,7 +58,7 @@ graph TD
 | **多硬體相機抽象層 (HAL)** | `CameraService` | 統一封裝 Windows Media Foundation、Android Camera2/CameraX、Apple AVFoundation 與 Synthetic 虛擬測試相機，支援實體鏡頭斷線無縫自動熱回退。 |
 | **動態基線自我校準** | `AdaptiveBaseline` | 具備「抗微睡眠污染」機制，僅採集清醒睜眼區間；裝置喚醒時啟動 1 秒「熱重啟快速再校準」，消除坐姿與環境光照漂移。 |
 | **非線性動態複雜度分析** | `EmdCalculator` + `MseCalculator` | 對 EAR 時序訊號進行經驗模態分解（EMD）過濾高頻眼顫雜訊，再透過多尺度熵（MSE, 尺度 1~5）計算複雜度指數（CI），辨識大腦中樞神經調節疲勞度。 |
-| **20/5/5 智能防打擾干預** | `FatigueStateMachine` | 符合人因工程學：初次提醒後鎖死 20 分鐘；第 20~25 分鐘執行輕量快篩；若持續惡化則升級嚴重警告；離座滿 5 分鐘自動重置。 |
+| **20/5/5 智能防打擾干預** | `FatigueStateMachine` | 60 秒平滑分數 ≥ 65 持續 10 秒才提醒，之後 20 分鐘不再提醒；冷卻期滿每 5 分鐘以平均分數快篩一次；離座滿 5 分鐘視為已休息並清除冷卻。完整規格見 `System design.md` 第 5.2 節。 |
 | **14 天科研週期管理** | `StudyWorkflowTracker` | 自動累計受試天數；每晚 21:00 定時觸發完整性簽章上傳；第 14 天強制跳轉後測問卷（Google 表單），並回傳防偽解鎖憑證（`EFD-14D-XXXX-XXXX`）。 |
 | **跨平台原生資料同步** | `NetworkSyncWorker` | Windows 端採用 PowerShell，Apple 端（iOS/macOS）採用原生 `NSURLSession` HTTPS，自動封裝時序資料並寫入 Google 試算表。 |
 
@@ -130,10 +130,10 @@ flowchart TD
 ### 3.5 階段 5：系統參數與偏好設定 (Settings Screen)
 * **設計目的**：提供受試者根據自身用眼習慣自訂警報靈敏度、提示聲響與背景守護行為。
 * **功能清單**：
-  * **高靈敏度疲勞偵測開關**：切換判定窗口頻率（由 5 分鐘快篩提升至 3 分鐘快篩）。
+  * **高靈敏度疲勞偵測開關**：介面選項（目前尚未接到狀態機，快篩間隔固定為 5 分鐘）。
   * **疲勞警報提示音開關**：控制疲勞超標時是否觸發音效與震動（Taptic Engine 觸覺回饋）。
-  * **開機自動背景啟動開關**：管理開機自動待命狀態。
-  * **自動科研同步開關**：受試者防呆設計，系統預設恆定開啟（每晚 21:00 自動落盤同步）並強制鎖定，確保實驗數據完整。
+  * **開機自動背景啟動開關**：介面選項（iOS 不支援開機自動啟動；背景期間也無法使用相機）。
+  * **自動科研同步開關**：受試者防呆設計，恆定開啟並鎖定：每晚 21:00 後上傳；錯過時於下次開啟自動補傳，上傳成功才標記完成。
   * **獨立底部返回按鈕**：「返回監控中心」白底綠字按鈕，貼齊底部安全區域。
 
 ### 3.6 階段 6：第 14 天後測門禁解鎖介面 (Study Gate Screen)
@@ -172,9 +172,9 @@ flowchart LR
     subgraph S4 [階段四: 疲勞分數融合與狀態機]
         PERCLOS & BLINK & CI --> FUSION[非線性權重融合評分\n0 ~ 100 分]
         FUSION --> FSM{20/5/5 防打擾狀態機}
-        FSM -->|分數 < 45| NORMAL[正常專注 Normal]
-        FSM -->|45 <= 分數 < 70| ALERT[注意力提醒 Alert\n進入 20 分鐘冷卻]
-        FSM -->|分數 >= 70| SEVERE[嚴重警告 Warning\n觸發震動 + 警報音]
+        FSM -->|平滑分數 < 45| NORMAL[正常專注 Normal]
+        FSM -->|45 <= 平滑分數 < 65| ALERT[注意力 Attention\n僅更新畫面，不提醒]
+        FSM -->|平滑分數 >= 65 持續 10 秒| SEVERE[嚴重疲勞 Warning\n提醒一次 + 進入 20 分鐘冷卻]
     end
 ```
 
@@ -192,10 +192,10 @@ $$\text{EAR} = \frac{\|p_2 - p_6\| + \|p_3 - p_5\|}{2 \cdot \|p_1 - p_4\|}$$
    當 App 自休眠或背景喚醒時，利用前 30 幀快速重新對齊基準，1 秒內適應環境光線變更。
 
 ### 4.3 閉眼比例 (PERCLOS) 與生理學眨眼率 (Blink Rate)
-* **PERCLOS**：計算過去滑動窗口（例如 60 秒 / 1800 幀）內，$\text{EAR} < \text{Threshold}_{\text{closed}}$ 的閉眼幀數佔總有效幀數之百分比。
+* **PERCLOS**：以**時間**定義的 60 秒窗口內，$\text{EAR} < \text{Threshold}_{\text{closed}}$ 的閉眼時間佔窗口總時間之百分比；每個樣本代表的時間依實測幀率計算，手機 10~15 FPS 與桌機 30 FPS 結果一致。
 * **生理學眨眼過濾**：
-  * 人體正常有效眨眼時長介於 **67 毫秒 至 800 毫秒**（約 2 ~ 25 幀）。
-  * 系統自動過濾 $< 2$ 幀的影像雜訊，並排除 $> 25$ 幀的蓄意瞇眼或打瞌睡（歸類為 Prolonged Eye Closure），計算純淨的每分鐘眨眼率。
+  * 人體正常有效眨眼時長介於 **60 毫秒 至 800 毫秒**，以持續時間判斷（與幀率無關）。
+  * 排除過短的影像雜訊與過長的蓄意瞇眼或打瞌睡（歸類為 Prolonged Eye Closure，計入 PERCLOS）；窗口累積滿 30 秒後才輸出眨眼率。
 
 ### 4.4 經驗模態分解 (EMD) 與多尺度熵 (MSE) 複雜度
 眼動時序中夾雜著眼球微顫與高頻抖動。傳統方法容易將抖動誤判為清醒眼動。
@@ -210,10 +210,12 @@ $$\text{EAR} = \frac{\|p_2 - p_6\| + \|p_3 - p_5\|}{2 \cdot \|p_1 - p_4\|}$$
 * **多維特徵融合**：
   $$\text{Score} = w_1 \cdot f(\text{PERCLOS}) + w_2 \cdot g(\text{BlinkRate}) + w_3 \cdot h(\text{Complexity})$$
   其中權重分佈：PERCLOS 佔 55%，眨眼異常度佔 25%，複雜度鈍化佔 20%。
-* **20/5/5 防打擾推進邏輯**：
-  1. **冷卻期（Cooldown, 20 分鐘）**：發出提醒後強制進入 20 分鐘靜默期，避免持續彈窗造成干擾。
-  2. **快篩評估期（Screening, 5 分鐘）**：第 20 至 25 分鐘間啟動動態快篩。若疲勞指數已顯著恢復（$\text{Score} < 45$），狀態機降級平復為 Normal；若持續超標（$\text{Score} \ge 70$），立即升級觸發警告。
-  3. **離座重置（Absence Reset）**：若連續 5 分鐘未偵測到人臉，自動判定使用者已離席休息，重新計時冷卻週期。
+* **平滑分數**：即時分數以 60 秒時間常數的 EWMA 平滑，疲勞等級與警報皆依平滑分數判定（$<45$ 清醒、$\ge 45$ 注意、$\ge 65$ 嚴重）。
+* **20/5/5 防打擾推進邏輯**（完整規格見 `System design.md` 第 5.2 節）：
+  1. **觸發**：平滑分數 $\ge 65$ 且持續 10 秒才提醒；$45 \sim 65$ 只更新畫面狀態，不彈窗。
+  2. **冷卻期（Cooldown, 20 分鐘）**：提醒後 20 分鐘完全不再提醒，離座期間照常倒數。
+  3. **快篩評估期（Screening, 每 5 分鐘）**：冷卻期滿後，以每 5 分鐘在座時間的平均分數判定：$\ge 65$ 再提醒一次並重新冷卻；$< 45$ 回到常態追蹤；介於兩者之間則繼續下一輪快篩。
+  4. **離座清零（Absence Reset）**：連續 5 分鐘未偵測到人臉，視為已休息，清除冷卻並回到常態追蹤。
 
 ---
 
@@ -252,20 +254,20 @@ sequenceDiagram
         Engine->>Engine: 計算 EAR、PERCLOS、EMD/MSE CI 與疲勞分
         Engine->>State: update(hasFace, perclos, blinkRate, ci, deltaSec)
         State-->>UI: 遙測回呼 updateTelemetryUI() (更新 4 大卡片)
-        opt 疲勞超標 (Score >= 70)
+        opt 平滑分數 >= 65 持續 10 秒 (且不在 20 分鐘冷卻中)
             State-->>UI: 觸發震動與聲音提醒 (Taptic + Audio)
         end
-        opt 每 1 秒 (30 幀)
+        opt 每 1 秒
             Engine->>DB: 記錄落盤 logRecord(FatigueRecord)
         end
     end
 
-    Note over UI, Engine: 背景偏好 A：鬧鐘式守護
+    Note over UI, Engine: iOS 背景：系統不允許背景使用相機
     User->>UI: 切換至其他 App 或鎖定螢幕
-    UI->>Cam: 安全掛起鏡頭串流 (節電保護隱私)
-    UI->>UI: UNUserNotificationCenter 排定 20 分鐘鬧鐘提醒
-    Note over UI: 時間到達 20 分鐘
-    UI-->>User: 系統發出高優先級通知：「您已連續工作 20 分鐘，請閉眼休息！」
+    UI->>Engine: pause() 暫停管線並保存冷卻狀態
+    UI->>UI: 排定一次休息提醒 (20 分鐘後；冷卻中則延到冷卻結束)
+    User->>UI: 回到 EFD
+    UI->>Engine: resume() (背景時間比照離座) + 補傳錯過的每日資料
 
     Note over Engine, GAS: 夜間 21:00 定時科研同步
     Engine->>Engine: checkAndTriggerNightlySync() 跨日檢查

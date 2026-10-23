@@ -133,22 +133,28 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 
 ### 5.2 20/5/5 防打擾與算力節能狀態機
 
-- **觸發提醒 (Fatigue Alert):** 當綜合疲勞指數 $\text{Fatigue Score} \ge 45.0$（初級注意力提醒）或 $\ge 65.0$（重度疲勞警報）時，發送警報回呼並標記觸發旗標，啟動 **20 分鐘冷卻期 (Cooldown)**。
-- **冷卻期狀態與即時評分完全解耦:** 冷卻期間系統保持實時計算當前疲勞分數；疲勞狀態（FatigueLevel）直接反映該幀真實疲勞分數（$<45.0$ 評為清醒放鬆 Relaxed，$\ge 45.0$ 評為注意力提醒 Attention，$\ge 65.0$ 評為嚴重警告 SevereWarning），杜絕「冷卻中疲勞分數已降為 0.0 但狀態仍被舊警報鎖定在 Attention」之日誌與邏輯矛盾。
-- **防無窮循環機制 (Non-reentrant Cooldown Reset):** 20 分鐘冷卻倒數歸零後，系統轉回正常追蹤模式（NormalTracking）；若受試者疲勞分數仍維持高點，系統保持追蹤但**不重複連環觸發冷卻與彈窗**，受試者必須先恢復至清醒放鬆狀態（疲勞分數 $< 45.0$），冷卻觸發旗標才會自動清零，允許下一輪警報。
-- **高精度實時時鐘驅動 (Real-time Clock Delta):** 狀態機推進拋棄固定 1/FPS 幀率估算，改由 std::chrono::steady_clock 取得每幀真實時間增量（$\Delta t$），杜絕倒數計時與實際秒數不一致之問題。
-- **降採樣快篩 (5m Fast Screening):**
-  - 在 20 分鐘冷卻期內，每隔 5 分鐘自動進入 30 秒輕量快篩（僅計算 PERCLOS 與眨眼率等常規指標）。
-  - _若疲勞指標持續飆升 ($\ge 65.0$):_ 升級發送二級嚴重警報，但快篩期內嚴格限觸發 1 次。
-- **離座自動歸零 (5m Auto-Reset):**
-  - 若連續 5 分鐘人臉未出現在畫面中，判定用戶已暫離休息。
-  - _判定暫離:_ 即刻清零 20 分鐘冷卻計時器與觸發旗標，當用戶重新回到鏡頭前時無縫重啟全量追蹤與基準評估。
+本節為 20/5/5 的唯一規格來源，實作位於 `src/state/FatigueStateMachine.cpp`，並由 `tests/test_features.cpp` 第 5、13 項測試驗證。
+
+- **判定分數 (Smoothed Score):** 每幀計算即時疲勞分數後，以時間常數 60 秒的指數加權移動平均 (EWMA) 得到平滑分數；疲勞等級與所有警報判定皆以平滑分數為準（$<45$ Relaxed、$\ge 45$ Attention、$\ge 65$ SevereWarning），避免揉眼、短暫誤判造成誤報。
+- **觸發提醒 (Fatigue Alert):** 常態追蹤中，平滑分數 $\ge 65$ 且**持續 10 秒**才發送提醒，並進入 **20 分鐘冷卻期**。$45 \sim 65$ 只更新畫面狀態，不彈窗、不消耗冷卻。
+- **冷卻期 (20m Cooldown):** 冷卻期間完全不提醒，但疲勞等級仍反映真實狀態。冷卻以真實時間倒數，使用者離座期間照常倒數。
+- **快篩 (5m Fast Screening):** 冷卻期滿後進入快篩，以**每 5 分鐘在座時間**的平均即時分數判定一次：
+  - 平均 $\ge 65$：再提醒一次並重新進入 20 分鐘冷卻；
+  - 平均 $< 45$：回到常態追蹤；
+  - 介於兩者之間：不提醒，繼續下一輪 5 分鐘快篩。
+  - 窗口未滿 5 分鐘不提前判定。
+- **離座自動歸零 (5m Auto-Reset):** 連續 5 分鐘未偵測到人臉，視為已休息：清除冷卻與快篩，平滑分數歸零，回到常態追蹤。App 在背景 (iOS) 或關閉期間比照離座計時。
+- **持久化 (Persistence):** 冷卻狀態每 10 秒與暫停/停止時寫入 `efd_fsm_state.txt`；重啟時扣除關閉期間的時間繼續倒數，關閉滿 5 分鐘則比照離座清零。
+- **高精度實時時鐘驅動 (Real-time Clock Delta):** 狀態機以 std::chrono::steady_clock 取得每幀真實時間增量（$\Delta t$，上限 2 秒），不以固定 1/FPS 估算。
 
 ### 5.3 眼睛特徵萃取與滑動窗口計算規範 (Eye Feature Extraction Pipeline)
 
-- **AOI 二值化與瞳孔/睫毛黑色像素比例 (Black Pixels Ratio):** 在雙眼感興趣區域 (AOI) 計算黑色像素佔比 $P_{\text{black}}$，並自適應追蹤個人睜眼基準暗度，透過動態範圍映射獲得連續開闔度，徹底消除固定回傳 0.320 的 Fallback 假數據。
-- **滑動窗口 PERCLOS 累積 (Sliding-window PERCLOS):** 環形緩衝區（預設 300 幀，約 10 秒）每幀滾動更新，不於幀間過度清除歷史布林序列，真實反映閉眼時間佔比 $P_{\text{closed}}$。
-- **生理有效眨眼檢驗 (Physiological Blink Validation):** 眨眼判定要求閉眼持續時長介於 2 至 25 影格（約 67ms ~ 800ms），自動過濾 1 影格的高頻噪訊及微小顫動；每分鐘眨眼率設置生理硬上限（[0.0, 60.0] 次/分），徹底杜絕 1,188+ bpm 異常尖峰。
+- **目前的臉部與眼部偵測方式 (實作現況):** 尚未整合 MediaPipe / ONNX 特徵點模型。`FaceLandmarker` 以膚色網格密度聚類定位臉部，眼部需同時具備明顯暗點 (瞳孔/睫毛，亮度 < 膚色 60% 的像素 ≥ 4%)、反差 ≥ 20 與垂直梯度 ≥ 3 才判定為真人；連續 1 秒未偵測到才判定離座。此為啟發式方法，光線過暗或深色鏡框可能影響準確度。
+- **AOI 二值化與瞳孔/睫毛黑色像素比例 (Black Pixels Ratio):** 在雙眼感興趣區域 (AOI) 計算黑色像素佔比 $P_{\text{black}}$；睜眼基準取最近 60 秒暗部比例的第 90 百分位 (可隨光線上下調整)，透過動態範圍映射獲得連續開闔度。
+- **校準 (Calibration):** 兩段式收集，只採用校準期間偵測到人臉的幀；有效幀不足 60% 或少於 20 幀即校準失敗並保留原基準。閉眼閾值限制在清醒基準的 65%~85%，之後的自動調整只能在校準閾值 ±15% 內浮動。校準結果保存於設定檔，重啟後自動還原。
+- **時間窗口 PERCLOS (Time-based PERCLOS):** 以**時間**定義的 60 秒窗口 (非固定幀數)，PERCLOS = 窗口內閉眼時間 / 窗口總時間；每個樣本代表的時間依實測幀率計算，手機 10~15 FPS 與桌機 30 FPS 結果一致。
+- **生理有效眨眼檢驗 (Physiological Blink Validation):** 眨眼判定要求閉眼持續 60 ~ 800 ms (以時間判斷，與幀率無關)；窗口累積 30 秒前不輸出眨眼率 (不計分)；每分鐘眨眼率設置生理硬上限（[0.0, 60.0] 次/分）。
+- **複雜度 (EMD + MSE):** 每秒一次，將 60 秒 EAR 序列依時間重新取樣為 10 Hz，以 EMD 去除最高頻 IMF 後計算 MSE (尺度 1~5)；資料不足 30 秒時使用清醒先驗值 CI = 4.5 (不計分)。
 - **量表範圍與日誌一致性:** 疲勞評分統一採用標準 0.0 ~ 100.0 分制（注意閾值 45.0，警報閾值 65.0）；人臉在場診斷日誌使用動態符號（`>=` 或 `<` 及追蹤寬限標籤），杜絕日誌條件與數值矛盾。
 
 ---
@@ -171,12 +177,17 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 └──────────────┘ └──────────────┘ └────────────────┘ └────────────────┘
 ```
 
-| 平台        | 常駐機制 (Background Mode)                                            | 視訊擷取 (Camera Input)                   | 通知方式 (Notification)                           |
+> 註：上圖為原始規劃。目前各平台介面皆為原生實作 (Windows Win32 + GDI+、macOS Cocoa、Android View、iOS UIKit)，未使用 Qt。
+
+| 平台        | 常駐機制 (Background Mode)                                            | 視訊擷取 (Camera Input)                   | 資料目錄 / 每日同步                               |
 | :---------- | :-------------------------------------------------------------------- | :---------------------------------------- | :------------------------------------------------ |
-| **Windows** | 最小化至系統托盤 (System Tray)，後台執行緒常駐                        | DirectShow / Media Foundation (Qt/OpenCV) | Windows 10/11 原生 Toast 通知                     |
-| **macOS**   | 頂部選單列狀態圖示 (Status Bar Item)，支援後台守護                    | AVFoundation (Qt Multimedia)              | macOS 原生 UNNotification                         |
-| **Android** | 註冊 **Foreground Service** + 常駐狀態列通知，搭配 WakeLock 防止休眠  | Android Camera2 API / NDK                 | Android Notification Manager                      |
-| **iOS**     | 遵守 iOS 隱私規範，前景即時偵測；進入背景時觸發狀態保存與排程本地通知 | AVFoundation / AVCaptureSession           | iOS Local Push Notification + 熱重啟 (Hot-Resume) |
+| **Windows** | 最小化至系統托盤 (System Tray)，背景持續偵測                          | Media Foundation                          | 執行檔工作目錄；C++ 引擎 21:00 同步 + 補傳 (PowerShell) |
+| **macOS**   | 頂部選單列狀態圖示 (Status Bar Item)，背景持續偵測                    | AVFoundation                              | `~/Library/Application Support/EFD`；C++ 引擎同步 + 補傳 (NSURLSession) |
+| **Android** | **前景服務 (camera 類型)** 擁有偵測引擎，App 介面被劃掉後仍持續偵測與提醒；首次進入監控頁引導加入電池最佳化白名單。Android 14+ 不允許開機自動開相機，改發「點此開始今日偵測」通知 | CameraX (ImageAnalysis) → JNI | `filesDir`；Java `EfdSyncManager` 21:00 鬧鐘 + 補傳 + 失敗 10 分鐘重試 (C++ 端同步關閉) |
+| **iOS**     | **iOS 不允許背景使用相機**：只在前景偵測；進入背景時暫停並保存冷卻狀態，排定一次休息提醒 (冷卻中延到冷卻結束) | AVFoundation / AVCaptureSession           | `Application Support/EFD`；開啟/回前景時補傳 + BGAppRefreshTask (執行時間由 iOS 決定) |
+
+- **每日同步共同規則:** 上傳成功才標記已同步；失敗 10 分鐘後重試；21:00 前若發現昨天 (含) 以前的資料尚未上傳，立即補傳。
+- **模擬相機:** 實體鏡頭無畫面時會切換為模擬相機以維持管線運作，但模擬影格不寫入研究資料庫。
 
 ---
 
