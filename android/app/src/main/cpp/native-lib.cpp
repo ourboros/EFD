@@ -1,6 +1,10 @@
 #include <jni.h>
+#include <algorithm>
+#include <chrono>
+#include <ctime>
 #include <string>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <iomanip>
 #include <android/log.h>
@@ -13,14 +17,25 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
-static std::unique_ptr<efd::AsyncPipelineEngine> g_engine = nullptr;
-static std::string g_lastAlertMessage = "";
+// 引擎由前景服務擁有；相機執行緒、主執行緒與廣播接收器都可能同時存取，
+// 因此以 shared_ptr + mutex 保護，避免 stopEngine() 時其他執行緒仍在使用已釋放的引擎
+static std::shared_ptr<efd::AsyncPipelineEngine> g_engine;
+static std::mutex g_engineMutex;
+
+// 警報為單次脈衝：只由前景服務透過 nativeConsumeAlertJson 取出
+static std::string g_lastAlertMessage;
 static int g_lastAlertLevel = 0;
 static float g_lastAlertScore = 0.0f;
 static std::mutex g_alertMutex;
 
+// 最新遙測 (不含影像像素，避免每幀複製整張影格)
 static efd::EngineTelemetry g_lastTelemetry;
 static std::mutex g_telemetryMutex;
+
+static std::shared_ptr<efd::AsyncPipelineEngine> currentEngine() {
+    std::lock_guard<std::mutex> lock(g_engineMutex);
+    return g_engine;
+}
 
 extern "C" {
 
@@ -34,11 +49,12 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngine(JNIEnv* env, j
 
 JNIEXPORT jboolean JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv* env, jclass /*clazz*/, jstring storageDir) {
+    std::lock_guard<std::mutex> lock(g_engineMutex);
     if (g_engine && g_engine->isRunning()) {
         LOGI("EFD AsyncPipelineEngine 已經初始化並常駐運行中。");
         return JNI_TRUE;
     }
-    std::string pathStr = "";
+    std::string pathStr;
     if (storageDir != nullptr) {
         const char* str = env->GetStringUTFChars(storageDir, nullptr);
         if (str) {
@@ -47,30 +63,40 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
         }
     }
     try {
-        g_engine = std::make_unique<efd::AsyncPipelineEngine>(efd::PlatformType::Android);
+        auto engine = std::make_shared<efd::AsyncPipelineEngine>(efd::PlatformType::Android);
 
         if (!pathStr.empty()) {
-            std::string configPath = pathStr + "/test_study_config.json";
-            std::string dbPath = pathStr + "/efd_study_data.dat";
-            g_engine->getStudyTracker().setConfigPath(configPath);
-            g_engine->getDatabaseService().setDatabasePath(dbPath);
-            LOGI("配置 C++ NDK 內部持久化儲存路徑: config=%s, db=%s", configPath.c_str(), dbPath.c_str());
+            // 沿用既有檔名 test_study_config.json，避免進行中的受試者 UUID 與天數被重置
+            engine->setDataDirectory(pathStr, "test_study_config.json");
+            LOGI("配置 C++ NDK 內部持久化儲存路徑: %s", pathStr.c_str());
         }
+        // Android 的每日上傳由 Java EfdSyncManager 統一負責，關閉 C++ 端避免重複上傳
+        engine->setAutoNightlySyncEnabled(false);
 
-        g_engine->setAlertCallback([](efd::FatigueLevel level, float score, const std::string& msg) {
-            std::lock_guard<std::mutex> lock(g_alertMutex);
+        engine->setAlertCallback([](efd::FatigueLevel level, float score, const std::string& msg) {
+            std::lock_guard<std::mutex> alertLock(g_alertMutex);
             g_lastAlertLevel = static_cast<int>(level);
             g_lastAlertScore = score;
             g_lastAlertMessage = msg;
             LOGI("Alert triggered: Level=%d, Score=%.1f, Msg=%s", static_cast<int>(level), score, msg.c_str());
         });
 
-        g_engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
-            std::lock_guard<std::mutex> lock(g_telemetryMutex);
-            g_lastTelemetry = telemetry;
+        engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
+            efd::EngineTelemetry slim;
+            slim.latestFrame.timestampMs = telemetry.latestFrame.timestampMs;
+            slim.detection.hasFace = telemetry.detection.hasFace;
+            slim.eyeMetrics = telemetry.eyeMetrics;
+            slim.complexityMetrics = telemetry.complexityMetrics;
+            slim.systemState = telemetry.systemState;
+            slim.currentThreshold = telemetry.currentThreshold;
+            slim.measuredFps = telemetry.measuredFps;
+            slim.totalFramesProcessed = telemetry.totalFramesProcessed;
+            std::lock_guard<std::mutex> telemetryLock(g_telemetryMutex);
+            g_lastTelemetry = std::move(slim);
         });
 
-        g_engine->start();
+        engine->start();
+        g_engine = engine;
         LOGI("EFD AsyncPipelineEngine 成功於 Android 啟動且資料持久化就緒。");
         return JNI_TRUE;
     } catch (const std::exception& e) {
@@ -79,24 +105,46 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
     }
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeIsEngineRunning(JNIEnv* /*env*/, jclass /*clazz*/) {
+    auto engine = currentEngine();
+    return (engine && engine->isRunning()) ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
-Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeCalibrate(JNIEnv* /*env*/, jobject /*thiz*/, jfloat durationSec) {
-    if (g_engine) {
-        g_engine->calibrate(durationSec);
-        LOGI("Baseline calibrated: threshold=%.3f", g_engine->getAdaptiveBaseline().getCurrentThreshold());
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeBeginCalibration(JNIEnv* /*env*/, jclass /*clazz*/) {
+    if (auto engine = currentEngine()) {
+        engine->beginCalibration();
     }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeFinishCalibration(JNIEnv* /*env*/, jclass /*clazz*/) {
+    auto engine = currentEngine();
+    if (!engine) return JNI_FALSE;
+    bool ok = engine->finishCalibration();
+    LOGI("Calibration %s: threshold=%.3f validRatio=%.2f", ok ? "OK" : "FAILED",
+         engine->getAdaptiveBaseline().getCurrentThreshold(), engine->getLastCalibrationValidRatio());
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeHasSavedCalibration(JNIEnv* /*env*/, jclass /*clazz*/) {
+    auto engine = currentEngine();
+    return (engine && engine->hasSavedCalibration()) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSetSimulatedEyeOpenness(JNIEnv* /*env*/, jobject /*thiz*/, jfloat openness) {
-    if (g_engine) {
-        g_engine->setSimulatedEyeOpenness(openness);
+    if (auto engine = currentEngine()) {
+        engine->setSimulatedEyeOpenness(openness);
     }
 }
 
 JNIEXPORT void JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jobject /*thiz*/, jbyteArray frameData, jint width, jint height, jint rotation) {
-    if (!g_engine || !frameData || width <= 0 || height <= 0) return;
+    auto engine = currentEngine();
+    if (!engine || !frameData || width <= 0 || height <= 0) return;
 
     jsize len = env->GetArrayLength(frameData);
     if (len <= 0) return;
@@ -105,7 +153,7 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     if (!bytes) return;
 
     // 接收實體相機影格，關閉背景 Synthetic 虛擬驅動
-    g_engine->getCameraService().stopSyntheticIfRunning();
+    engine->getCameraService().stopSyntheticIfRunning();
 
     int rot = (rotation % 360 + 360) % 360;
     int outW = (rot == 90 || rot == 270) ? height : width;
@@ -170,88 +218,104 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     }
 
     env->ReleaseByteArrayElements(frameData, bytes, JNI_ABORT);
-    g_engine->getCameraService().onDriverFrame(frame);
+    engine->getCameraService().onDriverFrame(frame);
 }
 
+// 讀取最新狀態 (不會清除警報，Activity 與 Service 可同時呼叫)
 JNIEXPORT jstring JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* env, jobject /*thiz*/) {
-    if (!g_engine) {
-        return env->NewStringUTF("{\"error\":\"Engine not initialized\"}");
+    auto engine = currentEngine();
+    if (!engine || !engine->isRunning()) {
+        return env->NewStringUTF("{\"engineRunning\":false}");
     }
 
-    std::lock_guard<std::mutex> lock(g_alertMutex);
-    std::lock_guard<std::mutex> tLock(g_telemetryMutex);
+    efd::EngineTelemetry telemetry;
+    {
+        std::lock_guard<std::mutex> tLock(g_telemetryMutex);
+        telemetry = g_lastTelemetry;
+    }
+    const auto& state = telemetry.systemState;
+    const auto& eyeMetrics = telemetry.eyeMetrics;
 
-    // 獲取最新狀態與完整遙測指標
-    auto state = g_lastTelemetry.systemState;
-    float threshold = g_lastTelemetry.currentThreshold;
-    auto eyeMetrics = g_lastTelemetry.eyeMetrics;
-    auto complexityMetrics = g_lastTelemetry.complexityMetrics;
-
-    // 影格超時檢查：若超過 1.0 秒未收到新影格，強制歸零離座
+    // 影格超時檢查：若超過 1.2 秒未收到新影格，強制視為離座
     auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
-    bool isStale = (g_lastTelemetry.latestFrame.timestampMs > 0) &&
-                   ((nowMs - g_lastTelemetry.latestFrame.timestampMs) > 1200);
-    bool hasFace = g_lastTelemetry.detection.hasFace && !isStale;
-
-    int reportedAlertLevel = g_lastAlertLevel;
-    float reportedAlertScore = g_lastAlertScore;
-    std::string reportedAlertMsg = g_lastAlertMessage;
-
-    // 單次脈衝讀取後立即清空，確保警報僅觸發一次，20 分鐘冷卻期內絕對靜默
-    g_lastAlertLevel = 0;
-    g_lastAlertScore = 0.0f;
-    g_lastAlertMessage = "";
+    bool isStale = (telemetry.latestFrame.timestampMs > 0) &&
+                   ((nowMs - telemetry.latestFrame.timestampMs) > 1200);
+    bool hasFace = telemetry.detection.hasFace && !isStale;
 
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(3);
     oss << "{"
+        << "\"engineRunning\":true,"
         << "\"fatigueScore\":" << state.smoothedFatigueScore << ","
         << "\"fatigueLevel\":" << static_cast<int>(state.fatigueLevel) << ","
         << "\"cooldownState\":" << static_cast<int>(state.cooldownState) << ","
         << "\"cooldownRemaining\":" << state.cooldownRemainingSeconds << ","
-        << "\"threshold\":" << threshold << ","
+        << "\"screeningRemaining\":" << state.screeningRemainingSeconds << ","
+        << "\"threshold\":" << telemetry.currentThreshold << ","
         << "\"hasFace\":" << (hasFace ? "true" : "false") << ","
         << "\"currentEar\":" << eyeMetrics.earAvg << ","
         << "\"perclos\":" << (eyeMetrics.perclos * 100.0f) << ","
         << "\"blinkRate\":" << eyeMetrics.blinkRatePerMin << ","
-        << "\"complexityCI\":" << complexityMetrics.complexityIndex << ","
+        << "\"complexityCI\":" << telemetry.complexityMetrics.complexityIndex << ","
+        << "\"measuredFps\":" << telemetry.measuredFps << ","
         << "\"studyDay\":" << state.studyDay << ","
-        << "\"isStudyLocked\":" << (state.isStudyLocked ? "true" : "false") << ","
-        << "\"lastAlertLevel\":" << reportedAlertLevel << ","
-        << "\"lastAlertScore\":" << reportedAlertScore << ","
-        << "\"lastAlertMsg\":\"" << reportedAlertMsg << "\""
+        << "\"isStudyLocked\":" << (state.isStudyLocked ? "true" : "false")
         << "}";
 
     return env->NewStringUTF(oss.str().c_str());
 }
 
+// 取出並清除待發送的警報 (只由前景服務呼叫，確保每次警報只通知一次)
+JNIEXPORT jstring JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeConsumeAlertJson(JNIEnv* env, jclass /*clazz*/) {
+    int level = 0;
+    float score = 0.0f;
+    std::string msg;
+    {
+        std::lock_guard<std::mutex> lock(g_alertMutex);
+        level = g_lastAlertLevel;
+        score = g_lastAlertScore;
+        msg = g_lastAlertMessage;
+        g_lastAlertLevel = 0;
+        g_lastAlertScore = 0.0f;
+        g_lastAlertMessage.clear();
+    }
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(1)
+        << "{\"level\":" << level << ",\"score\":" << score << ",\"message\":\"" << msg << "\"}";
+    return env->NewStringUTF(oss.str().c_str());
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetSubjectUuid(JNIEnv* env, jobject /*thiz*/) {
-    if (!g_engine) {
-        return env->NewStringUTF("SUBJ-ANDROID-001");
+    auto engine = currentEngine();
+    if (!engine) {
+        return env->NewStringUTF("");
     }
-    std::string uuid = g_engine->getStudyTracker().getSubjectUuid();
+    std::string uuid = engine->getStudyTracker().getSubjectUuid();
     return env->NewStringUTF(uuid.c_str());
 }
 
 JNIEXPORT jint JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetCurrentDay(JNIEnv* /*env*/, jobject /*thiz*/) {
-    if (!g_engine) {
-        return 1;
+    auto engine = currentEngine();
+    if (!engine) {
+        return 0;
     }
-    return static_cast<jint>(g_engine->getStudyTracker().getCurrentDay());
+    return static_cast<jint>(engine->getStudyTracker().getCurrentDay());
 }
 
 JNIEXPORT jstring JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetCloudSyncPayloadJson(JNIEnv* env, jobject /*thiz*/) {
-    if (!g_engine) {
+    auto engine = currentEngine();
+    if (!engine) {
         return env->NewStringUTF("");
     }
 
-    std::string subjectUuid = g_engine->getStudyTracker().getSubjectUuid();
-    int currentDay = g_engine->getStudyTracker().getCurrentDay();
+    std::string subjectUuid = engine->getStudyTracker().getSubjectUuid();
+    int currentDay = engine->getStudyTracker().getCurrentDay();
 
     auto now = std::chrono::system_clock::now();
     std::time_t tt = std::chrono::system_clock::to_time_t(now);
@@ -260,7 +324,9 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetCloudSyncPayloadJson(J
     char timeBuf[64];
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
 
-    auto records = g_engine->getDatabaseService().getLatestRecords(g_engine->getDatabaseService().getRecordCount());
+    auto& db = engine->getDatabaseService();
+    db.flush();
+    auto records = db.getLatestRecords(db.getRecordCount());
     float earSum = 0.0f, perclosSum = 0.0f, ciSum = 0.0f, scoreSum = 0.0f;
     for (const auto& r : records) {
         earSum += r.ear;
@@ -274,7 +340,7 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetCloudSyncPayloadJson(J
     float ciMean = records.empty() ? 4.50f : (ciSum / count);
     float scoreMean = records.empty() ? 0.0f : (scoreSum / count);
 
-    std::string token = g_engine->getStudyTracker().getUnlockToken();
+    std::string token = engine->getStudyTracker().getUnlockToken();
     if (token.empty()) {
         token = "EFD-14D-966C-B875";
     }
@@ -302,7 +368,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetCloudSyncPayloadJson(J
 
 JNIEXPORT jstring JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSubmitQuestionnaire(JNIEnv* env, jobject /*thiz*/, jstring surveyData) {
-    if (!g_engine) {
+    auto engine = currentEngine();
+    if (!engine) {
         return env->NewStringUTF("ERROR");
     }
 
@@ -310,8 +377,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSubmitQuestionnaire(JNIEn
     std::string data(str ? str : "");
     if (str) env->ReleaseStringUTFChars(surveyData, str);
 
-    g_engine->getStudyTracker().submitQuestionnaire(data);
-    std::string token = g_engine->getStudyTracker().getUnlockToken();
+    engine->getStudyTracker().submitQuestionnaire(data);
+    std::string token = engine->getStudyTracker().getUnlockToken();
     return env->NewStringUTF(token.c_str());
 }
 
@@ -325,12 +392,16 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeTriggerTestAlert(JNIEnv* 
 
 JNIEXPORT void JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeStopEngine(JNIEnv* /*env*/, jobject /*thiz*/) {
-    if (g_engine) {
-        g_engine->stop();
-        g_engine.reset();
+    std::shared_ptr<efd::AsyncPipelineEngine> engine;
+    {
+        std::lock_guard<std::mutex> lock(g_engineMutex);
+        engine.swap(g_engine);
+    }
+    if (engine) {
+        // 其他執行緒若仍持有 shared_ptr，引擎會在最後一個使用者釋放後才解構
+        engine->stop();
         LOGI("EFD AsyncPipelineEngine stopped.");
     }
 }
 
 } // extern "C"
-

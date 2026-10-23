@@ -1,10 +1,14 @@
 package com.efd.eyefatiguedetection;
 
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.util.Log;
+
+import androidx.core.content.ContextCompat;
 
 public class EfdBootReceiver extends BroadcastReceiver {
     private static final String TAG = "EFD_BootReceiver";
@@ -18,26 +22,29 @@ public class EfdBootReceiver extends BroadcastReceiver {
             "android.intent.action.QUICKBOOT_POWERON".equals(action) ||
             Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
 
-            Log.i(TAG, "📱 手機開機/重啟，自動發動 EFD 背景疲勞常駐監控服務與資料同步...");
-            try {
-                Intent serviceIntent = new Intent(context, EfdForegroundService.class);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent);
-                } else {
-                    context.startService(serviceIntent);
-                }
+            Log.i(TAG, "手機開機/App 更新，恢復 EFD 背景監控與資料同步...");
+            boolean hasCamera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                    == PackageManager.PERMISSION_GRANTED;
 
-                // 開機自動嘗試同步眼動資料至 Google 試算表
-                EfdHttpSyncBridge.uploadFullPayloadAsync(null, (success, msg) -> {
-                    if (success) {
-                        Log.i(TAG, "開機自動同步 Google 試算表成功: " + msg);
+            // Android 14 起禁止從開機廣播啟動「相機類型」前景服務，改發通知請使用者點一下開始偵測
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE || !hasCamera) {
+                new EfdNotificationHudManager(context).showStartMonitoringReminder();
+            } else {
+                try {
+                    Intent serviceIntent = new Intent(context, EfdForegroundService.class);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        context.startForegroundService(serviceIntent);
                     } else {
-                        Log.w(TAG, "開機自動同步 Google 試算表暫未完成: " + msg);
+                        context.startService(serviceIntent);
                     }
-                });
-            } catch (Throwable t) {
-                Log.e(TAG, "開機自動啟動服務失敗: " + t.getMessage(), t);
+                } catch (Throwable t) {
+                    Log.e(TAG, "開機自動啟動服務失敗: " + t.getMessage(), t);
+                    new EfdNotificationHudManager(context).showStartMonitoringReminder();
+                }
             }
+
+            // 開機時檢查是否有未上傳的資料 (統一經由 EfdSyncManager，避免重複上傳)
+            EfdSyncManager.checkAndPerformDailySync(context, "EfdBootReceiver");
         }
     }
 }

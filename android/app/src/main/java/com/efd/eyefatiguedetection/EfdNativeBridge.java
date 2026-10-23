@@ -6,6 +6,9 @@ public class EfdNativeBridge {
     private static final String TAG = "EFD_NativeBridge";
     private static boolean sLibraryLoaded = false;
 
+    // 引擎未啟動或原生層異常時回傳的狀態；UI 需據此顯示「偵測引擎未啟動」，不可顯示假數值
+    public static final String ENGINE_NOT_RUNNING_JSON = "{\"engineRunning\":false}";
+
     static {
         try {
             System.loadLibrary("efd_jni");
@@ -41,12 +44,43 @@ public class EfdNativeBridge {
         }
     }
 
-    public static void calibrate(float durationSec) {
+    public static boolean isEngineRunning() {
+        if (!sLibraryLoaded) return false;
+        try {
+            return nativeIsEngineRunning();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeIsEngineRunning failed: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    // 兩段式校準：beginCalibration() 開始收集 -> 數秒後 finishCalibration() 驗證有效人臉幀
+    public static void beginCalibration() {
         if (!sLibraryLoaded) return;
         try {
-            nativeCalibrate(durationSec);
+            nativeBeginCalibration();
         } catch (Throwable t) {
-            Log.e(TAG, "nativeCalibrate failed: " + t.getMessage(), t);
+            Log.e(TAG, "nativeBeginCalibration failed: " + t.getMessage(), t);
+        }
+    }
+
+    public static boolean finishCalibration() {
+        if (!sLibraryLoaded) return false;
+        try {
+            return nativeFinishCalibration();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeFinishCalibration failed: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    public static boolean hasSavedCalibration() {
+        if (!sLibraryLoaded) return false;
+        try {
+            return nativeHasSavedCalibration();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeHasSavedCalibration failed: " + t.getMessage(), t);
+            return false;
         }
     }
 
@@ -61,13 +95,24 @@ public class EfdNativeBridge {
 
     public static String getTelemetryJson() {
         if (!sLibraryLoaded) {
-            return "{\"fatigueScore\":15.0,\"fatigueLevel\":0,\"threshold\":0.265,\"lastAlertLevel\":0,\"lastAlertMsg\":\"\"}";
+            return ENGINE_NOT_RUNNING_JSON;
         }
         try {
             return nativeGetTelemetryJson();
         } catch (Throwable t) {
             Log.e(TAG, "nativeGetTelemetryJson failed: " + t.getMessage(), t);
-            return "{\"fatigueScore\":15.0,\"fatigueLevel\":0,\"threshold\":0.265,\"lastAlertLevel\":0,\"lastAlertMsg\":\"\"}";
+            return ENGINE_NOT_RUNNING_JSON;
+        }
+    }
+
+    // 取出待發送的疲勞警報 (讀後即清除)；只應由 EfdForegroundService 呼叫
+    public static String consumeAlertJson() {
+        if (!sLibraryLoaded) return "{\"level\":0}";
+        try {
+            return nativeConsumeAlertJson();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeConsumeAlertJson failed: " + t.getMessage(), t);
+            return "{\"level\":0}";
         }
     }
 
@@ -101,23 +146,25 @@ public class EfdNativeBridge {
         }
     }
 
+    // 引擎未啟動時回傳空字串，由 UI 顯示「--」
     public static String getSubjectUuid() {
-        if (!sLibraryLoaded) return "SUBJ-ANDROID-001";
+        if (!sLibraryLoaded) return "";
         try {
             return nativeGetSubjectUuid();
         } catch (Throwable t) {
             Log.e(TAG, "nativeGetSubjectUuid failed: " + t.getMessage(), t);
-            return "SUBJ-ANDROID-001";
+            return "";
         }
     }
 
+    // 引擎未啟動時回傳 0
     public static int getCurrentDay() {
-        if (!sLibraryLoaded) return 1;
+        if (!sLibraryLoaded) return 0;
         try {
             return nativeGetCurrentDay();
         } catch (Throwable t) {
             Log.e(TAG, "nativeGetCurrentDay failed: " + t.getMessage(), t);
-            return 1;
+            return 0;
         }
     }
 
@@ -142,10 +189,14 @@ public class EfdNativeBridge {
 
     private static native boolean nativeInitEngine();
     private static native boolean nativeInitEngineWithPath(String storageDir);
-    private static native void nativeCalibrate(float durationSec);
+    private static native boolean nativeIsEngineRunning();
+    private static native void nativeBeginCalibration();
+    private static native boolean nativeFinishCalibration();
+    private static native boolean nativeHasSavedCalibration();
     private static native void nativeSetSimulatedEyeOpenness(float openness);
     private static native void nativeSendFrame(byte[] frameData, int width, int height, int rotation);
     private static native String nativeGetTelemetryJson();
+    private static native String nativeConsumeAlertJson();
     private static native String nativeGetSubjectUuid();
     private static native int nativeGetCurrentDay();
     private static native String nativeGetCloudSyncPayloadJson();

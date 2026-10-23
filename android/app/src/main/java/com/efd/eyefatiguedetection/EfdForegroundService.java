@@ -1,27 +1,47 @@
 package com.efd.eyefatiguedetection;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LifecycleService;
 
 import org.json.JSONObject;
 
+/**
+ * 常駐前景服務：擁有 C++ 偵測引擎與相機，App 介面被劃掉後仍持續偵測與提醒。
+ * 引擎的生命週期只由本服務管理 (Activity 不得停止引擎)。
+ */
 public class EfdForegroundService extends LifecycleService {
     private static final String TAG = "EFD_ForegroundService";
+    private static final long SYNC_CHECK_INTERVAL_MS = 30_000L;
+
+    /** 前景 Activity 顯示中時接收疲勞警報 (改以對話框呈現，不重複發通知)。 */
+    public interface AlertListener {
+        void onFatigueAlert(String message);
+    }
+
+    private static volatile AlertListener sAlertListener;
+
+    public static void setAlertListener(@Nullable AlertListener listener) {
+        sAlertListener = listener;
+    }
 
     private final IBinder mBinder = new LocalBinder();
     private EfdCameraXManager mCameraManager;
     private EfdNotificationHudManager mHudManager;
     private Handler mHandler;
     private Runnable mTelemetryRunnable;
-    private boolean mHasAlerted = false;
-    private boolean mIsSyncInProgress = false;
+    private long mLastSyncCheckMs = 0L;
 
     private static EfdForegroundService sInstance = null;
 
@@ -42,18 +62,17 @@ public class EfdForegroundService extends LifecycleService {
     @Override
     public void onCreate() {
         super.onCreate();
-        sInstance = this;
         Log.i(TAG, "EfdForegroundService onCreate");
 
         mHudManager = new EfdNotificationHudManager(this);
-        startForeground(EfdNotificationHudManager.SERVICE_NOTIFICATION_ID, 
-                mHudManager.buildForegroundNotification());
-
-        try {
-            EfdNativeBridge.initEngineWithPath(getFilesDir().getAbsolutePath());
-        } catch (Throwable t) {
-            Log.e(TAG, "Failed to init native engine with path: " + t.getMessage());
+        if (!enterForeground()) {
+            // 沒有相機權限時無法以 camera 類型前景服務執行 (Android 14+ 會拋 SecurityException)
+            stopSelf();
+            return;
         }
+        sInstance = this;
+
+        ensureEngineRunning();
 
         mCameraManager = new EfdCameraXManager(this, this);
         mCameraManager.startCamera();
@@ -62,6 +81,38 @@ public class EfdForegroundService extends LifecycleService {
 
         mHandler = new Handler(Looper.getMainLooper());
         startTelemetryLoop();
+    }
+
+    private boolean enterForeground() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "尚未取得相機權限，無法啟動前景偵測服務");
+            return false;
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                startForeground(EfdNotificationHudManager.SERVICE_NOTIFICATION_ID,
+                        mHudManager.buildForegroundNotification(),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+            } else {
+                startForeground(EfdNotificationHudManager.SERVICE_NOTIFICATION_ID,
+                        mHudManager.buildForegroundNotification());
+            }
+            return true;
+        } catch (Throwable t) {
+            // 例如 Android 14+ 從背景 (開機廣播) 啟動相機類型前景服務
+            Log.e(TAG, "startForeground 失敗: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    private void ensureEngineRunning() {
+        try {
+            if (!EfdNativeBridge.isEngineRunning()) {
+                EfdNativeBridge.initEngineWithPath(getFilesDir().getAbsolutePath());
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to init native engine with path: " + t.getMessage());
+        }
     }
 
     private void scheduleNightlySyncAlarm() {
@@ -97,6 +148,9 @@ public class EfdForegroundService extends LifecycleService {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+        if (sInstance == this) {
+            ensureEngineRunning();
+        }
         return START_STICKY;
     }
 
@@ -105,25 +159,26 @@ public class EfdForegroundService extends LifecycleService {
             @Override
             public void run() {
                 try {
-                    String jsonStr = EfdNativeBridge.getTelemetryJson();
-                    if (jsonStr != null && jsonStr.length() > 0 && !jsonStr.startsWith("{\"error\"")) {
-                        JSONObject obj = new JSONObject(jsonStr);
-                        int lastAlertLevel = obj.optInt("lastAlertLevel", 0);
-
-                        // 僅當 C++ 狀態機發射單次警報脈衝 (lastAlertLevel == 2) 時調出提醒，20 分鐘冷卻期內絕對靜默
-                        if (lastAlertLevel == 2) {
-                            Log.w(TAG, "C++ 狀態機發射重度疲勞警報脈衝，調出疲勞警告提醒！");
-                            mHudManager.triggerSevereFatigueAlert(
-                                    "🚨 EFD 重度疲勞警告提醒",
-                                    "你的眼睛處於過度疲勞狀態，請立即閉眼休息 5 分鐘！"
-                            );
+                    // 警報只在這裡取出一次：前景有 Activity 時改用對話框，否則發送通知
+                    JSONObject alert = new JSONObject(EfdNativeBridge.consumeAlertJson());
+                    if (alert.optInt("level", 0) == 2) {
+                        String message = alert.optString("message", "你的眼睛處於疲勞狀態，請適當休息");
+                        AlertListener listener = sAlertListener;
+                        if (listener != null) {
+                            listener.onFatigueAlert(message);
+                        } else {
+                            Log.w(TAG, "C++ 狀態機發射重度疲勞警報，發送通知提醒");
+                            mHudManager.triggerSevereFatigueAlert("EFD 疲勞提醒", message);
                         }
+                    }
 
-                        // 每日 21:00 (9 PM) 檢查是否需要同步當日資料 (透過 EfdSyncManager 鎖定單次同步)
+                    long now = System.currentTimeMillis();
+                    if (now - mLastSyncCheckMs >= SYNC_CHECK_INTERVAL_MS) {
+                        mLastSyncCheckMs = now;
                         EfdSyncManager.checkAndPerformDailySync(EfdForegroundService.this, "EfdForegroundService");
                     }
                 } catch (Throwable t) {
-                    // ignore
+                    Log.w(TAG, "Telemetry loop error: " + t.getMessage());
                 }
                 mHandler.postDelayed(this, 1000);
             }
@@ -134,7 +189,12 @@ public class EfdForegroundService extends LifecycleService {
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         super.onTaskRemoved(rootIntent);
+        // 介面被劃掉：引擎由服務擁有，確認仍在運作並改回只做影像分析 (不綁定已消失的預覽畫面)
         Log.i(TAG, "使用者將 App 從任務選單中劃掉，背景前台服務持續常駐運作中");
+        ensureEngineRunning();
+        if (mCameraManager != null) {
+            mCameraManager.startCamera();
+        }
     }
 
     @Override

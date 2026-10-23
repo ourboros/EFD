@@ -70,9 +70,11 @@ public class MainActivity extends AppCompatActivity {
     private int mCountdownSec = 3;
 
     // 即時遙測數據
-    private float mCurrentScore = 12.0f;
+    private float mCurrentScore = 0.0f;
     private int mCurrentLevel = 0;
-    private boolean mHasShownAlert = false;
+    private float mLastThreshold = 0.0f;
+    private boolean mLastCalibrationOk = false;
+    private boolean mIsResumed = false;
     private EfdScreenStateReceiver mScreenStateReceiver;
 
     private static final String CHANNEL_ID = "efd_fatigue_alerts";
@@ -100,14 +102,8 @@ public class MainActivity extends AppCompatActivity {
             Log.w(TAG, "Failed to create notification channel: " + t.getMessage());
         }
 
-        // 3. 初始化原生 NDK C++ 引擎並配置內部持久化儲存目錄
-        try {
-            String filesDir = getFilesDir().getAbsolutePath();
-            EfdNativeBridge.initEngineWithPath(filesDir);
-        } catch (Throwable t) {
-            Log.e(TAG, "Error initializing native engine with path: " + t.getMessage());
-        }
-
+        // 3. 偵測引擎由 EfdForegroundService 擁有並初始化 (Activity 被劃掉時引擎不受影響)
+        //    取得相機權限後才啟動服務：Android 14+ 未授權即啟動相機類型前景服務會閃退
         // 4. 延遲 500ms 請求權限，避免阻礙主視窗渲染啟動
         mHandler.postDelayed(this::requestAppPermissions, 500);
 
@@ -119,19 +115,12 @@ public class MainActivity extends AppCompatActivity {
             Log.w(TAG, "Failed to register screen state receiver: " + t.getMessage());
         }
 
-        // 6. 啟動前台常駐監控服務
-        try {
-            Intent serviceIntent = new Intent(this, EfdForegroundService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent);
-            } else {
-                startService(serviceIntent);
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "Failed to start foreground service: " + t.getMessage());
+        // 5.5 已有相機權限時立即啟動前景監控服務 (否則等權限授予後再啟動)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            startForegroundMonitoringService();
         }
 
-        // 7. 啟動遙測更新輪詢
+        // 6. 啟動遙測更新輪詢 (onResume 會重新啟動，onPause 暫停)
         startTelemetryLoop();
     }
 
@@ -263,6 +252,31 @@ public class MainActivity extends AppCompatActivity {
         }
         updateNavBarHighlight();
         renderCurrentStage();
+        if (stage == UIStage.MainDashboard) {
+            requestIgnoreBatteryOptimizationsOnce();
+        }
+    }
+
+    /**
+     * 小米、OPPO、vivo、華為等廠牌會在 App 被劃掉後強制關閉背景服務；
+     * 引導使用者將 EFD 加入電池最佳化白名單 (只詢問一次)。
+     */
+    @android.annotation.SuppressLint("BatteryLife")
+    private void requestIgnoreBatteryOptimizationsOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+        SharedPreferences prefs = getSharedPreferences("efd_prefs", MODE_PRIVATE);
+        if (prefs.getBoolean("asked_battery_optimization", false)) return;
+        prefs.edit().putBoolean("asked_battery_optimization", true).apply();
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                Intent intent = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Battery optimization request failed: " + t.getMessage());
+        }
     }
 
     private void setupTopNavBar() {
@@ -547,11 +561,17 @@ public class MainActivity extends AppCompatActivity {
                     dotCanvas.invalidate();
                     mHandler.postDelayed(this, 16);
                 } else {
-                    EfdNativeBridge.calibrate(3.0f);
+                    // 只採用校準期間有偵測到人臉的幀；不足 60% 則校準失敗、保留原基準
+                    mLastCalibrationOk = EfdNativeBridge.finishCalibration();
+                    if (mLastCalibrationOk) {
+                        getSharedPreferences("efd_prefs", MODE_PRIVATE)
+                                .edit().putBoolean("has_calibrated", true).apply();
+                    }
                     setStage(UIStage.CalibrationResult);
                 }
             }
         });
+        EfdNativeBridge.beginCalibration();
     }
 
     // -------------------------------------------------------------------------
@@ -565,7 +585,7 @@ public class MainActivity extends AppCompatActivity {
         layout.setPadding(32, 32, 32, 32);
 
         TextView title = new TextView(this);
-        title.setText("眼動特徵基準校準完成！");
+        title.setText(mLastCalibrationOk ? "眼動特徵基準校準完成！" : "校準未完成");
         title.setTextSize(24);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setTextColor(Color.WHITE);
@@ -574,7 +594,14 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(title);
 
         TextView val = new TextView(this);
-        val.setText("個人適應性 EAR 判定閾值 = 0.265\n微睡眠抗污染係數 = 正常");
+        if (mLastCalibrationOk) {
+            val.setText(String.format(java.util.Locale.getDefault(),
+                    "個人適應性 EAR 判定閾值 = %.3f\n下次開啟將直接沿用此基準", mLastThreshold));
+        } else if (!EfdNativeBridge.isEngineRunning()) {
+            val.setText("偵測引擎尚未啟動，請確認已允許相機權限後重新校準");
+        } else {
+            val.setText("校準期間未穩定偵測到臉部\n請在光線充足處正對鏡頭後重新校準");
+        }
         val.setTextSize(15);
         val.setTypeface(null, android.graphics.Typeface.BOLD);
         val.setTextColor(Color.parseColor("#F7E3AF"));
@@ -582,8 +609,22 @@ public class MainActivity extends AppCompatActivity {
         val.setPadding(0, 0, 0, 36);
         layout.addView(val);
 
+        if (!mLastCalibrationOk) {
+            Button retryBtn = new Button(this);
+            retryBtn.setText("重新校準");
+            retryBtn.setTextSize(15);
+            retryBtn.setPadding(24, 14, 24, 14);
+            styleButton(retryBtn, "#FFFFFF", "#25291C");
+            retryBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
+            LinearLayout.LayoutParams retryLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            retryLp.setMargins(0, 0, 0, 12);
+            retryBtn.setLayoutParams(retryLp);
+            layout.addView(retryBtn);
+        }
+
         Button proceedBtn = new Button(this);
-        proceedBtn.setText("進入即時眼動監控中心");
+        proceedBtn.setText(mLastCalibrationOk ? "進入即時眼動監控中心" : "略過，先使用預設基準");
         proceedBtn.setTextSize(15);
         proceedBtn.setPadding(24, 14, 24, 14);
         styleButton(proceedBtn, "#F7E3AF", "#25291C");
@@ -616,7 +657,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView mDashScoreText;
     private TextView mDashStatusText;
     private TextView mDashMetricsText;
-    private EfdCameraXManager mLocalCameraManager;
+    private boolean mPreviewBoundToService = false;
 
     private void renderMainDashboardScreen() {
         ScrollView scroll = new ScrollView(this);
@@ -658,14 +699,12 @@ public class MainActivity extends AppCompatActivity {
 
             layout.addView(cardView);
 
+            // 相機只由前景服務擁有；Activity 不另開相機，避免兩邊對同一個
+            // ProcessCameraProvider 呼叫 unbindAll() 而互相中斷影像分析
             EfdForegroundService fgService = EfdForegroundService.getInstance();
             if (fgService != null && fgService.getCameraManager() != null) {
                 fgService.getCameraManager().startCameraWithPreview(previewView);
-            } else {
-                if (mLocalCameraManager == null) {
-                    mLocalCameraManager = new EfdCameraXManager(this, this);
-                }
-                mLocalCameraManager.startCameraWithPreview(previewView);
+                mPreviewBoundToService = true;
             }
         } catch (Throwable t) {
             Log.w(TAG, "Failed to embed camera preview: " + t.getMessage());
@@ -680,7 +719,11 @@ public class MainActivity extends AppCompatActivity {
         TextView subjText = new TextView(this);
         String uuid = EfdNativeBridge.getSubjectUuid();
         int day = EfdNativeBridge.getCurrentDay();
-        subjText.setText(String.format(java.util.Locale.getDefault(), "受試者代碼：%s (實驗第 %d / 14 天)", uuid, day));
+        if (uuid == null || uuid.isEmpty() || day <= 0) {
+            subjText.setText("受試者代碼：-- (偵測服務啟動中)");
+        } else {
+            subjText.setText(String.format(java.util.Locale.getDefault(), "受試者代碼：%s (實驗第 %d / 14 天)", uuid, day));
+        }
         subjText.setTextSize(13);
         subjText.setTypeface(null, android.graphics.Typeface.BOLD);
         subjText.setTextColor(Color.parseColor("#F7E3AF"));
@@ -975,11 +1018,21 @@ public class MainActivity extends AppCompatActivity {
 
                 try {
                     String jsonStr = EfdNativeBridge.getTelemetryJson();
-                    if (jsonStr != null && jsonStr.length() > 0 && !jsonStr.startsWith("{\"error\"")) {
-                        JSONObject obj = new JSONObject(jsonStr);
-                        mCurrentScore = (float) obj.optDouble("fatigueScore", 12.0);
+                    JSONObject obj = new JSONObject(jsonStr != null ? jsonStr : EfdNativeBridge.ENGINE_NOT_RUNNING_JSON);
+                    if (!obj.optBoolean("engineRunning", false)) {
+                        // 引擎未啟動時明確告知，不顯示任何假數值
+                        if (mCurrentStage == UIStage.MainDashboard && mDashScoreText != null) {
+                            mDashStatusText.setText("偵測引擎未啟動：請確認已允許相機權限");
+                            mDashStatusText.setTextColor(Color.parseColor("#EB5757"));
+                            mDashScoreText.setText("疲勞評分：--");
+                            if (mDashMetricsText != null) {
+                                mDashMetricsText.setText("EAR 即時: -- | 閾值: --\nPERCLOS: -- | 眨眼: -- | CI: --");
+                            }
+                        }
+                    } else {
+                        mCurrentScore = (float) obj.optDouble("fatigueScore", 0.0);
                         mCurrentLevel = obj.optInt("fatigueLevel", 0);
-                        int lastAlertLevel = obj.optInt("lastAlertLevel", 0);
+                        mLastThreshold = (float) obj.optDouble("threshold", 0.0);
                         int cooldownState = obj.optInt("cooldownState", 0);
                         int cooldownRemaining = obj.optInt("cooldownRemaining", 0);
 
@@ -1025,19 +1078,58 @@ public class MainActivity extends AppCompatActivity {
                             }
                         }
 
-                        // 僅當 C++ 狀態機發射單次警報脈衝 (lastAlertLevel == 2) 時調出提醒彈窗，20 分鐘冷卻期內絕對靜默
-                        if (lastAlertLevel == 2) {
-                            triggerFatigueAlertNotification("你的眼睛處於疲勞狀態，請適當休息");
-                        }
+                        // 疲勞警報不在這裡處理：由前景服務取出後，透過 AlertListener 通知前景的 Activity
                     }
                 } catch (Throwable e) {
-                    // ignore
+                    Log.w(TAG, "Telemetry update failed: " + e.getMessage());
                 }
 
                 mHandler.postDelayed(this, 100);
             }
         };
         mHandler.post(mTelemetryRunnable);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mIsResumed = true;
+        // 前景時由對話框呈現警報；背景時服務改發通知
+        EfdForegroundService.setAlertListener(message -> mHandler.post(() -> {
+            if (mIsResumed && !isActivityDestroyed()) {
+                triggerFatigueAlertNotification(message);
+            }
+        }));
+        if (mHandler != null && mTelemetryRunnable != null) {
+            mHandler.removeCallbacks(mTelemetryRunnable);
+            mHandler.post(mTelemetryRunnable);
+        }
+        if (mCurrentStage == UIStage.MainDashboard) {
+            renderCurrentStage(); // 重新綁定相機預覽
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mIsResumed = false;
+        EfdForegroundService.setAlertListener(null);
+        if (mHandler != null && mTelemetryRunnable != null) {
+            mHandler.removeCallbacks(mTelemetryRunnable);
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // 介面不可見時，服務的相機改回只做影像分析，不再綁定即將消失的預覽畫面
+        if (mPreviewBoundToService) {
+            EfdForegroundService fgService = EfdForegroundService.getInstance();
+            if (fgService != null && fgService.getCameraManager() != null) {
+                fgService.getCameraManager().startCamera();
+            }
+            mPreviewBoundToService = false;
+        }
     }
 
     @Override
@@ -1053,10 +1145,6 @@ public class MainActivity extends AppCompatActivity {
         if (mHandler != null && mTelemetryRunnable != null) {
             mHandler.removeCallbacks(mTelemetryRunnable);
         }
-        try {
-            EfdNativeBridge.stopEngine();
-        } catch (Throwable t) {
-            Log.w(TAG, "Error stopping native engine: " + t.getMessage());
-        }
+        // 不停止偵測引擎：引擎由 EfdForegroundService 擁有，App 介面被劃掉後仍需持續偵測與提醒
     }
 }

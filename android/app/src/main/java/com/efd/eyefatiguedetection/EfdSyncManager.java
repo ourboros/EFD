@@ -10,12 +10,25 @@ import android.util.Log;
 
 import java.util.Calendar;
 
+/**
+ * Android 唯一的每日上傳入口 (C++ 引擎端的夜間同步在 Android 上已關閉)。
+ * - 每晚 21:00 後上傳當日資料
+ * - 補傳：若昨天 (含) 以前未成功上傳，任何時間觸發都會立即補傳
+ * - 上傳成功才標記；失敗 10 分鐘後重試
+ */
 public class EfdSyncManager {
     private static final String TAG = "EFD_SyncManager";
     private static final String PREF_NAME = "efd_sync_prefs";
     private static final String KEY_LAST_SUCCESS_SYNC_DATE = "last_success_sync_date";
+    private static final String KEY_FIRST_SEEN_DATE = "first_seen_date";
 
     private static boolean sIsSyncing = false;
+
+    private static int toDateInt(Calendar cal) {
+        return cal.get(Calendar.YEAR) * 10000 +
+                (cal.get(Calendar.MONTH) + 1) * 100 +
+                cal.get(Calendar.DAY_OF_MONTH);
+    }
 
     public static synchronized void checkAndPerformDailySync(Context context, String triggerSource) {
         if (context == null) return;
@@ -26,19 +39,31 @@ public class EfdSyncManager {
 
         Calendar cal = Calendar.getInstance();
         int hour = cal.get(Calendar.HOUR_OF_DAY);
-        int todayDateInt = cal.get(Calendar.YEAR) * 10000 +
-                (cal.get(Calendar.MONTH) + 1) * 100 +
-                cal.get(Calendar.DAY_OF_MONTH);
+        final int todayDateInt = toDateInt(cal);
+        Calendar yesterday = (Calendar) cal.clone();
+        yesterday.add(Calendar.DAY_OF_YEAR, -1);
+        final int yesterdayDateInt = toDateInt(yesterday);
 
-        // 1. 若當天已成功同步過，徹底攔截並關閉重試 (0 次重複上傳)
-        if (lastSuccessSyncDate == todayDateInt) {
-            Log.i(TAG, "今日 (" + todayDateInt + ") 已成功上傳過 Google 試算表，自動關閉重試 (觸發源: " + triggerSource + ")");
+        // 記錄第一次執行的日期：安裝當天之前不可能有資料，避免首次啟動就誤判為「需要補傳」
+        int firstSeenDate = prefs.getInt(KEY_FIRST_SEEN_DATE, 0);
+        if (firstSeenDate == 0) {
+            firstSeenDate = todayDateInt;
+            prefs.edit().putInt(KEY_FIRST_SEEN_DATE, firstSeenDate).apply();
+        }
+
+        if (lastSuccessSyncDate >= todayDateInt) {
             cancelRetryAlarm(appContext);
             return;
         }
 
-        // 2. 只有在時間 >= 21:00 (9 PM) 且未進行中時才嘗試同步
-        if (hour < 21 && !"Nightly_2100_AlarmManager_Sync".equals(triggerSource)) {
+        final int markDate;
+        boolean isNightlyWindow = hour >= 21 || "Nightly_2100_AlarmManager_Sync".equals(triggerSource);
+        if (isNightlyWindow) {
+            markDate = todayDateInt;
+        } else if (lastSuccessSyncDate < yesterdayDateInt && firstSeenDate < todayDateInt) {
+            // 補傳：例如昨晚 21:00 手機關機或 App 被系統終止
+            markDate = yesterdayDateInt;
+        } else {
             return;
         }
 
@@ -47,18 +72,23 @@ public class EfdSyncManager {
             return;
         }
 
+        // 上傳內容由 C++ 資料庫產生；服務未啟動時 (例如開機、鬧鐘喚醒) 先載入引擎
+        if (!EfdNativeBridge.isEngineRunning()) {
+            EfdNativeBridge.initEngineWithPath(appContext.getFilesDir().getAbsolutePath());
+        }
+
         sIsSyncing = true;
-        Log.i(TAG, "🚀 開始執行 21:00 每日資料同步 (觸發源: " + triggerSource + ")...");
+        Log.i(TAG, "開始執行每日資料同步 (標記日期 " + markDate + "，觸發源: " + triggerSource + ")...");
 
         EfdHttpSyncBridge.uploadFullPayloadAsync(null, (success, responseMessage) -> {
             synchronized (EfdSyncManager.class) {
                 sIsSyncing = false;
                 if (success) {
-                    prefs.edit().putInt(KEY_LAST_SUCCESS_SYNC_DATE, todayDateInt).apply();
-                    Log.i(TAG, "✅ 今日 (" + todayDateInt + ") 每日資料同步至 Google 試算表成功落盤註記！");
+                    prefs.edit().putInt(KEY_LAST_SUCCESS_SYNC_DATE, markDate).apply();
+                    Log.i(TAG, "資料同步至 Google 試算表成功，標記日期 " + markDate);
                     cancelRetryAlarm(appContext);
                 } else {
-                    Log.w(TAG, "❌ 每日資料同步上傳失敗，設定 10 分鐘後重試: " + responseMessage);
+                    Log.w(TAG, "資料同步上傳失敗，設定 10 分鐘後重試: " + responseMessage);
                     scheduleRetryAlarm(appContext);
                 }
             }
@@ -71,6 +101,7 @@ public class EfdSyncManager {
             if (alarmManager == null) return;
 
             Intent intent = new Intent(context, EfdSyncAlarmReceiver.class);
+            intent.putExtra(EfdSyncAlarmReceiver.EXTRA_IS_RETRY, true);
             PendingIntent pendingIntent = PendingIntent.getBroadcast(
                     context, 2101, intent,
                     PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0));
