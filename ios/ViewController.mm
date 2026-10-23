@@ -97,28 +97,42 @@ static UIImage* EFDGetAsset10Logo() {
     // 初始化 C++20 跨平台管線引擎 (iOS 平台原生)
     _engine = new efd::AsyncPipelineEngine(efd::PlatformType::iOS);
 
-    // 檢查是否已達第 14 天後測門禁
-    if (_engine->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest) {
-        self.currentStage = EFDAppStageStudyGate;
+    // App 工作目錄為唯讀，設定檔/資料庫/冷卻狀態必須存放在 Application Support，
+    // 否則每次開啟都會產生新受試者、回到第 1 天且需要重新校準
+    NSString *dataDir = [ViewController efdDataDirectory];
+    if (dataDir) {
+        _engine->setDataDirectory(std::string(dataDir.UTF8String));
     }
 
-    // 遙測回呼
+    // 檢查是否已達第 14 天後測門禁；已完成初次校準則直接進入監控中心
+    if (_engine->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest) {
+        self.currentStage = EFDAppStageStudyGate;
+    } else if (_engine->hasSavedCalibration() || _engine->getStudyTracker().isInitialSetupCompleted()) {
+        self.currentStage = EFDAppStageDashboard;
+    }
+
+    // 遙測回呼 (於引擎執行緒觸發；只複製 UI 需要的欄位，並在主執行緒寫入，避免資料競爭)
     _engine->setTelemetryCallback([self](const efd::EngineTelemetry& t) {
-        self->_latestTelemetry = t;
-        self->_hasTelemetry = YES;
+        efd::EngineTelemetry slim;
+        slim.detection.hasFace = t.detection.hasFace;
+        slim.eyeMetrics = t.eyeMetrics;
+        slim.complexityMetrics = t.complexityMetrics;
+        slim.systemState = t.systemState;
+        slim.currentThreshold = t.currentThreshold;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self updateTelemetryUI:t];
+            self->_latestTelemetry = slim;
+            self->_hasTelemetry = YES;
+            [self updateTelemetryUI:slim];
         });
     });
 
-    // 警報回呼 (疲勞超標警報與震動)
+    // 警報回呼：是否提醒完全由 20/5/5 狀態機決定 (只會在 SevereWarning 時觸發)
     _engine->setAlertCallback([self](efd::FatigueLevel level, float score, const std::string& msg) {
+        (void)level;
         (void)msg;
-        if (level == efd::FatigueLevel::SevereWarning || score >= 70.0f) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self triggerFatigueAlertNotification:score];
-            });
-        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self triggerFatigueAlertNotification:score];
+        });
     });
 
     // 啟動管線
@@ -182,28 +196,77 @@ static UIImage* EFDGetAsset10Logo() {
     }];
 }
 
++ (NSString *)efdDataDirectory {
+    NSArray<NSURL *> *urls = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
+                                                                    inDomains:NSUserDomainMask];
+    if (urls.count == 0) return nil;
+    NSURL *dirUrl = [urls.firstObject URLByAppendingPathComponent:@"EFD" isDirectory:YES];
+    [[NSFileManager defaultManager] createDirectoryAtURL:dirUrl
+                             withIntermediateDirectories:YES
+                                              attributes:nil
+                                                   error:nil];
+    return dirUrl.path;
+}
+
 - (void)onAppDidEnterBackground {
-    // 偏好 A：當使用者切到其他 App 或鎖定螢幕時，相機自動安全掛起
-    // 向系統排定 20 分鐘與 30 分鐘鬧鐘式本地推播提醒
-    [self scheduleFatigueReminderNotificationInMinutes:20];
+    // iOS 不允許 App 在背景使用相機：暫停管線並保存冷卻狀態
+    if (_engine) {
+        _engine->pause();
+    }
+    // 背景期間無法偵測，改排定一次性的休息提醒；冷卻期間不提醒，延到冷卻結束
+    int delaySeconds = 20 * 60;
+    if (_engine) {
+        efd::SystemState state = _engine->getStateMachine().getState();
+        if (state.cooldownState == efd::CooldownState::InCooldown) {
+            delaySeconds = std::max(delaySeconds, state.cooldownRemainingSeconds);
+        }
+    }
+    [self scheduleFatigueReminderNotificationInSeconds:delaySeconds];
 }
 
 - (void)onAppWillEnterForeground {
     // 使用者返回 EFD，清除排程中尚未觸發的疲勞提醒
     [[UNUserNotificationCenter currentNotificationCenter] removePendingNotificationRequestsWithIdentifiers:@[@"EFD_FATIGUE_ALARM_20M"]];
+    if (_engine) {
+        // 背景時間會比照離座處理 (滿 5 分鐘清除冷卻)，並補傳錯過的每日資料
+        _engine->resume();
+        _engine->checkAndTriggerNightlySync();
+    }
     if (self.currentStage == EFDAppStageDashboard) {
         [UIApplication sharedApplication].idleTimerDisabled = YES;
         [self attachCameraPreviewIfNeeded];
     }
 }
 
-- (void)scheduleFatigueReminderNotificationInMinutes:(int)minutes {
+// 背景同步 (BGAppRefreshTask)：觸發補傳/夜間同步並等待結果，最多約 25 秒
+- (void)runBackgroundSyncWithCompletion:(void (^)(BOOL success))completion {
+    efd::AsyncPipelineEngine *engine = _engine;
+    if (!engine) {
+        completion(NO);
+        return;
+    }
+    const int before = engine->getStudyTracker().getLastSyncedDate();
+    if (!engine->checkAndTriggerNightlySync()) {
+        completion(YES); // 沒有需要上傳的資料
+        return;
+    }
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        for (int i = 0; i < 250 && engine->getSyncWorker().isSyncing(); ++i) {
+            [NSThread sleepForTimeInterval:0.1];
+        }
+        [NSThread sleepForTimeInterval:0.1];
+        BOOL ok = engine->getStudyTracker().getLastSyncedDate() != before;
+        completion(ok);
+    });
+}
+
+- (void)scheduleFatigueReminderNotificationInSeconds:(int)seconds {
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
-    content.title = @"🚨 EFD 眼睛健康鬧鐘提醒";
-    content.body = [NSString stringWithFormat:@"您已持續使用手機達 %d 分鐘！EFD 建議您閉眼休息 5 分鐘，放鬆眼部睫狀肌。", minutes];
+    content.title = @"EFD 眼睛休息提醒";
+    content.body = [NSString stringWithFormat:@"已離開 EFD 偵測畫面 %d 分鐘，若仍持續使用手機，建議閉眼休息 5 分鐘。", seconds / 60];
     content.sound = [UNNotificationSound defaultSound];
 
-    UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:(minutes * 60) repeats:NO];
+    UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:seconds repeats:NO];
     UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:@"EFD_FATIGUE_ALARM_20M" content:content trigger:trigger];
 
     [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request withCompletionHandler:nil];
@@ -483,6 +546,9 @@ static UIImage* EFDGetAsset10Logo() {
     [self.contentContainer addSubview:self.calibProgressView];
 
     self.calibElapsedSec = 0.0f;
+    if (_engine) {
+        _engine->beginCalibration();
+    }
     [self.calibTimer invalidate];
     self.calibTimer = [NSTimer scheduledTimerWithTimeInterval:0.05
                                                        target:self
@@ -501,11 +567,27 @@ static UIImage* EFDGetAsset10Logo() {
         [self.calibTimer invalidate];
         self.calibTimer = nil;
 
-        if (_engine) {
-            _engine->calibrate(3.0f);
+        // 只採用校準期間有偵測到人臉的幀；不足 60% 視為失敗，不覆蓋原本的基準
+        BOOL ok = _engine ? _engine->finishCalibration() : NO;
+        if (ok) {
+            [self switchToStage:EFDAppStageDashboard];
+            return;
         }
 
-        [self switchToStage:EFDAppStageDashboard];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"校準未完成"
+                                                                       message:@"校準期間未穩定偵測到臉部。\n請在光線充足處將手機拿正、平視前鏡頭後重新校準。"
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"重新校準" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [self switchToStage:EFDAppStageCalibration];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"略過，先使用預設基準" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+            // 記錄已走過初次設定，下次開啟不再強制從歡迎頁開始
+            if (self->_engine) {
+                self->_engine->getStudyTracker().setInitialSetupCompleted(true);
+            }
+            [self switchToStage:EFDAppStageDashboard];
+        }]];
+        [self presentViewController:alert animated:YES completion:nil];
     }
 }
 
@@ -681,11 +763,9 @@ static UIImage* EFDGetAsset10Logo() {
 }
 
 - (void)onMinimizeToBackgroundClicked {
-    // 偏好 A：背景運行模式彈窗說明並啟動本地鬧鐘守護
-    [self scheduleFatigueReminderNotificationInMinutes:20];
-
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"守護中：背景定時提醒已啟動"
-                                                                   message:@"受限於 iOS 隱私安全政策，切換至其他 App 時相機將安全休眠以節省電力。\n\n系統已為您排定「用眼超時鬧鐘提醒」（20 分鐘後響鈴提醒閉眼休息 5 分鐘）。"
+    // 實際的提醒排程在 onAppDidEnterBackground 進行 (依冷卻狀態決定時間)
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"切換至背景後的限制"
+                                                                   message:@"iOS 不允許 App 在背景使用相機，離開 EFD 畫面後會暫停疲勞偵測。\n\n系統會排定一次休息提醒 (20 分鐘後；若正處於冷卻期則延到冷卻結束)。每日資料會在下次開啟或系統允許的背景時段自動補傳。"
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"確定" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
@@ -762,7 +842,7 @@ static UIImage* EFDGetAsset10Logo() {
     [scrollView addSubview:createSettingRow(curY, @"開機自動背景啟動", @"裝置啟動後自動於背景待命守護", self.autoStartEnabled, @selector(onAutoStartChanged:), NO)];
     curY += (itemH + gap);
 
-    [scrollView addSubview:createSettingRow(curY, @"自動科研同步", @"系統預設恆定啟用 (每晚 21:00 自動上傳)", YES, nil, YES)];
+    [scrollView addSubview:createSettingRow(curY, @"自動科研同步", @"每晚 21:00 後上傳；錯過時於下次開啟自動補傳", YES, nil, YES)];
     curY += (itemH + gap);
 
     scrollView.contentSize = CGSizeMake(w, curY + 8);

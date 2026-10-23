@@ -532,10 +532,11 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         int64_t count = ++m_processedFrameCount;
 
         // 5. 每秒落盤一筆 (僅在人臉在座時記錄有效特徵)
+        //    模擬相機 (實體鏡頭無畫面時的備援) 的影格不是真實受試者資料，不寫入研究資料庫
         m_recordTimer += deltaSec;
         if (m_recordTimer >= 1.0f) {
             m_recordTimer = 0.0f;
-            if (hasFace) {
+            if (hasFace && !package.frame.isSynthetic) {
                 FatigueRecord record;
                 record.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
