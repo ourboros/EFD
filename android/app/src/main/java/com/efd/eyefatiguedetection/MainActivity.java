@@ -790,7 +790,7 @@ public class MainActivity extends AppCompatActivity {
     // -------------------------------------------------------------------------
     // 階段 7：設定面板 (僅保留：提示靈敏度、重設眼動監測、警告通知發送)
     // -------------------------------------------------------------------------
-    private int mSensitivityLevel = 1; // 0: 低, 1: 標準, 2: 高
+    private int mSensitivityLevel = 1; // 0: 低, 1: 標準, 2: 高 (實際值保存在 C++ 設定檔)
 
     private void renderSettingsScreen() {
         ScrollView scroll = new ScrollView(this);
@@ -810,12 +810,23 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(title);
 
         // 項目 1: 提示靈敏度
-        final String[] sensNames = { "低靈敏度 (保守)", "標準靈敏度 (推薦)", "高靈敏度 (即時警報)" };
+        // 只調整提醒門檻與持續秒數，20/5/5 冷卻規則不變
+        final String[] sensNames = {
+                "低靈敏度 (≥70 分持續 15 秒)", "標準靈敏度 (≥65 分持續 10 秒，推薦)", "高靈敏度 (≥58 分持續 5 秒)" };
         Button sensBtn = new Button(this);
-        sensBtn.setText("提示靈敏度: " + sensNames[mSensitivityLevel] + " (點擊切換)");
+        int savedLevel = EfdNativeBridge.getSensitivity();
+        final boolean engineReady = savedLevel >= 0;
+        if (engineReady) {
+            mSensitivityLevel = savedLevel;
+            sensBtn.setText("提示靈敏度: " + sensNames[mSensitivityLevel] + " (點擊切換)");
+        } else {
+            sensBtn.setText("提示靈敏度: 請先開始監測後再調整");
+        }
         styleButton(sensBtn, "#343A26", "#F7E3AF");
+        sensBtn.setEnabled(engineReady);
         sensBtn.setOnClickListener(v -> {
             mSensitivityLevel = (mSensitivityLevel + 1) % 3;
+            EfdNativeBridge.setSensitivity(mSensitivityLevel);
             sensBtn.setText("提示靈敏度: " + sensNames[mSensitivityLevel] + " (點擊切換)");
         });
         layout.addView(sensBtn);
@@ -930,7 +941,9 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(title);
 
         TextView tokenText = new TextView(this);
-        tokenText.setText("科研憑證: EFD-14D-A8C2-99F1\n\n感謝您 14 天以來的協助！\n現在您可以關閉或解除安裝本系統。");
+        String unlockToken = EfdNativeBridge.getUnlockToken();
+        tokenText.setText("科研憑證: " + (unlockToken.isEmpty() ? "尚未取得" : unlockToken)
+                + "\n\n感謝您 14 天以來的協助！\n現在您可以關閉或解除安裝本系統。");
         tokenText.setTextSize(15);
         tokenText.setTypeface(null, android.graphics.Typeface.BOLD);
         tokenText.setTextColor(Color.parseColor("#F7E3AF"));

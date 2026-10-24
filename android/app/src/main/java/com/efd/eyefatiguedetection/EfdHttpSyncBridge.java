@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 
 public class EfdHttpSyncBridge {
     private static final String TAG = "EFD_HttpSyncBridge";
+    // 需與 C++ 端 efd::kDefaultCloudSyncEndpoint (include/efd/types.hpp) 保持一致
     public static final String GOOGLE_SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
 
     private static final ExecutorService sExecutor = Executors.newSingleThreadExecutor();

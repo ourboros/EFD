@@ -116,15 +116,48 @@ public class EfdNativeBridge {
         }
     }
 
+    // 產生並保存解鎖憑證；失敗時回傳空字串 (不再回傳假憑證)
     public static String submitQuestionnaire(String surveyData) {
-        if (!sLibraryLoaded) {
-            return "EFD-14D-FALLBACK-TOKEN";
-        }
+        if (!sLibraryLoaded) return "";
         try {
-            return nativeSubmitQuestionnaire(surveyData);
+            String token = nativeSubmitQuestionnaire(surveyData);
+            return (token == null || "ERROR".equals(token)) ? "" : token;
         } catch (Throwable t) {
             Log.e(TAG, "nativeSubmitQuestionnaire failed: " + t.getMessage(), t);
-            return "EFD-14D-FALLBACK-TOKEN";
+            return "";
+        }
+    }
+
+    // 已保存的解鎖憑證；尚未填寫後測問卷或引擎未啟動時為空字串
+    public static String getUnlockToken() {
+        if (!sLibraryLoaded) return "";
+        try {
+            String token = nativeGetUnlockToken();
+            return token == null ? "" : token;
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeGetUnlockToken failed: " + t.getMessage(), t);
+            return "";
+        }
+    }
+
+    // 提示靈敏度 (0 低 / 1 標準 / 2 高)；由 C++ 保存到設定檔
+    public static void setSensitivity(int level) {
+        if (!sLibraryLoaded) return;
+        try {
+            nativeSetSensitivity(level);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeSetSensitivity failed: " + t.getMessage(), t);
+        }
+    }
+
+    // 引擎未啟動時回傳 -1
+    public static int getSensitivity() {
+        if (!sLibraryLoaded) return -1;
+        try {
+            return nativeGetSensitivity();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeGetSensitivity failed: " + t.getMessage(), t);
+            return -1;
         }
     }
 
@@ -201,6 +234,9 @@ public class EfdNativeBridge {
     private static native int nativeGetCurrentDay();
     private static native String nativeGetCloudSyncPayloadJson();
     private static native String nativeSubmitQuestionnaire(String surveyData);
+    private static native String nativeGetUnlockToken();
+    private static native void nativeSetSensitivity(int level);
+    private static native int nativeGetSensitivity();
     private static native void nativeTriggerTestAlert();
     private static native void nativeStopEngine();
 }

@@ -314,56 +314,44 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetCloudSyncPayloadJson(J
         return env->NewStringUTF("");
     }
 
-    std::string subjectUuid = engine->getStudyTracker().getSubjectUuid();
-    int currentDay = engine->getStudyTracker().getCurrentDay();
-
-    auto now = std::chrono::system_clock::now();
-    std::time_t tt = std::chrono::system_clock::to_time_t(now);
-    std::tm localTm{};
-    localtime_r(&tt, &localTm);
-    char timeBuf[64];
-    std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
+    // 與 Windows / iOS / macOS 共用同一份 JSON 產生邏輯：指標、眨眼率、校驗碼都由實際紀錄計算，
+    // 無紀錄時指標為 null；憑證只在填寫後測問卷後才有，否則為空字串
+    auto& tracker = engine->getStudyTracker();
+    efd::PayloadHeader header;
+    header.subjectUuid = tracker.getSubjectUuid();
+    header.studyDay = tracker.getCurrentDay();
+    header.studyStatus = efd::StudyWorkflowTracker::statusLabel(tracker.getStatus());
+    header.unlockToken = tracker.getUnlockToken();
 
     auto& db = engine->getDatabaseService();
     db.flush();
     auto records = db.getLatestRecords(db.getRecordCount());
-    float earSum = 0.0f, perclosSum = 0.0f, ciSum = 0.0f, scoreSum = 0.0f;
-    for (const auto& r : records) {
-        earSum += r.ear;
-        perclosSum += r.perclos;
-        ciSum += r.complexityIndex;
-        scoreSum += r.fatigueScore;
+    std::string json = efd::NetworkSyncWorker::buildPayloadJson(header, records, false);
+    return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSetSensitivity(JNIEnv* /*env*/, jclass /*clazz*/, jint level) {
+    auto engine = currentEngine();
+    if (engine) {
+        engine->setSensitivity(static_cast<int>(level));
     }
-    size_t count = records.empty() ? 1 : records.size();
-    float earMean = records.empty() ? 0.312f : (earSum / count);
-    float perclosMean = records.empty() ? 0.0f : (perclosSum / count * 100.0f);
-    float ciMean = records.empty() ? 4.50f : (ciSum / count);
-    float scoreMean = records.empty() ? 0.0f : (scoreSum / count);
+}
 
-    std::string token = engine->getStudyTracker().getUnlockToken();
-    if (token.empty()) {
-        token = "EFD-14D-966C-B875";
+JNIEXPORT jint JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetSensitivity(JNIEnv* /*env*/, jclass /*clazz*/) {
+    auto engine = currentEngine();
+    if (!engine) {
+        return -1;
     }
+    return static_cast<jint>(engine->getSensitivity());
+}
 
-    std::ostringstream jsonStream;
-    jsonStream << "{\n"
-               << "  \"timestamp\": \"" << timeBuf << "\",\n"
-               << "  \"subject_id\": \"" << subjectUuid << "\",\n"
-               << "  \"study_day\": " << currentDay << ",\n"
-               << "  \"status\": \"Normal\",\n"
-               << "  \"metrics\": {\n"
-               << "    \"ear_mean\": " << std::fixed << std::setprecision(4) << earMean << ",\n"
-               << "    \"perclos\": " << std::fixed << std::setprecision(2) << perclosMean << ",\n"
-               << "    \"blink_rate\": 16.0,\n"
-               << "    \"mse_ci\": " << std::fixed << std::setprecision(4) << ciMean << "\n"
-               << "  },\n"
-               << "  \"fatigue_score\": " << std::fixed << std::setprecision(2) << scoreMean << ",\n"
-               << "  \"record_count\": " << count << ",\n"
-               << "  \"checksum\": \"c832300e692ff87c2deb0b4c0222fff7\",\n"
-               << "  \"token\": \"" << token << "\"\n"
-               << "}\n";
-
-    return env->NewStringUTF(jsonStream.str().c_str());
+JNIEXPORT jstring JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetUnlockToken(JNIEnv* env, jclass /*clazz*/) {
+    auto engine = currentEngine();
+    std::string token = engine ? engine->getStudyTracker().getUnlockToken() : std::string();
+    return env->NewStringUTF(token.c_str());
 }
 
 JNIEXPORT jstring JNICALL
