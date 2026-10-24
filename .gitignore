@@ -57,4 +57,12 @@ efd_debuger/efd_daily_sync.json
 efd_debuger/*.log
 efd_debuger/*.dat*
 test_study_config.json
+efd_fsm_state.txt
 EFD-v2.0.0-Windows/
+
+# 本機 Gradle 發行包 (GRADLE_USER_HOME 指向 android/ 時下載) 與編輯器鎖定檔
+android/wrapper/
+.LCK*~
+
+# 行動版安裝檔 (由建置流程產生)
+*.ipa
