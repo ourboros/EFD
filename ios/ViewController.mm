@@ -70,7 +70,7 @@ static UIImage* EFDGetAsset10Logo() {
 // 設定項目狀態
 @property (nonatomic, assign) BOOL highSensitivityEnabled;
 @property (nonatomic, assign) BOOL soundAlertEnabled;
-@property (nonatomic, assign) BOOL autoStartEnabled;
+// iOS 不允許 App 開機自動啟動，因此沒有「開機自動啟動」設定
 
 // 背景定時檢查 (科研同步 & 門禁檢查)
 @property (nonatomic, strong) NSTimer *backgroundCheckTimer;
@@ -85,7 +85,6 @@ static UIImage* EFDGetAsset10Logo() {
 
     self.highSensitivityEnabled = NO;
     self.soundAlertEnabled = YES;
-    self.autoStartEnabled = NO;
     self.currentStage = EFDAppStageWelcome;
 
     // 建立全螢幕自適應容器
@@ -103,6 +102,7 @@ static UIImage* EFDGetAsset10Logo() {
     if (dataDir) {
         _engine->setDataDirectory(std::string(dataDir.UTF8String));
     }
+    self.highSensitivityEnabled = (_engine->getSensitivity() == efd::FatigueStateMachine::kSensitivityHigh);
 
     // 檢查是否已達第 14 天後測門禁；已完成初次校準則直接進入監控中心
     if (_engine->getStudyTracker().getStatus() == efd::StudyStatus::LockedForPostTest) {
@@ -833,14 +833,12 @@ static UIImage* EFDGetAsset10Logo() {
         return card;
     };
 
-    [scrollView addSubview:createSettingRow(curY, @"高靈敏度疲勞偵測", @"縮短判定窗口 (提升至 3 分鐘快篩頻率)", self.highSensitivityEnabled, @selector(onHighSensitivityChanged:), NO)];
+    [scrollView addSubview:createSettingRow(curY, @"高靈敏度提醒", @"≥58 分持續 5 秒即提醒 (標準為 ≥65 分持續 10 秒)", self.highSensitivityEnabled, @selector(onHighSensitivityChanged:), NO)];
     curY += (itemH + gap);
 
     [scrollView addSubview:createSettingRow(curY, @"疲勞警報提示音", @"疲勞超標時發出柔和提示聲響與震動", self.soundAlertEnabled, @selector(onSoundAlertChanged:), NO)];
     curY += (itemH + gap);
 
-    [scrollView addSubview:createSettingRow(curY, @"開機自動背景啟動", @"裝置啟動後自動於背景待命守護", self.autoStartEnabled, @selector(onAutoStartChanged:), NO)];
-    curY += (itemH + gap);
 
     [scrollView addSubview:createSettingRow(curY, @"自動科研同步", @"每晚 21:00 後上傳；錯過時於下次開啟自動補傳", YES, nil, YES)];
     curY += (itemH + gap);
@@ -861,14 +859,15 @@ static UIImage* EFDGetAsset10Logo() {
 
 - (void)onHighSensitivityChanged:(UISwitch*)sw {
     self.highSensitivityEnabled = sw.on;
+    if (_engine) {
+        // 只調整提醒門檻與持續秒數，20/5/5 冷卻規則不變；設定由 C++ 保存
+        _engine->setSensitivity(sw.on ? efd::FatigueStateMachine::kSensitivityHigh
+                                      : efd::FatigueStateMachine::kSensitivityStandard);
+    }
 }
 
 - (void)onSoundAlertChanged:(UISwitch*)sw {
     self.soundAlertEnabled = sw.on;
-}
-
-- (void)onAutoStartChanged:(UISwitch*)sw {
-    self.autoStartEnabled = sw.on;
 }
 
 - (void)onReturnToDashboardClicked {
