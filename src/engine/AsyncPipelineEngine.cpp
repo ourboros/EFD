@@ -95,6 +95,7 @@ void AsyncPipelineEngine::restoreFromStorage() {
             m_extractor.setEyeClosedThreshold(m_baseline.getCurrentThreshold());
         }
     }
+    m_stateMachine.setSensitivity(m_studyTracker.getSensitivityLevel());
 
     std::ifstream in(m_fsmStatePath);
     if (in.is_open()) {
@@ -274,6 +275,15 @@ bool AsyncPipelineEngine::hasSavedCalibration() const {
     return m_studyTracker.getSavedCalibration().isCalibrated;
 }
 
+void AsyncPipelineEngine::setSensitivity(int level) {
+    m_stateMachine.setSensitivity(level);
+    m_studyTracker.setSensitivityLevel(m_stateMachine.getSensitivity());
+}
+
+int AsyncPipelineEngine::getSensitivity() const {
+    return m_stateMachine.getSensitivity();
+}
+
 void AsyncPipelineEngine::setSimulatedEyeOpenness(float openness) {
     if (m_landmarker) {
         m_landmarker->setSimulatedEyeOpenness(openness);
@@ -285,7 +295,9 @@ bool AsyncPipelineEngine::triggerManualDataSync() {
     return m_syncWorker.triggerDailySync(
         m_studyTracker.getSubjectUuid(),
         m_studyTracker.getCurrentDay(),
-        nullptr
+        nullptr,
+        StudyWorkflowTracker::statusLabel(m_studyTracker.getStatus()),
+        m_studyTracker.getUnlockToken()
     );
 }
 
@@ -347,7 +359,9 @@ bool AsyncPipelineEngine::checkAndTriggerNightlySync() {
                 m_nextSyncRetrySteadyMs.store(steadyNowMs() + kSyncRetryDelayMs);
             }
             m_syncInFlight.store(false);
-        });
+        },
+        StudyWorkflowTracker::statusLabel(m_studyTracker.getStatus()),
+        m_studyTracker.getUnlockToken());
     if (!queued) {
         m_syncInFlight.store(false);
         return false;
@@ -543,6 +557,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
                 record.subjectUuid = m_studyTracker.getSubjectUuid();
                 record.ear = eyeMetrics.earAvg;
                 record.perclos = eyeMetrics.perclos;
+                record.blinkRatePerMin = eyeMetrics.blinkRatePerMin;
                 record.complexityIndex = complexity.complexityIndex;
                 record.fatigueScore = state.smoothedFatigueScore;
                 record.alertLevel = state.fatigueLevel;

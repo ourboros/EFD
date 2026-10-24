@@ -45,7 +45,8 @@ bool DatabaseService::logRecord(const FatigueRecord& record) {
             << record.perclos << ","
             << record.complexityIndex << ","
             << record.fatigueScore << ","
-            << static_cast<int>(record.alertLevel) << "\n";
+            << static_cast<int>(record.alertLevel) << ","
+            << record.blinkRatePerMin << "\n";
     }
 
     // 每 20 筆記錄定期合併至主資料庫檔案
@@ -91,7 +92,8 @@ std::string DatabaseService::exportRecordsAsJson() const {
             << "      \"perclos\": " << std::fixed << std::setprecision(4) << r.perclos << ",\n"
             << "      \"complexityIndex\": " << std::fixed << std::setprecision(4) << r.complexityIndex << ",\n"
             << "      \"fatigueScore\": " << std::fixed << std::setprecision(2) << r.fatigueScore << ",\n"
-            << "      \"alertLevel\": " << static_cast<int>(r.alertLevel) << "\n"
+            << "      \"alertLevel\": " << static_cast<int>(r.alertLevel) << ",\n"
+            << "      \"blinkRatePerMin\": " << std::fixed << std::setprecision(2) << r.blinkRatePerMin << "\n"
             << "    }" << (i + 1 < m_memoryCache.size() ? "," : "") << "\n";
     }
     oss << "  ]\n}";
@@ -100,16 +102,21 @@ std::string DatabaseService::exportRecordsAsJson() const {
 
 std::string DatabaseService::exportRecordsAsCsv() const {
     std::lock_guard<std::mutex> lock(m_mutex);
+    return recordsToCsv(m_memoryCache);
+}
+
+std::string DatabaseService::recordsToCsv(const std::vector<FatigueRecord>& records) {
     std::ostringstream oss;
-    oss << "TimestampMs,SubjectUUID,EAR,PERCLOS,ComplexityIndex,FatigueScore,AlertLevel\n";
-    for (const auto& r : m_memoryCache) {
+    oss << "TimestampMs,SubjectUUID,EAR,PERCLOS,ComplexityIndex,FatigueScore,AlertLevel,BlinkRatePerMin\n";
+    for (const auto& r : records) {
         oss << r.timestampMs << ","
             << r.subjectUuid << ","
             << std::fixed << std::setprecision(4) << r.ear << ","
             << std::fixed << std::setprecision(4) << r.perclos << ","
             << std::fixed << std::setprecision(4) << r.complexityIndex << ","
             << std::fixed << std::setprecision(2) << r.fatigueScore << ","
-            << static_cast<int>(r.alertLevel) << "\n";
+            << static_cast<int>(r.alertLevel) << ","
+            << std::fixed << std::setprecision(2) << r.blinkRatePerMin << "\n";
     }
     return oss.str();
 }
@@ -131,7 +138,7 @@ void DatabaseService::flushToDiskUnlocked() {
     std::ofstream db(m_dbPath, std::ios::trunc);
     if (!db.is_open()) return;
 
-    db << "TimestampMs,SubjectUUID,EAR,PERCLOS,ComplexityIndex,FatigueScore,AlertLevel\n";
+    db << "TimestampMs,SubjectUUID,EAR,PERCLOS,ComplexityIndex,FatigueScore,AlertLevel,BlinkRatePerMin\n";
     for (const auto& r : m_memoryCache) {
         db << r.timestampMs << ","
            << r.subjectUuid << ","
@@ -139,7 +146,8 @@ void DatabaseService::flushToDiskUnlocked() {
            << r.perclos << ","
            << r.complexityIndex << ","
            << r.fatigueScore << ","
-           << static_cast<int>(r.alertLevel) << "\n";
+           << static_cast<int>(r.alertLevel) << ","
+           << r.blinkRatePerMin << "\n";
     }
     db.close();
 
@@ -166,6 +174,16 @@ bool DatabaseService::parseRecordLine(const std::string& line, FatigueRecord& r)
         int level = std::stoi(fields[6]);
         r.alertLevel = (level >= 0 && level <= static_cast<int>(FatigueLevel::UserAway))
             ? static_cast<FatigueLevel>(level) : FatigueLevel::Relaxed;
+        // 第 8 欄眨眼率為選填：舊版 7 欄資料或損毀時以 0 代替
+        r.blinkRatePerMin = 0.0f;
+        std::string blinkField;
+        if (std::getline(ss, blinkField, ',') && !blinkField.empty()) {
+            try {
+                r.blinkRatePerMin = std::stof(blinkField);
+            } catch (const std::exception&) {
+                r.blinkRatePerMin = 0.0f;
+            }
+        }
         return true;
     } catch (const std::exception&) {
         return false;

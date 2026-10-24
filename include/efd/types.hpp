@@ -85,5 +85,10 @@ struct CalibrationData {
     bool isCalibrated = false;
 };
 
+// 科研資料上傳端點 (Google Apps Script Web App)，C++ 端唯一定義
+// Android Java 端的同一網址位於 EfdHttpSyncBridge.GOOGLE_SHEETS_ENDPOINT
+inline constexpr const char* kDefaultCloudSyncEndpoint =
+    "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
+
 } // namespace efd
 

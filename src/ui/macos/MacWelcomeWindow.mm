@@ -125,10 +125,10 @@ enum class MacUIStage : uint8_t {
         _targetDotX = 0.5f;
         _targetDotY = 0.5f;
         _calibrationProgress = 0.0f;
-        _sensitivityLevel = 1; // 標準靈敏度
+        _sensitivityLevel = _engine ? _engine->getSensitivity() : 1; // 讀取設定檔保存的靈敏度
         _soundAlertEnabled = YES;
-        _highSensitivityMode = NO;
-        _autoStartEnabled = NO;
+        _highSensitivityMode = (_sensitivityLevel == efd::FatigueStateMachine::kSensitivityHigh);
+        _autoStartEnabled = _engine ? _engine->getLifecycleAdapter().isAutoStartEnabled() : NO;
         _isHoveringRecalibBtn = NO;
         _isHoveringToggleSoundBtn = NO;
         _isHoveringAutoStartBtn = NO;
@@ -905,10 +905,10 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
 
     // 設定項目 1: 高靈敏度即時警報
     CGFloat item1Y = startY;
-    NSString* s1Desc = _highSensitivityMode 
-        ? @"已啟用高靈敏度即時警報 (當 PERCLOS 或疲勞分偏高即刻提醒)" 
-        : @"標準靈敏度 (防誤報平滑過濾模式，推薦)";
-    drawSettingToggle(item1Y, _sensitivityBtnRect, _isHoveringSensitivityBtn, @"高靈敏度即時警報", s1Desc, _highSensitivityMode);
+    NSString* s1Desc = _highSensitivityMode
+        ? @"高靈敏度：疲勞分數 ≥58 持續 5 秒即提醒 (20/5/5 冷卻規則不變)"
+        : @"標準靈敏度：疲勞分數 ≥65 持續 10 秒才提醒 (推薦)";
+    drawSettingToggle(item1Y, _sensitivityBtnRect, _isHoveringSensitivityBtn, @"高靈敏度提醒", s1Desc, _highSensitivityMode);
 
     // 設定項目 2: 疲勞警報提示音
     CGFloat item2Y = item1Y + itemH + gap;
@@ -1000,7 +1000,10 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
 
     drawRoundedButton(NSMakeRect(cardX, cardY, cardW, cardH), 20.0, [NSColor colorWithCalibratedRed:20/255.0 green:140/255.0 blue:108/255.0 alpha:0.75], [NSColor colorWithCalibratedRed:247/255.0 green:227/255.0 blue:175/255.0 alpha:0.8], 1.5);
 
-    drawCenteredText(@"科研解鎖授權碼: EFD-14D-8821-4903", NSMakeRect(cardX + 10.0, cardY + 10.0, cardW - 20.0, 22.0), [NSFont boldSystemFontOfSize:14], [NSColor colorWithCalibratedRed:247/255.0 green:227/255.0 blue:175/255.0 alpha:1.0]);
+    std::string unlockToken = _engine ? _engine->getStudyTracker().getUnlockToken() : std::string();
+    NSString* tokenText = [NSString stringWithFormat:@"科研解鎖授權碼: %@",
+        unlockToken.empty() ? @"尚未取得" : [NSString stringWithUTF8String:unlockToken.c_str()]];
+    drawCenteredText(tokenText, NSMakeRect(cardX + 10.0, cardY + 10.0, cardW - 20.0, 22.0), [NSFont boldSystemFontOfSize:14], [NSColor colorWithCalibratedRed:247/255.0 green:227/255.0 blue:175/255.0 alpha:1.0]);
 
     NSString* guide = @"感謝您的寶貴數據回饋，協助推動眼睛疲勞監測科研進展。\n本機 SQLite 時序資料庫已驗證並解除鎖定。\n您現在可以安全關閉並解除安裝本軟體。";
     drawCenteredText(guide, NSMakeRect(cardX + 14.0, cardY + 36.0, cardW - 28.0, cardH - 42.0), [NSFont boldSystemFontOfSize:12], [NSColor whiteColor]);
@@ -1079,12 +1082,21 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
         case efd::MacUIStage::SettingsPanel:
             if (NSPointInRect(loc, _sensitivityBtnRect)) {
                 _highSensitivityMode = !_highSensitivityMode;
+                _sensitivityLevel = _highSensitivityMode ? efd::FatigueStateMachine::kSensitivityHigh
+                                                         : efd::FatigueStateMachine::kSensitivityStandard;
+                if (_engine) {
+                    _engine->setSensitivity(_sensitivityLevel);
+                }
                 [self setNeedsDisplay:YES];
             } else if (NSPointInRect(loc, _toggleSoundBtnRect)) {
                 _soundAlertEnabled = !_soundAlertEnabled;
                 [self setNeedsDisplay:YES];
             } else if (NSPointInRect(loc, _autoStartBtnRect)) {
-                _autoStartEnabled = !_autoStartEnabled;
+                // 寫入或移除 ~/Library/LaunchAgents 設定，畫面以實際結果為準
+                if (_engine) {
+                    _engine->getLifecycleAdapter().setAutoStartEnabled(!_autoStartEnabled);
+                    _autoStartEnabled = _engine->getLifecycleAdapter().isAutoStartEnabled();
+                }
                 [self setNeedsDisplay:YES];
             } else if (NSPointInRect(loc, _saveSettingsBtnRect)) {
                 [self setStage:efd::MacUIStage::MainDashboard];
@@ -1096,6 +1108,13 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
                 [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://forms.gle/y5f1jTnrrtsxz65G9"]];
                 if (_engine) {
                     _engine->getStudyTracker().submitQuestionnaire("Study_Post_Survey_Completed");
+                    _engine->getSyncWorker().triggerSync(
+                        _engine->getStudyTracker().getSubjectUuid(),
+                        _engine->getStudyTracker().getCurrentDay(),
+                        "Study_Post_Survey_Completed",
+                        nullptr,
+                        efd::StudyWorkflowTracker::statusLabel(_engine->getStudyTracker().getStatus()),
+                        _engine->getStudyTracker().getUnlockToken());
                 }
                 [self setStage:efd::MacUIStage::QuestionnaireSubmitted];
             } else if (NSPointInRect(loc, _returnDashboardBtnRect)) {

@@ -78,7 +78,8 @@ void NetworkSyncWorker::setUploader(Uploader uploader) {
     m_uploader = std::move(uploader);
 }
 
-bool NetworkSyncWorker::triggerSync(const std::string& subjectUuid, int studyDay, const std::string& questionnaireResponse, SyncCallback callback) {
+bool NetworkSyncWorker::triggerSync(const std::string& subjectUuid, int studyDay, const std::string& questionnaireResponse, SyncCallback callback,
+                                    const std::string& studyStatus, const std::string& unlockToken) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_status == SyncStatus::Syncing) {
         return false; // 正在進行同步中
@@ -89,6 +90,8 @@ bool NetworkSyncWorker::triggerSync(const std::string& subjectUuid, int studyDay
     m_pendingPayload.subjectUuid = subjectUuid;
     m_pendingPayload.currentDay = studyDay;
     m_pendingPayload.questionnaireResponse = questionnaireResponse;
+    m_pendingPayload.studyStatus = studyStatus;
+    m_pendingPayload.unlockToken = unlockToken;
     m_pendingPayload.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
@@ -100,8 +103,94 @@ bool NetworkSyncWorker::triggerSync(const std::string& subjectUuid, int studyDay
     return true;
 }
 
-bool NetworkSyncWorker::triggerDailySync(const std::string& subjectUuid, int studyDay, SyncCallback callback) {
-    return triggerSync(subjectUuid, studyDay, "Daily_Evening_Data_Sync", std::move(callback));
+bool NetworkSyncWorker::triggerDailySync(const std::string& subjectUuid, int studyDay, SyncCallback callback,
+                                         const std::string& studyStatus, const std::string& unlockToken) {
+    return triggerSync(subjectUuid, studyDay, "Daily_Evening_Data_Sync", std::move(callback), studyStatus, unlockToken);
+}
+
+std::string NetworkSyncWorker::buildPayloadJson(const PayloadHeader& header, const std::vector<FatigueRecord>& records,
+                                                bool includeRecords, std::string* checksumOut) {
+    std::string checksum = calculateChecksum(DatabaseService::recordsToCsv(records) + header.questionnaireResponse);
+    if (checksumOut) {
+        *checksumOut = checksum;
+    }
+
+    auto now = std::chrono::system_clock::now();
+    std::time_t tt = std::chrono::system_clock::to_time_t(now);
+    std::tm localTm{};
+#ifdef _WIN32
+    localtime_s(&localTm, &tt);
+#else
+    localtime_r(&tt, &localTm);
+#endif
+    char timeBuf[64];
+    std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
+
+    // 眨眼率 0 代表窗口未滿 30 秒或舊版資料 (無此欄位)，不納入平均
+    double earSum = 0.0, perclosSum = 0.0, ciSum = 0.0, scoreSum = 0.0, blinkSum = 0.0;
+    size_t blinkSamples = 0;
+    for (const auto& r : records) {
+        earSum += r.ear;
+        perclosSum += r.perclos;
+        ciSum += r.complexityIndex;
+        scoreSum += r.fatigueScore;
+        if (r.blinkRatePerMin > 0.0f) {
+            blinkSum += r.blinkRatePerMin;
+            ++blinkSamples;
+        }
+    }
+    const bool hasRecords = !records.empty();
+    const double n = hasRecords ? static_cast<double>(records.size()) : 1.0;
+
+    auto metric = [](std::ostream& os, bool available, double value, int precision) {
+        if (available) {
+            os << std::fixed << std::setprecision(precision) << value;
+        } else {
+            os << "null";
+        }
+    };
+
+    std::ostringstream json;
+    json << "{\n"
+         << "  \"timestamp\": \"" << timeBuf << "\",\n"
+         << "  \"subject_id\": \"" << header.subjectUuid << "\",\n"
+         << "  \"study_day\": " << header.studyDay << ",\n"
+         << "  \"status\": \"" << header.studyStatus << "\",\n"
+         << "  \"metrics\": {\n"
+         << "    \"ear_mean\": ";
+    metric(json, hasRecords, earSum / n, 4);
+    json << ",\n    \"perclos\": ";
+    metric(json, hasRecords, perclosSum / n * 100.0, 2);
+    json << ",\n    \"blink_rate\": ";
+    metric(json, blinkSamples > 0, blinkSamples > 0 ? blinkSum / static_cast<double>(blinkSamples) : 0.0, 2);
+    json << ",\n    \"mse_ci\": ";
+    metric(json, hasRecords, ciSum / n, 4);
+    json << "\n  },\n  \"fatigue_score\": ";
+    metric(json, hasRecords, scoreSum / n, 2);
+    json << ",\n"
+         << "  \"record_count\": " << records.size() << ",\n"
+         << "  \"checksum\": \"" << checksum << "\",\n"
+         << "  \"token\": \"" << header.unlockToken << "\"";
+
+    if (includeRecords) {
+        json << ",\n  \"records\": [\n";
+        for (size_t i = 0; i < records.size(); ++i) {
+            const auto& r = records[i];
+            json << "    {\n"
+                 << "      \"timestampMs\": " << r.timestampMs << ",\n"
+                 << "      \"subjectUuid\": \"" << r.subjectUuid << "\",\n"
+                 << "      \"ear\": " << std::fixed << std::setprecision(4) << r.ear << ",\n"
+                 << "      \"perclos\": " << std::fixed << std::setprecision(4) << r.perclos << ",\n"
+                 << "      \"blinkRatePerMin\": " << std::fixed << std::setprecision(2) << r.blinkRatePerMin << ",\n"
+                 << "      \"complexityIndex\": " << std::fixed << std::setprecision(4) << r.complexityIndex << ",\n"
+                 << "      \"fatigueScore\": " << std::fixed << std::setprecision(2) << r.fatigueScore << ",\n"
+                 << "      \"alertLevel\": " << static_cast<int>(r.alertLevel) << "\n"
+                 << "    }" << (i + 1 < records.size() ? "," : "") << "\n";
+        }
+        json << "  ]";
+    }
+    json << "\n}\n";
+    return json.str();
 }
 
 SyncStatus NetworkSyncWorker::getStatus() const {
@@ -234,22 +323,18 @@ SyncResult NetworkSyncWorker::executeSync(SyncPayload payload) {
         return result;
     }
 
-    // 取得資料庫紀錄並計算完整性校驗碼 (於背景執行緒進行)
-    std::string csvData = m_dbService.exportRecordsAsCsv();
-    payload.recordCount = m_dbService.getRecordCount();
-    payload.dataChecksum = calculateChecksum(csvData + payload.questionnaireResponse);
+    // 取得資料庫紀錄並產生上傳 JSON (於背景執行緒進行)；指標與校驗碼皆由實際紀錄計算
+    auto records = m_dbService.getLatestRecords(m_dbService.getRecordCount());
+    payload.recordCount = records.size();
 
-    // 產生伺服器授權加密簽章 Token (EFD-14D-XXXX-XXXX)
-    uint64_t signSeed = fnv1a64(payload.subjectUuid + payload.dataChecksum + std::to_string(payload.timestampMs));
-    uint16_t part1 = static_cast<uint16_t>((signSeed >> 16) & 0xFFFF);
-    uint16_t part2 = static_cast<uint16_t>(signSeed & 0xFFFF);
+    PayloadHeader header;
+    header.subjectUuid = payload.subjectUuid;
+    header.studyDay = payload.currentDay;
+    header.studyStatus = payload.studyStatus;
+    header.unlockToken = payload.unlockToken;
+    header.questionnaireResponse = payload.questionnaireResponse;
+    std::string jsonDump = buildPayloadJson(header, records, true, &payload.dataChecksum);
 
-    std::ostringstream oss;
-    oss << "EFD-14D-" << std::hex << std::uppercase << std::setfill('0')
-        << std::setw(4) << (part1 == 0 ? 0x8821 : part1) << "-"
-        << std::setw(4) << (part2 == 0 ? 0x4903 : part2);
-
-    // 1. 格式化目前時間戳記
     auto now = std::chrono::system_clock::now();
     std::time_t tt = std::chrono::system_clock::to_time_t(now);
     std::tm localTm{};
@@ -261,53 +346,6 @@ SyncResult NetworkSyncWorker::executeSync(SyncPayload payload) {
     char timeBuf[64];
     std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &localTm);
 
-    // 2. 本地持久化保存一份符合 Apps Script 結構的當前同步封裝 JSON (方便研究員與使用者檢驗)
-    auto records = m_dbService.getLatestRecords(payload.recordCount);
-    float earSum = 0.0f, perclosSum = 0.0f, ciSum = 0.0f, scoreSum = 0.0f;
-    for (const auto& r : records) {
-        earSum += r.ear;
-        perclosSum += r.perclos;
-        ciSum += r.complexityIndex;
-        scoreSum += r.fatigueScore;
-    }
-    size_t count = records.empty() ? 1 : records.size();
-    float earMean = records.empty() ? 0.312f : (earSum / count);
-    float perclosMean = records.empty() ? 0.0f : (perclosSum / count * 100.0f);
-    float ciMean = records.empty() ? 4.5f : (ciSum / count);
-    float scoreMean = records.empty() ? 0.0f : (scoreSum / count);
-
-    std::ostringstream jsonStream;
-    jsonStream << "{\n"
-               << "  \"timestamp\": \"" << timeBuf << "\",\n"
-               << "  \"subject_id\": \"" << payload.subjectUuid << "\",\n"
-               << "  \"study_day\": " << payload.currentDay << ",\n"
-               << "  \"status\": \"Normal\",\n"
-               << "  \"metrics\": {\n"
-               << "    \"ear_mean\": " << std::fixed << std::setprecision(4) << earMean << ",\n"
-               << "    \"perclos\": " << std::fixed << std::setprecision(2) << perclosMean << ",\n"
-               << "    \"blink_rate\": 16.0,\n"
-               << "    \"mse_ci\": " << std::fixed << std::setprecision(4) << ciMean << "\n"
-               << "  },\n"
-               << "  \"fatigue_score\": " << std::fixed << std::setprecision(2) << scoreMean << ",\n"
-               << "  \"record_count\": " << payload.recordCount << ",\n"
-               << "  \"checksum\": \"" << payload.dataChecksum << "\",\n"
-               << "  \"token\": \"" << oss.str() << "\",\n"
-               << "  \"records\": [\n";
-
-    for (size_t i = 0; i < records.size(); ++i) {
-        const auto& r = records[i];
-        jsonStream << "    {\n"
-                   << "      \"timestampMs\": " << r.timestampMs << ",\n"
-                   << "      \"subjectUuid\": \"" << r.subjectUuid << "\",\n"
-                   << "      \"ear\": " << std::fixed << std::setprecision(4) << r.ear << ",\n"
-                   << "      \"perclos\": " << std::fixed << std::setprecision(4) << r.perclos << ",\n"
-                   << "      \"complexityIndex\": " << std::fixed << std::setprecision(4) << r.complexityIndex << ",\n"
-                   << "      \"fatigueScore\": " << std::fixed << std::setprecision(2) << r.fatigueScore << ",\n"
-                   << "      \"alertLevel\": " << static_cast<int>(r.alertLevel) << "\n"
-                   << "    }" << (i + 1 < records.size() ? "," : "") << "\n";
-    }
-    jsonStream << "  ]\n}\n";
-
     std::string targetUrl;
     std::string dumpPath;
     Uploader uploader;
@@ -318,7 +356,7 @@ SyncResult NetworkSyncWorker::executeSync(SyncPayload payload) {
         uploader = m_uploader;
     }
 
-    std::string jsonDump = jsonStream.str();
+    // 本地持久化保存一份當次同步封裝 JSON (方便研究員與使用者檢驗)
     {
         std::ofstream outDump(dumpPath, std::ios::trunc);
         if (outDump.is_open()) {
@@ -339,7 +377,7 @@ SyncResult NetworkSyncWorker::executeSync(SyncPayload payload) {
     } else {
         result.success = true;
         result.httpStatusCode = 200;
-        result.unlockToken = oss.str();
+        result.unlockToken = payload.unlockToken;
         result.message = "Google 試算表寫入成功！伺服器回應: " + uploadServerResponse;
     }
 
@@ -360,7 +398,7 @@ SyncResult NetworkSyncWorker::executeSync(SyncPayload payload) {
               << "  [上傳數據筆數]: " << payload.recordCount << " 筆時序眼動特徵\n"
               << "  [數據完整性 Checksum]: " << payload.dataChecksum << "\n"
               << "  [雲端伺服器回應]: " << result.message << "\n"
-              << "  [解鎖簽章憑證]: " << (realUploadSuccess ? result.unlockToken : "尚未簽發 (等待伺服器寫入)") << "\n"
+              << "  [解鎖憑證]: " << (payload.unlockToken.empty() ? "尚未取得 (填寫後測問卷後產生)" : payload.unlockToken) << "\n"
               << "  [本機備份封裝]: " << dumpPath << " 已同步落盤更新\n"
               << "================================================================================\n"
               << std::endl;

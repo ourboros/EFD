@@ -88,6 +88,10 @@ public:
     // 是否已有保存的個人化校準 (可直接進入監控畫面)
     bool hasSavedCalibration() const;
 
+    // 提示靈敏度 (0 低 / 1 標準 / 2 高)：立即套用到狀態機並保存到設定檔
+    void setSensitivity(int level);
+    int getSensitivity() const;
+
     // 設定模擬眼睛開合狀態 (供測試與驗證)
     void setSimulatedEyeOpenness(float openness);
 

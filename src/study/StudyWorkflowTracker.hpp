@@ -27,6 +27,9 @@ public:
     float getStudyProgressPercent() const;
     std::string getUnlockToken() const;
 
+    // 上傳 JSON 的 status 欄位：Active / Locked / Completed
+    static const char* statusLabel(StudyStatus status);
+
     // 推進科研天數 (支援 Time-Warp 加速測試)
     void setTimeWarpDay(int day);
     void advanceDay();
@@ -49,6 +52,10 @@ public:
     // 初次校準成功：標記完成並保存個人化基準，下次啟動直接沿用
     void markInitialSetupCompleted(const CalibrationData& calibration);
     CalibrationData getSavedCalibration() const;
+
+    // 提示靈敏度 (0 低 / 1 標準 / 2 高)，保存在設定檔中
+    int getSensitivityLevel() const;
+    void setSensitivityLevel(int level);
 
     // 雲端同步端點 (支援 Google 試算表 Web App 或科研中心 API)
     std::string getCloudSyncEndpoint() const;
@@ -77,8 +84,9 @@ private:
     float m_savedBaselineEar = 0.0f;
     float m_savedEarStdDev = 0.0f;
     float m_savedThresholdEar = 0.0f;
-    std::string m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
+    std::string m_cloudSyncEndpoint = kDefaultCloudSyncEndpoint;
     int m_lastSyncedDate = 0;
+    int m_sensitivityLevel = 1;
     mutable std::mutex m_mutex;
 
     int refreshStudyProgressUnlocked();

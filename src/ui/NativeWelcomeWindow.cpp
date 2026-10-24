@@ -504,8 +504,8 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
         }
     } else if (m_currentStage == UIStage::SettingsPanel) {
         if (PtInRect(&m_sensitivityBtnRect, pt)) {
-            m_highSensitivityMode = !m_highSensitivityMode;
-            m_sensitivityLevel = m_highSensitivityMode ? 2 : 1;
+            bool high = (m_engine.getSensitivity() == FatigueStateMachine::kSensitivityHigh);
+            m_engine.setSensitivity(high ? FatigueStateMachine::kSensitivityStandard : FatigueStateMachine::kSensitivityHigh);
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_toggleSoundBtnRect, pt)) {
             m_soundAlertEnabled = !m_soundAlertEnabled;
@@ -529,16 +529,15 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
         if (PtInRect(&m_fillQuestionnaireBtnRect, pt)) {
             // 直接以系統預設瀏覽器開啟 Google 表單後測問卷
             ShellExecuteW(NULL, L"open", L"https://forms.gle/y5f1jTnrrtsxz65G9", NULL, NULL, SW_SHOWNORMAL);
+            // 先產生解鎖憑證再上傳，確保試算表與完成頁顯示的是同一組憑證
             m_engine.getStudyTracker().submitQuestionnaire("Study_Post_Survey_Completed");
             m_engine.getSyncWorker().triggerSync(
                 m_engine.getStudyTracker().getSubjectUuid(),
                 m_engine.getStudyTracker().getCurrentDay(),
                 "Study_Post_Survey_Completed",
-                [this](const SyncResult& res) {
-                    if (res.success) {
-                        this->m_engine.getStudyTracker().submitQuestionnaire("Study_Post_Survey_Completed");
-                    }
-                }
+                nullptr,
+                StudyWorkflowTracker::statusLabel(m_engine.getStudyTracker().getStatus()),
+                m_engine.getStudyTracker().getUnlockToken()
             );
             setStage(UIStage::QuestionnaireSubmitted);
         } else if (PtInRect(&m_returnDashboardBtnRect, pt)) {
@@ -1999,10 +1998,11 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
 
     // 設定項目 1: 高靈敏度即時警報
     int item1Y = startY;
-    const wchar_t* s1Desc = m_highSensitivityMode 
-        ? L"已啟用高靈敏度即時警報 (當 PERCLOS 或疲勞分偏高即刻提醒)" 
-        : L"標準靈敏度 (防誤報平滑過濾模式，推薦)";
-    drawSettingToggleItem(item1Y, m_sensitivityBtnRect, m_isHoveringSensitivityBtn, L"高靈敏度即時警報", s1Desc, m_highSensitivityMode);
+    bool highSensitivity = (m_engine.getSensitivity() == FatigueStateMachine::kSensitivityHigh);
+    const wchar_t* s1Desc = highSensitivity
+        ? L"高靈敏度：疲勞分數 ≥58 持續 5 秒即提醒 (20/5/5 冷卻規則不變)"
+        : L"標準靈敏度：疲勞分數 ≥65 持續 10 秒才提醒 (推薦)";
+    drawSettingToggleItem(item1Y, m_sensitivityBtnRect, m_isHoveringSensitivityBtn, L"高靈敏度提醒", s1Desc, highSensitivity);
 
     // 設定項目 2: 疲勞警報提示音
     int item2Y = item1Y + itemH + gap;
@@ -2145,7 +2145,7 @@ void NativeWelcomeWindow::drawQuestionnaireSubmitted(Gdiplus::Graphics& g, int w
 
     // 2. 解鎖授權碼與解除安裝指引卡片 (20px 圓角邊框)
     std::string tokenStr = m_engine.getStudyTracker().getUnlockToken();
-    if (tokenStr.empty()) tokenStr = "EFD-14D-8821-4903";
+    if (tokenStr.empty()) tokenStr = "尚未取得";
     std::wstring wToken = utf8ToWide(tokenStr);
 
     int cardW = isNarrow ? std::min(w - 30, 420) : 520;

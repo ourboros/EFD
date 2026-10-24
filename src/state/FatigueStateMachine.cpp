@@ -8,8 +8,8 @@ namespace efd {
 namespace {
 const char* kAlertMessage = "你的眼睛處於疲勞狀態，請適當休息";
 
-FatigueLevel levelForScore(float score) {
-    if (score >= FatigueStateMachine::kSevereThreshold) return FatigueLevel::SevereWarning;
+FatigueLevel levelForScore(float score, float severeThreshold) {
+    if (score >= severeThreshold) return FatigueLevel::SevereWarning;
     if (score >= FatigueStateMachine::kAttentionThreshold) return FatigueLevel::Attention;
     return FatigueLevel::Relaxed;
 }
@@ -19,6 +19,36 @@ FatigueStateMachine::FatigueStateMachine(int cooldownSeconds, int screeningInter
     : m_cooldownDuration(cooldownSeconds),
       m_screeningInterval(screeningInterval),
       m_awayResetThreshold(awayResetSeconds) {
+}
+
+FatigueStateMachine::SensitivityProfile FatigueStateMachine::profileForSensitivity(int level) {
+    switch (level) {
+    case kSensitivityLow:  return {70.0f, 15.0f};
+    case kSensitivityHigh: return {58.0f, 5.0f};
+    default:               return {kSevereThreshold, kSevereHoldSeconds};
+    }
+}
+
+void FatigueStateMachine::setSensitivity(int level) {
+    if (level < kSensitivityLow || level > kSensitivityHigh) {
+        level = kSensitivityStandard;
+    }
+    SensitivityProfile profile = profileForSensitivity(level);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_sensitivity = level;
+    m_severeThreshold = profile.severeThreshold;
+    m_severeHoldSeconds = profile.holdSeconds;
+    m_severeHoldTimer = 0.0f;
+}
+
+int FatigueStateMachine::getSensitivity() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_sensitivity;
+}
+
+float FatigueStateMachine::getSevereThreshold() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_severeThreshold;
 }
 
 float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, float complexityIndex) {
@@ -123,16 +153,16 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             // 60 秒時間常數 EWMA (與取樣頻率無關)
             float alpha = 1.0f - std::exp(-dt / kSmoothingTauSeconds);
             m_smoothedScore += alpha * (m_lastScore - m_smoothedScore);
-            m_currentLevel = levelForScore(m_smoothedScore);
+            m_currentLevel = levelForScore(m_smoothedScore, m_severeThreshold);
 
             switch (m_cooldownState) {
             case CooldownState::NormalTracking:
-                if (m_smoothedScore >= kSevereThreshold) {
+                if (m_smoothedScore >= m_severeThreshold) {
                     m_severeHoldTimer += dt;
                 } else {
                     m_severeHoldTimer = 0.0f;
                 }
-                if (m_severeHoldTimer >= kSevereHoldSeconds) {
+                if (m_severeHoldTimer >= m_severeHoldSeconds) {
                     fireAlert = true;
                     alertScore = m_smoothedScore;
                     enterCooldownUnlocked();
@@ -158,7 +188,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
                 if (m_screeningTimer <= 0.0f) {
                     float avg = (m_screeningSampleSeconds > 0.0f)
                         ? (m_screeningScoreSum / m_screeningSampleSeconds) : 0.0f;
-                    if (avg >= kSevereThreshold) {
+                    if (avg >= m_severeThreshold) {
                         fireAlert = true;
                         alertScore = avg;
                         enterCooldownUnlocked();
@@ -296,7 +326,7 @@ bool FatigueStateMachine::restore(const std::string& data, int64_t nowEpochSec) 
             m_screeningSampleSeconds = 0.0f;
         }
     }
-    m_currentLevel = levelForScore(m_smoothedScore);
+    m_currentLevel = levelForScore(m_smoothedScore, m_severeThreshold);
     return true;
 }
 

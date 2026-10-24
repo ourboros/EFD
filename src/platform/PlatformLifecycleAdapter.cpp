@@ -6,6 +6,18 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
+#define EFD_MACOS_DESKTOP 1
+#include <cerrno>
+#include <climits>
+#include <cstdlib>
+#include <fstream>
+#include <mach-o/dyld.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 #endif
 
 namespace efd {
@@ -90,110 +102,126 @@ bool PlatformLifecycleAdapter::supportsHotResume() const {
     return (m_platform == PlatformType::iOS || m_platform == PlatformType::Android);
 }
 
-bool PlatformLifecycleAdapter::isAutoStartEnabled() const {
+namespace {
 #ifdef _WIN32
-    // 優先檢查使用者的 Startup 開機啟動資料夾中是否存在捷徑 (最穩定且包含 WorkingDirectory)
-    wchar_t startupPath[MAX_PATH];
-    if (GetEnvironmentVariableW(L"APPDATA", startupPath, MAX_PATH) > 0) {
-        std::wstring lnkPath = std::wstring(startupPath) + L"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\EFD_FatigueMonitor.lnk";
-        DWORD attr = GetFileAttributesW(lnkPath.c_str());
-        if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY)) {
-            return true;
+const wchar_t* kRunKeyPath = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+const wchar_t* kRunValueName = L"EFD_FatigueMonitor";
+
+// 舊版同時建立「啟動」資料夾捷徑與登錄檔，開機會啟動兩次；現在只用登錄檔，捷徑一律清除
+std::wstring legacyStartupShortcutPath() {
+    wchar_t appDataPath[MAX_PATH];
+    if (GetEnvironmentVariableW(L"APPDATA", appDataPath, MAX_PATH) > 0) {
+        return std::wstring(appDataPath) + L"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\EFD_FatigueMonitor.lnk";
+    }
+    return L"";
+}
+#elif defined(EFD_MACOS_DESKTOP)
+const char* kLaunchAgentLabel = "com.efd.EyeFatigueDetection";
+
+std::string launchAgentPlistPath() {
+    const char* home = std::getenv("HOME");
+    if (!home || !*home) return "";
+    return std::string(home) + "/Library/LaunchAgents/" + kLaunchAgentLabel + ".plist";
+}
+
+std::string xmlEscape(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        switch (c) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;"; break;
+            case '>': out += "&gt;"; break;
+            case '"': out += "&quot;"; break;
+            default:  out += c; break;
         }
     }
+    return out;
+}
+#endif
+} // anonymous namespace
 
+bool PlatformLifecycleAdapter::isAutoStartEnabled() const {
+#ifdef _WIN32
     HKEY hKey;
-    LONG result = RegOpenKeyExW(
-        HKEY_CURRENT_USER,
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-        0,
-        KEY_READ,
-        &hKey
-    );
-    if (result != ERROR_SUCCESS) {
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
         return false;
     }
     DWORD type = 0;
-    result = RegQueryValueExW(hKey, L"EFD_FatigueMonitor", nullptr, &type, nullptr, nullptr);
+    LONG result = RegQueryValueExW(hKey, kRunValueName, nullptr, &type, nullptr, nullptr);
     RegCloseKey(hKey);
     return (result == ERROR_SUCCESS);
+#elif defined(EFD_MACOS_DESKTOP)
+    std::string path = launchAgentPlistPath();
+    struct stat st{};
+    return !path.empty() && ::stat(path.c_str(), &st) == 0;
 #else
+    // iOS / Android 不支援由 App 設定開機自動啟動
     return false;
 #endif
 }
 
 bool PlatformLifecycleAdapter::setAutoStartEnabled(bool enable) {
 #ifdef _WIN32
-    wchar_t exePath[MAX_PATH];
-    DWORD len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    if (len == 0 || len >= MAX_PATH) {
+    std::wstring lnkPath = legacyStartupShortcutPath();
+    if (!lnkPath.empty()) {
+        DeleteFileW(lnkPath.c_str());
+    }
+
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_SET_VALUE, &hKey) != ERROR_SUCCESS) {
         return false;
     }
-
-    wchar_t appDataPath[MAX_PATH];
-    std::wstring lnkPath;
-    if (GetEnvironmentVariableW(L"APPDATA", appDataPath, MAX_PATH) > 0) {
-        lnkPath = std::wstring(appDataPath) + L"\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\EFD_FatigueMonitor.lnk";
-    }
-
+    LONG result = ERROR_SUCCESS;
     if (enable) {
-        // 1. 同步建立 Windows Startup 捷徑 (藉由 PowerShell 確保鎖定 WorkingDirectory 與 --background 參數)
-        std::wstring exeStr = exePath;
-        size_t lastSlash = exeStr.find_last_of(L"\\/");
-        std::wstring workDir = (lastSlash != std::wstring::npos) ? exeStr.substr(0, lastSlash) : L"";
-
-        if (!lnkPath.empty()) {
-            std::wstring psCmd = L"powershell.exe -NoProfile -WindowStyle Hidden -Command \""
-                L"$ws = New-Object -ComObject WScript.Shell; "
-                L"$s = $ws.CreateShortcut('" + lnkPath + L"'); "
-                L"$s.TargetPath = '" + exeStr + L"'; "
-                L"$s.Arguments = '--background'; "
-                L"$s.WorkingDirectory = '" + workDir + L"'; "
-                L"$s.Description = 'EFD 眼睛疲勞監測系統 - 開機背景常駐監控'; "
-                L"$s.Save()\"";
-            
-            STARTUPINFOW si = { sizeof(si) };
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-            PROCESS_INFORMATION pi;
-            std::vector<wchar_t> cmdBuf(psCmd.begin(), psCmd.end());
-            cmdBuf.push_back(0);
-            if (CreateProcessW(NULL, cmdBuf.data(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 3000);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-        }
-
-        // 2. 備援寫入註冊表 HKCU Run
-        HKEY hKey;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
-            std::wstring quoted = L"\"" + exeStr + L"\" --background";
-            RegSetValueExW(
-                hKey,
-                L"EFD_FatigueMonitor",
-                0,
-                REG_SZ,
-                reinterpret_cast<const BYTE*>(quoted.c_str()),
-                static_cast<DWORD>((quoted.length() + 1) * sizeof(wchar_t))
-            );
+        wchar_t exePath[MAX_PATH];
+        DWORD len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        if (len == 0 || len >= MAX_PATH) {
             RegCloseKey(hKey);
+            return false;
         }
-        return true;
+        // main_gui 啟動時會把工作目錄切回執行檔所在目錄，因此不需另外指定 WorkingDirectory
+        std::wstring quoted = L"\"" + std::wstring(exePath) + L"\" --background";
+        result = RegSetValueExW(hKey, kRunValueName, 0, REG_SZ,
+                                reinterpret_cast<const BYTE*>(quoted.c_str()),
+                                static_cast<DWORD>((quoted.length() + 1) * sizeof(wchar_t)));
     } else {
-        // 移除 Startup 捷徑
-        if (!lnkPath.empty()) {
-            DeleteFileW(lnkPath.c_str());
-        }
-
-        // 移除註冊表
-        HKEY hKey;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
-            RegDeleteValueW(hKey, L"EFD_FatigueMonitor");
-            RegCloseKey(hKey);
-        }
-        return true;
+        result = RegDeleteValueW(hKey, kRunValueName);
+        if (result == ERROR_FILE_NOT_FOUND) result = ERROR_SUCCESS;
     }
+    RegCloseKey(hKey);
+    return result == ERROR_SUCCESS;
+#elif defined(EFD_MACOS_DESKTOP)
+    std::string plistPath = launchAgentPlistPath();
+    if (plistPath.empty()) return false;
+
+    if (!enable) {
+        return ::unlink(plistPath.c_str()) == 0 || errno == ENOENT;
+    }
+
+    char exeBuf[PATH_MAX];
+    uint32_t size = sizeof(exeBuf);
+    if (_NSGetExecutablePath(exeBuf, &size) != 0) return false;
+    char resolved[PATH_MAX];
+    std::string exePath = ::realpath(exeBuf, resolved) ? resolved : exeBuf;
+
+    // 確保 ~/Library/LaunchAgents 存在
+    std::string dir = plistPath.substr(0, plistPath.find_last_of('/'));
+    ::mkdir(dir.c_str(), 0755);
+
+    std::ofstream out(plistPath, std::ios::trunc);
+    if (!out.is_open()) return false;
+    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        << "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+        << "<plist version=\"1.0\">\n<dict>\n"
+        << "    <key>Label</key>\n    <string>" << kLaunchAgentLabel << "</string>\n"
+        << "    <key>ProgramArguments</key>\n    <array>\n"
+        << "        <string>" << xmlEscape(exePath) << "</string>\n"
+        << "        <string>--background</string>\n"
+        << "    </array>\n"
+        << "    <key>RunAtLoad</key>\n    <true/>\n"
+        << "    <key>ProcessType</key>\n    <string>Interactive</string>\n"
+        << "</dict>\n</plist>\n";
+    return out.good();
 #else
     (void)enable;
     return false;

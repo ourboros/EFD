@@ -13,14 +13,26 @@ namespace efd {
 // - 快篩：冷卻期滿後，每 5 分鐘 (在座時間) 以該窗口平均分數判定一次
 //         >= 65 再次提醒並重新冷卻；< 45 回到常態追蹤；其餘再快篩 5 分鐘
 // - 離座：連續 5 分鐘未偵測到人臉，視為已休息，清除冷卻與平滑分數
+// - 靈敏度：只調整提醒門檻與持續秒數 (低 70/15s、標準 65/10s、高 58/5s)，20/5/5 時間規則不變
 class FatigueStateMachine {
 public:
     using AlertCallback = std::function<void(FatigueLevel level, float score, const std::string& message)>;
 
+    // 標準靈敏度的預設值
     static constexpr float kSevereThreshold = 65.0f;
     static constexpr float kAttentionThreshold = 45.0f;
     static constexpr float kSevereHoldSeconds = 10.0f;
     static constexpr float kSmoothingTauSeconds = 60.0f;
+
+    static constexpr int kSensitivityLow = 0;
+    static constexpr int kSensitivityStandard = 1;
+    static constexpr int kSensitivityHigh = 2;
+
+    struct SensitivityProfile {
+        float severeThreshold;
+        float holdSeconds;
+    };
+    static SensitivityProfile profileForSensitivity(int level);
 
     explicit FatigueStateMachine(int cooldownSeconds = 1200,   // 20 分鐘
                                 int screeningInterval = 300,  // 5 分鐘
@@ -37,6 +49,11 @@ public:
 
     // 手動重置狀態機
     void reset();
+
+    // 提示靈敏度 (0 低 / 1 標準 / 2 高)，超出範圍視為標準
+    void setSensitivity(int level);
+    int getSensitivity() const;
+    float getSevereThreshold() const;
 
     // 模擬或設定 14 天實驗進度
     void setStudyProgress(int currentDay, bool isLocked);
@@ -56,6 +73,10 @@ private:
     int m_cooldownDuration;
     int m_screeningInterval;
     int m_awayResetThreshold;
+
+    int   m_sensitivity = kSensitivityStandard;
+    float m_severeThreshold = kSevereThreshold;
+    float m_severeHoldSeconds = kSevereHoldSeconds;
 
     CooldownState m_cooldownState = CooldownState::NormalTracking;
     FatigueLevel  m_currentLevel = FatigueLevel::Relaxed;

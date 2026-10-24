@@ -27,6 +27,17 @@ struct SyncPayload {
     std::string questionnaireResponse;
     std::string dataChecksum;
     int64_t timestampMs = 0;
+    std::string studyStatus = "Active";
+    std::string unlockToken;   // 填寫後測問卷後才有，未取得時為空字串
+};
+
+// 上傳 JSON 的表頭欄位 (各平台共用同一份產生邏輯)
+struct PayloadHeader {
+    std::string subjectUuid;
+    int studyDay = 1;
+    std::string studyStatus = "Active";
+    std::string unlockToken;
+    std::string questionnaireResponse;
 };
 
 struct SyncResult {
@@ -42,7 +53,7 @@ public:
     // 實際 HTTP 上傳函式 (回傳是否成功，response 填入伺服器回應)；可替換以便測試
     using Uploader = std::function<bool(const std::string& url, const std::string& jsonBody, std::string& response)>;
 
-    explicit NetworkSyncWorker(DatabaseService& dbService, const std::string& endpointUrl = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec");
+    explicit NetworkSyncWorker(DatabaseService& dbService, const std::string& endpointUrl = kDefaultCloudSyncEndpoint);
     ~NetworkSyncWorker();
 
     // 設定科研雲端端點
@@ -56,10 +67,17 @@ public:
     void setUploader(Uploader uploader);
 
     // 觸發非同步科研資料同步 (包含問卷答案上傳與解鎖 Token 交換)
-    bool triggerSync(const std::string& subjectUuid, int studyDay, const std::string& questionnaireResponse, SyncCallback callback = nullptr);
+    bool triggerSync(const std::string& subjectUuid, int studyDay, const std::string& questionnaireResponse, SyncCallback callback = nullptr,
+                     const std::string& studyStatus = "Active", const std::string& unlockToken = "");
 
     // 觸發當日眼動特徵數據同步 (夜間自動儲存或使用者手動觸發)
-    bool triggerDailySync(const std::string& subjectUuid, int studyDay, SyncCallback callback = nullptr);
+    bool triggerDailySync(const std::string& subjectUuid, int studyDay, SyncCallback callback = nullptr,
+                          const std::string& studyStatus = "Active", const std::string& unlockToken = "");
+
+    // 產生上傳 JSON：指標為紀錄的實際平均值，無紀錄時指標為 null、筆數為 0
+    // checksum 由紀錄內容計算；includeRecords 為 false 時不附逐筆資料 (Android 上傳)
+    static std::string buildPayloadJson(const PayloadHeader& header, const std::vector<FatigueRecord>& records,
+                                        bool includeRecords, std::string* checksumOut = nullptr);
 
     // 查詢同步狀態與資訊
     SyncStatus getStatus() const;

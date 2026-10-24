@@ -708,14 +708,143 @@ void testNetworkSyncWorker() {
     assert(callbackFired.load());
     assert(receivedResult.success);
     assert(receivedResult.httpStatusCode == 200);
-    assert(!receivedResult.unlockToken.empty());
-    assert(receivedResult.unlockToken.rfind("EFD-14D-", 0) == 0);
+    assert(receivedResult.unlockToken.empty()); // 未填寫後測問卷前不產生假憑證
     assert(worker.getStatus() == efd::SyncStatus::Success);
     assert(worker.getLatestUnlockToken() == receivedResult.unlockToken);
 
     db.clearAllData();
     std::remove("test_sync_db.dat");
-    std::cout << " [PASS] (同步成功, Checksum=" << checksum1 << ", Token=" << receivedResult.unlockToken << ")\n";
+    std::cout << " [PASS] (同步成功, Checksum=" << checksum1 << ")\n";
+}
+
+// 以 1 秒步進餵入持續高分，回傳第一次提醒發生在第幾秒 (未提醒回傳 -1)
+static int secondsUntilFirstAlert(int sensitivity, int maxSeconds) {
+    efd::FatigueStateMachine fsm(1200, 300, 300);
+    fsm.setSensitivity(sensitivity);
+    int alertAt = -1;
+    int t = 0;
+    fsm.setAlertCallback([&](efd::FatigueLevel, float, const std::string&) {
+        if (alertAt < 0) alertAt = t;
+    });
+    for (t = 1; t <= maxSeconds && alertAt < 0; ++t) {
+        fsm.update(kSevereInput.present, kSevereInput.perclos, kSevereInput.blink, kSevereInput.ci, 1.0f);
+    }
+    return alertAt;
+}
+
+void testSensitivityLevels() {
+    std::cout << "[TEST] 20. 測試提示靈敏度 (只調整門檻與持續秒數，且會保存)...";
+    int high = secondsUntilFirstAlert(efd::FatigueStateMachine::kSensitivityHigh, 600);
+    int standard = secondsUntilFirstAlert(efd::FatigueStateMachine::kSensitivityStandard, 600);
+    int low = secondsUntilFirstAlert(efd::FatigueStateMachine::kSensitivityLow, 600);
+    assert(high > 0 && standard > 0 && low > 0);
+    assert(high < standard && standard < low);
+
+    // 超出範圍視為標準
+    efd::FatigueStateMachine fsm;
+    fsm.setSensitivity(7);
+    assert(fsm.getSensitivity() == efd::FatigueStateMachine::kSensitivityStandard);
+    assert(fsm.getSevereThreshold() == efd::FatigueStateMachine::kSevereThreshold);
+
+    // 設定保存在設定檔，重新開啟引擎後自動套用
+    std::string dir = makeTestDir("efd_test_sensitivity");
+    {
+        efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+        engine.setDataDirectory(dir);
+        assert(engine.getSensitivity() == efd::FatigueStateMachine::kSensitivityStandard);
+        engine.setSensitivity(efd::FatigueStateMachine::kSensitivityHigh);
+    }
+    {
+        efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+        engine.setDataDirectory(dir);
+        assert(engine.getSensitivity() == efd::FatigueStateMachine::kSensitivityHigh);
+        assert(engine.getStateMachine().getSevereThreshold() == 58.0f);
+    }
+    std::filesystem::remove_all(dir);
+    std::cout << " [PASS] (首次提醒: 高=" << high << "s, 標準=" << standard << "s, 低=" << low << "s)\n";
+}
+
+void testPayloadJsonUsesRealValues() {
+    std::cout << "[TEST] 21. 測試上傳 JSON 不含寫死的假值...";
+    efd::PayloadHeader header;
+    header.subjectUuid = "SUBJ-JSON";
+    header.studyDay = 3;
+    header.studyStatus = efd::StudyWorkflowTracker::statusLabel(efd::StudyStatus::LockedForPostTest);
+
+    // 無紀錄：指標為 null、筆數為 0、沒有憑證
+    std::string emptyChecksum;
+    std::string empty = efd::NetworkSyncWorker::buildPayloadJson(header, {}, false, &emptyChecksum);
+    assert(empty.find("\"ear_mean\": null") != std::string::npos);
+    assert(empty.find("\"blink_rate\": null") != std::string::npos);
+    assert(empty.find("\"mse_ci\": null") != std::string::npos);
+    assert(empty.find("\"fatigue_score\": null") != std::string::npos);
+    assert(empty.find("\"record_count\": 0") != std::string::npos);
+    assert(empty.find("\"token\": \"\"") != std::string::npos);
+    assert(empty.find("\"status\": \"Locked\"") != std::string::npos);
+    assert(empty.find("0.312") == std::string::npos);
+    assert(empty.find("16.0") == std::string::npos);
+    assert(empty.find("Normal") == std::string::npos);
+    assert(empty.find("\"records\"") == std::string::npos);
+
+    // 有紀錄：眨眼率取實際平均 (0 代表尚未累積，不納入)
+    std::vector<efd::FatigueRecord> records(3);
+    const float blinks[3] = {12.0f, 18.0f, 0.0f};
+    for (int i = 0; i < 3; ++i) {
+        records[i].timestampMs = 1700000000000LL + i * 1000;
+        records[i].subjectUuid = "SUBJ-JSON";
+        records[i].ear = 0.30f;
+        records[i].perclos = 0.05f;
+        records[i].complexityIndex = 3.0f;
+        records[i].fatigueScore = 20.0f;
+        records[i].blinkRatePerMin = blinks[i];
+    }
+    header.unlockToken = "EFD-14D-1234-5678";
+    std::string checksum;
+    std::string json = efd::NetworkSyncWorker::buildPayloadJson(header, records, true, &checksum);
+    assert(json.find("\"blink_rate\": 15.00") != std::string::npos);
+    assert(json.find("\"ear_mean\": 0.3000") != std::string::npos);
+    assert(json.find("\"perclos\": 5.00") != std::string::npos);
+    assert(json.find("\"record_count\": 3") != std::string::npos);
+    assert(json.find("\"token\": \"EFD-14D-1234-5678\"") != std::string::npos);
+    assert(json.find("\"records\": [") != std::string::npos);
+    assert(json.find("\"checksum\": \"" + checksum + "\"") != std::string::npos);
+    assert(checksum != emptyChecksum);
+    std::cout << " [PASS]\n";
+}
+
+void testDatabaseBlinkColumnBackwardCompatible() {
+    std::cout << "[TEST] 22. 測試資料庫新增眨眼率欄位且相容舊版 7 欄資料...";
+    std::string dir = makeTestDir("efd_test_db_blink");
+    std::string db = (std::filesystem::path(dir) / "db.dat").string();
+    {
+        std::ofstream out(db);
+        out << "TimestampMs,SubjectUUID,EAR,PERCLOS,ComplexityIndex,FatigueScore,AlertLevel\n"
+            << "1700000000000,S,0.3,0.01,4.5,5,0\n"          // 舊版 7 欄
+            << "1700000001000,S,0.3,0.01,4.5,5,0,14.5\n";    // 新版 8 欄
+    }
+    {
+        efd::DatabaseService dbs(db);
+        assert(dbs.initialize());
+        auto records = dbs.getLatestRecords(10);
+        assert(records.size() == 2);
+        assert(records[0].blinkRatePerMin == 0.0f);
+        assert(std::fabs(records[1].blinkRatePerMin - 14.5f) < 0.001f);
+
+        efd::FatigueRecord r;
+        r.timestampMs = 1700000002000LL;
+        r.subjectUuid = "S";
+        r.blinkRatePerMin = 17.0f;
+        dbs.logRecord(r); // 只寫入 WAL
+    }
+    {
+        efd::DatabaseService dbs(db);
+        assert(dbs.initialize());
+        auto records = dbs.getLatestRecords(10);
+        assert(records.size() == 3);
+        assert(std::fabs(records[2].blinkRatePerMin - 17.0f) < 0.001f);
+    }
+    std::filesystem::remove_all(dir);
+    std::cout << " [PASS]\n";
 }
 
 void testFloatingIndicatorAndSystemTray() {
@@ -816,7 +945,10 @@ int main() {
     testCorruptedConfigDoesNotCrash();
     testNightlySyncMarksOnlyOnSuccess();
     testPresenceRejectsUniformSkinColoredObject();
+    testSensitivityLevels();
+    testPayloadJsonUsesRealValues();
+    testDatabaseBlinkColumnBackwardCompatible();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 19 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 22 項測試順利通過！\n";
     return 0;
 }

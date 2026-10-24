@@ -16,6 +16,7 @@ struct FatigueRecord {
     float complexityIndex = 0.0f;
     float fatigueScore = 0.0f;
     FatigueLevel alertLevel = FatigueLevel::Relaxed;
+    float blinkRatePerMin = 0.0f;  // 第 8 欄 (新增於 v2.1)；舊版 7 欄資料讀入時為 0
 };
 
 class DatabaseService {
@@ -34,6 +35,7 @@ public:
     std::vector<FatigueRecord> getLatestRecords(size_t count) const;
     std::string exportRecordsAsJson() const;
     std::string exportRecordsAsCsv() const;
+    static std::string recordsToCsv(const std::vector<FatigueRecord>& records);
     void flush();
     void clearAllData();
 

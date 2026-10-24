@@ -131,6 +131,7 @@ void StudyWorkflowTracker::resetInMemoryUnlocked() {
     m_savedThresholdEar = 0.0f;
     m_cloudSyncEndpoint.clear();
     m_lastSyncedDate = 0;
+    m_sensitivityLevel = 1;
 }
 
 bool StudyWorkflowTracker::initialize() {
@@ -158,7 +159,7 @@ bool StudyWorkflowTracker::initializeUnlocked() {
         refreshStudyProgressUnlocked();
     }
     if (m_cloudSyncEndpoint.empty() || m_cloudSyncEndpoint.find("AKfycb...") != std::string::npos || m_cloudSyncEndpoint.find("AKfycbyGXGJz") != std::string::npos || m_cloudSyncEndpoint.find("AKfycbxWOj") != std::string::npos) {
-        m_cloudSyncEndpoint = "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
+        m_cloudSyncEndpoint = kDefaultCloudSyncEndpoint;
     }
     m_launchCount++;
     saveConfigUnlocked();
@@ -328,6 +329,25 @@ int StudyWorkflowTracker::getStartDate() const {
     return m_startDate;
 }
 
+const char* StudyWorkflowTracker::statusLabel(StudyStatus status) {
+    switch (status) {
+    case StudyStatus::LockedForPostTest: return "Locked";
+    case StudyStatus::CompletedUnlocked: return "Completed";
+    default:                             return "Active";
+    }
+}
+
+int StudyWorkflowTracker::getSensitivityLevel() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_sensitivityLevel;
+}
+
+void StudyWorkflowTracker::setSensitivityLevel(int level) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_sensitivityLevel = std::clamp(level, 0, 2);
+    saveConfigUnlocked();
+}
+
 void StudyWorkflowTracker::setStartDate(int dateInt) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_startDate = dateInt;
@@ -365,7 +385,8 @@ void StudyWorkflowTracker::saveConfigUnlocked() {
         << "  \"calibEarStdDev\": " << m_savedEarStdDev << ",\n"
         << "  \"calibThresholdEar\": " << m_savedThresholdEar << ",\n"
         << "  \"cloudSyncEndpoint\": \"" << m_cloudSyncEndpoint << "\",\n"
-        << "  \"lastSyncedDate\": " << m_lastSyncedDate << "\n"
+        << "  \"lastSyncedDate\": " << m_lastSyncedDate << ",\n"
+        << "  \"sensitivityLevel\": " << m_sensitivityLevel << "\n"
         << "}\n";
 }
 
@@ -411,6 +432,7 @@ void StudyWorkflowTracker::loadConfigUnlocked() {
             else if (key == "calibThresholdEar") m_savedThresholdEar = std::stof(val);
             else if (key == "cloudSyncEndpoint") m_cloudSyncEndpoint = val;
             else if (key == "lastSyncedDate") m_lastSyncedDate = std::stoi(val);
+            else if (key == "sensitivityLevel") m_sensitivityLevel = std::clamp(std::stoi(val), 0, 2);
         } catch (const std::exception&) {
             std::cerr << "[StudyWorkflowTracker] 設定欄位損毀，已略過: " << key << "\n";
         }

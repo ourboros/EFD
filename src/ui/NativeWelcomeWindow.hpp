@@ -63,9 +63,8 @@ private:
 
     // 系統設定狀態 (全部支援 Toggle Switch 滑動開關模式)
     bool m_soundAlertEnabled = true;
-    bool m_highSensitivityMode = false;   // 靈敏度 Toggle: ON 為高靈敏度即時警報，OFF 為標準防誤報
+    // 靈敏度 Toggle 的狀態直接讀寫引擎 (m_engine.getSensitivity())，並保存在設定檔
     bool m_autoSyncNightly = true;        // 每晚 21:00 自動上傳數據 Toggle
-    int m_sensitivityLevel = 1; // 0: 低, 1: 標準, 2: 高
     bool m_syntheticCameraMode = false;
 
 #ifdef _WIN32
