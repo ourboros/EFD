@@ -2,7 +2,7 @@ name: Build EFD iOS (.ipa)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'fix/**' ]
   workflow_dispatch:
 
 permissions:

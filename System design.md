@@ -144,6 +144,15 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
   - 介於兩者之間：不提醒，繼續下一輪 5 分鐘快篩。
   - 窗口未滿 5 分鐘不提前判定。
 - **離座自動歸零 (5m Auto-Reset):** 連續 5 分鐘未偵測到人臉，視為已休息：清除冷卻與快篩，平滑分數歸零，回到常態追蹤。App 在背景 (iOS) 或關閉期間比照離座計時。
+- **提示靈敏度 (Sensitivity):** 只調整「提醒門檻」與「需持續秒數」，冷卻 20 分鐘、快篩 5 分鐘、離座 5 分鐘清零等時間規則不變；設定保存在設定檔的 `sensitivityLevel` 欄位 (由第 20 項測試驗證)。Windows / macOS / iOS 以開關切換標準與高，Android 可在三段間切換。
+
+  | 等級 | 提醒門檻 (平滑分數) | 需持續 |
+  | :--- | :--- | :--- |
+  | 低 | $\ge 70$ | 15 秒 |
+  | 標準 (預設) | $\ge 65$ | 10 秒 |
+  | 高 | $\ge 58$ | 5 秒 |
+
+  快篩期的「再次提醒」同樣使用該等級的門檻；「回到常態追蹤」的 $< 45$ 不隨等級改變。
 - **持久化 (Persistence):** 冷卻狀態每 10 秒與暫停/停止時寫入 `efd_fsm_state.txt`；重啟時扣除關閉期間的時間繼續倒數，關閉滿 5 分鐘則比照離座清零。
 - **高精度實時時鐘驅動 (Real-time Clock Delta):** 狀態機以 std::chrono::steady_clock 取得每幀真實時間增量（$\Delta t$，上限 2 秒），不以固定 1/FPS 估算。
 
@@ -188,6 +197,8 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 
 - **每日同步共同規則:** 上傳成功才標記已同步；失敗 10 分鐘後重試；21:00 前若發現昨天 (含) 以前的資料尚未上傳，立即補傳。
 - **模擬相機:** 實體鏡頭無畫面時會切換為模擬相機以維持管線運作，但模擬影格不寫入研究資料庫。
+- **上傳 JSON 格式 (四平台共用):** 由 `NetworkSyncWorker::buildPayloadJson()` 產生，Android 經 JNI 呼叫同一函式 (不附逐筆 `records`)。`metrics` 的 EAR、PERCLOS、CI 與 `fatigue_score` 為資料庫紀錄的實際平均；`blink_rate` 為有效眨眼率的平均 (窗口未滿 30 秒的 0 值不計入)；無紀錄時上述欄位為 `null`、`record_count` 為 0。`status` 為研究流程狀態 (`Active` / `Locked` / `Completed`)；`checksum` 由紀錄內容計算；`token` 為填寫後測問卷後產生的解鎖憑證，未取得時為空字串。資料庫每列新增第 8 欄 `BlinkRatePerMin`，讀取時相容舊版 7 欄資料。
+- **開機自動啟動:** Windows 寫入 `HKCU\...\Run` (舊版另建的「啟動」資料夾捷徑會被清除，避免開機啟動兩次)；macOS 寫入 `~/Library/LaunchAgents/com.efd.EyeFatigueDetection.plist`；iOS 系統不允許，已移除該設定；Android 14+ 以開機通知代替。
 
 ---
 
