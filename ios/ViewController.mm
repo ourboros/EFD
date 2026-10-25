@@ -698,7 +698,7 @@ static UIImage* EFDGetAsset10Logo() {
 }
 
 - (void)recordRecentDetection:(const efd::EngineTelemetry&)t {
-    const CFTimeInterval now = CACurrentMediaTime();
+    const CFTimeInterval now = [NSProcessInfo processInfo].systemUptime;
     std::string outcome = "face";
     if (!t.detection.hasFace) {
         outcome = _latestFrameSynthetic ? "camera" : t.presenceDiagnostic.failStage;
