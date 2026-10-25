@@ -517,6 +517,80 @@ void testFaceDetectedAboveSkinColoredShirt() {
               << ", 眼睛 y=" << d.eyeCenterY << ")\n";
 }
 
+void testFaceSeparatedFromLargerSkinColoredShirt() {
+    std::cout << "[TEST] 24. 測試臉被下巴陰影與更大的膚色衣服分開時，仍檢查到臉 (不只看最大的一塊)...";
+    const int w = 480, h = 640;
+    std::vector<uint8_t> px(static_cast<size_t>(w * h * 3));
+    auto inEllipse = [](int x, int y, int cx, int cy, int rx, int ry) {
+        float dx = static_cast<float>(x - cx) / rx, dy = static_cast<float>(y - cy) / ry;
+        return dx * dx + dy * dy <= 1.0f;
+    };
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int n = ((x * 7 + y * 13) % 7) - 3;
+            int r = 120, g = 125, b = 130;                          // 灰色牆面
+            if (y >= 330) { r = 240; g = 190; b = 150; }             // 佔畫面下半部的淺橘色 T 恤 (面積大於臉)
+            if (inEllipse(x, y, 240, 180, 95, 125)) {
+                r = 220; g = 170; b = 140;                          // 臉
+                if (y < 80) { r = 30; g = 25; b = 25; }             // 瀏海
+                if (inEllipse(x, y, 198, 165, 18, 5) || inEllipse(x, y, 282, 165, 18, 5)) {
+                    r = 40; g = 30; b = 30;                         // 眼睛
+                }
+            }
+            if (y >= 300 && y < 340) { r = 60; g = 50; b = 45; }     // 下巴陰影 / 深色領口：臉與衣服分成兩塊
+            px[static_cast<size_t>((y * w + x) * 3)]     = static_cast<uint8_t>(std::clamp(r + n, 0, 255));
+            px[static_cast<size_t>((y * w + x) * 3) + 1] = static_cast<uint8_t>(std::clamp(g + n, 0, 255));
+            px[static_cast<size_t>((y * w + x) * 3) + 2] = static_cast<uint8_t>(std::clamp(b + n, 0, 255));
+        }
+    }
+
+    efd::FaceLandmarker landmarker;
+    landmarker.initialize();
+    landmarker.detect(px.data(), w, h, efd::PixelFormat::RGB888, false);
+    const auto d = landmarker.getLatestPresenceDiagnostic();
+    assert(d.rawPersonInFrame && d.rawFacingCamera);
+    assert(d.faceBoxY + d.faceBoxH < 330);   // 通過的是臉，不是衣服
+    std::cout << " [PASS] (臉框 " << d.faceBoxX << "," << d.faceBoxY << " " << d.faceBoxW << "x" << d.faceBoxH << ")\n";
+}
+
+void testWarmLitWallIsNotSkin() {
+    std::cout << "[TEST] 25. 測試暖光下的米白牆面不被當成膚色 (未穿上衣、肩膀與臉相連)...";
+    const int w = 480, h = 640;
+    std::vector<uint8_t> px(static_cast<size_t>(w * h * 3));
+    auto inEllipse = [](int x, int y, int cx, int cy, int rx, int ry) {
+        float dx = static_cast<float>(x - cx) / rx, dy = static_cast<float>(y - cy) / ry;
+        return dx * dx + dy * dy <= 1.0f;
+    };
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int n = ((x * 7 + y * 13) % 7) - 3;
+            int r = 172, g = 165, b = 137;                          // 暖光頂燈下的米白牆面 (iPhone 實測值)
+            if (y < 180) { r = 200; g = 191; b = 179; }              // 天花板
+            if (y >= 500 || (x >= 190 && x < 290 && y >= 440)) { r = 137; g = 101; b = 70; } // 肩膀、胸口與脖子
+            if (inEllipse(x, y, 240, 350, 85, 115)) {
+                r = 147; g = 105; b = 81;                           // 臉
+                if (y < 265) { r = 30; g = 25; b = 25; }            // 瀏海
+                if (inEllipse(x, y, 200, 320, 16, 5) || inEllipse(x, y, 280, 320, 16, 5)) {
+                    r = 35; g = 28; b = 28;                         // 眼睛
+                }
+            }
+            px[static_cast<size_t>((y * w + x) * 3)]     = static_cast<uint8_t>(std::clamp(r + n, 0, 255));
+            px[static_cast<size_t>((y * w + x) * 3) + 1] = static_cast<uint8_t>(std::clamp(g + n, 0, 255));
+            px[static_cast<size_t>((y * w + x) * 3) + 2] = static_cast<uint8_t>(std::clamp(b + n, 0, 255));
+        }
+    }
+
+    efd::FaceLandmarker landmarker;
+    landmarker.initialize();
+    landmarker.detect(px.data(), w, h, efd::PixelFormat::RGB888, false);
+    const auto d = landmarker.getLatestPresenceDiagnostic();
+    assert(d.skinBoxY > 180);                // 牆面與天花板不屬於膚色區域
+    assert(d.rawPersonInFrame && d.rawFacingCamera);
+    assert(std::abs(d.eyeCenterY - 320) < 30);
+    std::cout << " [PASS] (膚色區域 y=" << d.skinBoxY << ", 臉框 " << d.faceBoxW << "x" << d.faceBoxH
+              << ", 眼睛 y=" << d.eyeCenterY << ")\n";
+}
+
 void testPlatformLifecycleAdapter() {
     std::cout << "[TEST] 6. 測試跨平台生命週期適配器 (PlatformLifecycleAdapter)...";
     efd::PlatformLifecycleAdapter adapter(efd::PlatformType::Windows);
@@ -995,7 +1069,9 @@ int main() {
     testPayloadJsonUsesRealValues();
     testDatabaseBlinkColumnBackwardCompatible();
     testFaceDetectedAboveSkinColoredShirt();
+    testFaceSeparatedFromLargerSkinColoredShirt();
+    testWarmLitWallIsNotSkin();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 23 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 25 項測試順利通過！\n";
     return 0;
 }

@@ -78,7 +78,9 @@ inline bool isStrictSkinPixel(uint8_t r, uint8_t g, uint8_t b) {
     
     // 放寬的人體物理約束 (適應不同光線，但仍過濾絕對的紫色/藍色)
     if (g <= b + 2) return false;
-    if (r <= g + 6) return false;
+    // R-G 是區分皮膚與暖光下米白牆面的關鍵：iPhone 實拍皮膚 32~45，暖光牆面 7~9、天花板約 1
+    // (白皙皮膚在冷光下約 30，門檻 15 兩側都有餘裕)
+    if (r < g + 15) return false;
     if (r <= b + 10) return false;
 
     int maxVal = std::max({r, g, b});
@@ -280,22 +282,47 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             }
         }
 
-        int bestCompIdx = -1;
+        // 依膚色像素數由大到小，最多檢查 3 個候選區域，任一個通過即算有人臉：
+        // 膚色衣服常比臉大，臉若因下巴陰影與衣服分成兩塊，只看最大的一塊會漏掉臉
+        std::vector<int> candidates;
         int maxSkinInComp = 0;
         for (size_t i = 0; i < components.size(); ++i) {
-            if (components[i].totalSkinCount > maxSkinInComp) {
-                maxSkinInComp = components[i].totalSkinCount;
-                bestCompIdx = static_cast<int>(i);
+            maxSkinInComp = std::max(maxSkinInComp, components[i].totalSkinCount);
+            if (components[i].cellCount >= 3 && components[i].totalSkinCount >= 150) {
+                candidates.push_back(static_cast<int>(i));
             }
         }
+        std::sort(candidates.begin(), candidates.end(), [&components](int a, int b) {
+            return components[a].totalSkinCount > components[b].totalSkinCount;
+        });
+        if (candidates.size() > 3) candidates.resize(3);
 
-        if (bestCompIdx == -1 || components[bestCompIdx].cellCount < 3 || components[bestCompIdx].totalSkinCount < 150) {
+        if (candidates.empty()) {
             diag.unconfirmedReason = "鏡頭前未偵測到真人臉部聚集特徵 (使用者離座或採樣不足)";
             diag.failStage = "skin";
-            if (bestCompIdx >= 0) {
-                diag.skinPixels = components[bestCompIdx].totalSkinCount;
-            }
-        } else {
+            diag.skinPixels = maxSkinInComp;
+        }
+
+        // 全部失敗時，回報進展最遠的候選區域 (最接近成功的那一塊最有參考價值)
+        auto stageRank = [](const std::string& stage) {
+            if (stage == "symmetry") return 5;
+            if (stage == "eyes") return 4;
+            if (stage == "fill") return 3;
+            if (stage == "aspect") return 2;
+            if (stage == "size") return 1;
+            return 0;
+        };
+        const FaceLandmarker::PresenceDiagnostic baseDiag = diag;
+        FaceLandmarker::PresenceDiagnostic bestFailDiag = diag;
+        int bestFailRank = -1;
+        int bestCompIdx = -1;
+
+        for (int candidate : candidates) {
+        bestCompIdx = candidate;
+        personInFrame = false;
+        facingCamera = false;
+        diag = baseDiag;
+        {
             // 記錄未裁切的膚色連通區域 (診斷用)
             diag.skinBoxX = components[bestCompIdx].minX;
             diag.skinBoxY = components[bestCompIdx].minY;
@@ -373,21 +400,18 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 for (int r = topRow; r < rowCount; ++r) {
                     const float w = rowWidth.at(r);
                     const float depth = static_cast<float>((r - topRow) * step);
-                    if (neckRow < 0 && depth < faceMaxWidth * 0.6f) {
-                        // 額頭到臉頰：記錄臉的最大寬度
+                    if (faceMaxWidth <= 0.0f || depth < faceMaxWidth) {
+                        // 頭頂往下一個臉寬的距離內 (額頭、眉毛、眼睛、臉頰)：只記錄臉的最大寬度。
+                        // 眉毛與眼睛不是膚色，會讓這幾列看起來變窄，不能在這裡找脖子
+                        if (faceMaxWidth > 0.0f && depth > faceMaxWidth * 0.5f && w > faceMaxWidth * 1.5f) {
+                            // 臉的上半部超出畫面時，肩膀/衣服會很快出現：突然變寬 50% 以上就切開
+                            bottomRow = r;
+                            break;
+                        }
                         faceMaxWidth = std::max(faceMaxWidth, w);
                         continue;
                     }
-                    if (faceMaxWidth <= 0.0f) {
-                        faceMaxWidth = w;
-                        continue;
-                    }
-                    // 臉頰通常比額頭寬：尚未開始變窄前，小幅變寬 (≤15%) 仍算臉的寬度
-                    const bool narrowedYet = (neckRow >= 0 && neckWidth < faceMaxWidth * 0.85f);
-                    if (!narrowedYet && w > faceMaxWidth && w <= faceMaxWidth * 1.15f) {
-                        faceMaxWidth = w;
-                    }
-                    // 臉頰以下：追蹤最窄處 (下巴/脖子)
+                    // 嘴巴以下：追蹤最窄處 (下巴/脖子)
                     if (neckRow < 0 || w < neckWidth) {
                         neckRow = r;
                         neckWidth = w;
@@ -590,6 +614,20 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                     diag.failStage = "symmetry";
                 }
             }
+        }
+
+        if (personInFrame && facingCamera) {
+            break;
+        }
+        const int rank = stageRank(diag.failStage);
+        if (rank > bestFailRank) {
+            bestFailRank = rank;
+            bestFailDiag = diag;
+        }
+        } // for (candidate)
+
+        if (!candidates.empty() && !(personInFrame && facingCamera)) {
+            diag = bestFailDiag;
         }
     } else {
         // Synthetic 模擬測試驅動模式 (專用於無相機單元測試環境)
