@@ -4,11 +4,18 @@
 #import <UserNotifications/UserNotifications.h>
 #include <memory>
 #include <algorithm>
+#include <atomic>
+#include <map>
 #include <string>
 #include <vector>
 #include <iomanip>
 #include <sstream>
+#include <sys/utsname.h>
 #include "engine/AsyncPipelineEngine.hpp"
+
+// 診斷模式一次匯出的畫面張數 (每隔 4 幀取一張，約 0.4 秒)
+static const int kDiagnosticExportFrames = 5;
+static NSString * const kDiagnosticModeDefaultsKey = @"efd_diagnostic_mode";
 
 // -----------------------------------------------------------------------------
 // EFD iOS 設計系統規範色碼 (5 大核心配色)
@@ -47,6 +54,23 @@ static UIImage* EFDGetAsset10Logo() {
     efd::AsyncPipelineEngine* _engine;
     efd::EngineTelemetry _latestTelemetry;
     BOOL _hasTelemetry;
+
+    // 最新一幀的偵測診斷 (主執行緒讀寫)
+    efd::FaceLandmarker::PresenceDiagnostic _latestDiag;
+    BOOL _latestFrameSynthetic;
+    int _latestFrameW;
+    int _latestFrameH;
+    float _latestFps;
+
+    // 校準期間的統計：總幀數、有人臉的幀數、各關卡失敗次數
+    int _calibFrames;
+    int _calibFaceFrames;
+    std::map<std::string, int> _calibFailCounts;
+
+    // 診斷畫面匯出 (引擎執行緒取幀，背景佇列寫檔)
+    std::atomic<int> _exportFramesRemaining;
+    int _exportFrameSkip;
+    dispatch_queue_t _exportQueue;
 }
 
 @property (nonatomic, assign) EFDAppStage currentStage;
@@ -72,6 +96,12 @@ static UIImage* EFDGetAsset10Logo() {
 @property (nonatomic, assign) BOOL soundAlertEnabled;
 // iOS 不允許 App 開機自動啟動，因此沒有「開機自動啟動」設定
 
+// 診斷模式：顯示即時偵測數值，並可匯出實際畫面供開發者重現問題 (預設關閉，不影響研究資料)
+@property (nonatomic, assign) BOOL diagnosticModeEnabled;
+@property (nonatomic, strong) UILabel *diagLabel;
+@property (nonatomic, strong) NSMutableArray<NSURL *> *exportedFiles;
+@property (nonatomic, copy) NSString *exportStamp;
+
 // 背景定時檢查 (科研同步 & 門禁檢查)
 @property (nonatomic, strong) NSTimer *backgroundCheckTimer;
 
@@ -85,6 +115,10 @@ static UIImage* EFDGetAsset10Logo() {
 
     self.highSensitivityEnabled = NO;
     self.soundAlertEnabled = YES;
+    self.diagnosticModeEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:kDiagnosticModeDefaultsKey];
+    _exportFramesRemaining.store(0);
+    _exportFrameSkip = 0;
+    _exportQueue = dispatch_queue_create("com.efd.diagnostic.export", DISPATCH_QUEUE_SERIAL);
     self.currentStage = EFDAppStageWelcome;
 
     // 建立全螢幕自適應容器
@@ -119,10 +153,36 @@ static UIImage* EFDGetAsset10Logo() {
         slim.complexityMetrics = t.complexityMetrics;
         slim.systemState = t.systemState;
         slim.currentThreshold = t.currentThreshold;
+        slim.presenceDiagnostic = t.presenceDiagnostic;
+        slim.measuredFps = t.measuredFps;
+        const BOOL synthetic = t.latestFrame.isSynthetic ? YES : NO;
+        const int frameW = t.latestFrame.width;
+        const int frameH = t.latestFrame.height;
+
+        // 診斷匯出：每隔 4 幀複製一張實際畫面 (只在使用者按下匯出時)
+        if (self->_exportFramesRemaining.load() > 0 && t.latestFrame.isValid() && (++self->_exportFrameSkip % 4) == 0) {
+            const int remaining = self->_exportFramesRemaining.fetch_sub(1);
+            if (remaining > 0) {
+                auto frame = std::make_shared<efd::RawFrame>(t.latestFrame);
+                auto diag = std::make_shared<efd::FaceLandmarker::PresenceDiagnostic>(t.presenceDiagnostic);
+                const int index = kDiagnosticExportFrames - remaining + 1;
+                dispatch_async(self->_exportQueue, ^{
+                    [self writeDiagnosticFrame:*frame diagnostic:*diag index:index];
+                });
+            }
+        }
+
         dispatch_async(dispatch_get_main_queue(), ^{
             self->_latestTelemetry = slim;
             self->_hasTelemetry = YES;
+            self->_latestDiag = slim.presenceDiagnostic;
+            self->_latestFrameSynthetic = synthetic;
+            self->_latestFrameW = frameW;
+            self->_latestFrameH = frameH;
+            self->_latestFps = slim.measuredFps;
+            [self recordCalibrationFrame:slim];
             [self updateTelemetryUI:slim];
+            [self updateDiagnosticLabel];
         });
     });
 
@@ -307,6 +367,10 @@ static UIImage* EFDGetAsset10Logo() {
         [subview removeFromSuperview];
     }
     self.cameraPreviewLayer = nil;
+    self.cameraAspectBox = nil;
+    self.cameraStatusLabel = nil;
+    self.diagLabel = nil;
+    self.calibHintLabel = nil;
 
     // 偏好 A：僅在 Dashboard 監控階段保持螢幕常亮，其餘畫面恢復系統自動休眠
     if (self.currentStage == EFDAppStageDashboard) {
@@ -522,21 +586,46 @@ static UIImage* EFDGetAsset10Logo() {
     title.textAlignment = NSTextAlignmentCenter;
     [self.contentContainer addSubview:title];
 
-    // 動態黃色凝視點
-    CGFloat dotSize = 60.0f;
-    UIView *dotView = [[UIView alloc] initWithFrame:CGRectMake((w - dotSize) / 2, h * 0.38f, dotSize, dotSize)];
+    // 鏡頭預覽 (3:4 直向，與相機串流同比例)：讓受試者確認整張臉都在畫面中
+    CGFloat progressY = h - bottomInset - 80;
+    CGFloat previewTop = CGRectGetMaxY(title.frame) + 28;
+    CGFloat maxPreviewH = progressY - previewTop - (self.diagnosticModeEnabled ? 150 : 90);
+    CGFloat previewW = std::min(w - 80, maxPreviewH * 3.0f / 4.0f);
+    CGFloat previewH = previewW * 4.0f / 3.0f;
+    self.cameraAspectBox = [[UIView alloc] initWithFrame:CGRectMake((w - previewW) / 2, previewTop, previewW, previewH)];
+    self.cameraAspectBox.backgroundColor = [UIColor colorWithRed:20/255.0 green:110/255.0 blue:85/255.0 alpha:1.0];
+    self.cameraAspectBox.layer.cornerRadius = 16;
+    self.cameraAspectBox.clipsToBounds = YES;
+    self.cameraAspectBox.layer.borderColor = [COLOR_WARM_AMBER CGColor];
+    self.cameraAspectBox.layer.borderWidth = 3.0f;
+    [self.contentContainer addSubview:self.cameraAspectBox];
+    [self attachCameraPreviewIfNeeded];
+
+    // 凝視點放在預覽框上緣中央 (靠近前鏡頭位置)
+    CGFloat dotSize = 24.0f;
+    UIView *dotView = [[UIView alloc] initWithFrame:CGRectMake((w - dotSize) / 2, previewTop - dotSize / 2, dotSize, dotSize)];
     dotView.backgroundColor = COLOR_WARM_AMBER;
     dotView.layer.cornerRadius = dotSize / 2.0f;
     dotView.layer.borderColor = [[COLOR_ACCENT_BLUE colorWithAlphaComponent:0.8] CGColor];
-    dotView.layer.borderWidth = 5.0f;
+    dotView.layer.borderWidth = 3.0f;
     [self.contentContainer addSubview:dotView];
 
-    self.calibHintLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, CGRectGetMaxY(dotView.frame) + 32, w - 40, 30)];
-    self.calibHintLabel.text = @"請專注凝視黃色標記，保持臉部穩定...";
+    self.calibHintLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, CGRectGetMaxY(self.cameraAspectBox.frame) + 12, w - 40, 44)];
+    self.calibHintLabel.text = @"請凝視黃色標記，讓整張臉出現在框內...";
     self.calibHintLabel.textColor = COLOR_CARD_WHITE;
-    self.calibHintLabel.font = [UIFont boldSystemFontOfSize:15];
+    self.calibHintLabel.font = [UIFont boldSystemFontOfSize:14];
     self.calibHintLabel.textAlignment = NSTextAlignmentCenter;
+    self.calibHintLabel.numberOfLines = 2;
     [self.contentContainer addSubview:self.calibHintLabel];
+
+    if (self.diagnosticModeEnabled) {
+        self.diagLabel = [self makeDiagnosticLabelWithFrame:CGRectMake(20, CGRectGetMaxY(self.calibHintLabel.frame) + 4, w - 40, progressY - CGRectGetMaxY(self.calibHintLabel.frame) - 12)];
+        [self.contentContainer addSubview:self.diagLabel];
+    }
+
+    _calibFrames = 0;
+    _calibFaceFrames = 0;
+    _calibFailCounts.clear();
 
     self.calibProgressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
     self.calibProgressView.frame = CGRectMake(40, h - bottomInset - 80, w - 80, 12);
@@ -574,21 +663,75 @@ static UIImage* EFDGetAsset10Logo() {
             return;
         }
 
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"校準未完成"
-                                                                       message:@"校準期間未穩定偵測到臉部。\n請在光線充足處將手機拿正、平視前鏡頭後重新校準。"
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"重新校準" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            [self switchToStage:EFDAppStageCalibration];
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"略過，先使用預設基準" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
-            // 記錄已走過初次設定，下次開啟不再強制從歡迎頁開始
-            if (self->_engine) {
-                self->_engine->getStudyTracker().setInitialSetupCompleted(true);
-            }
-            [self switchToStage:EFDAppStageDashboard];
-        }]];
-        [self presentViewController:alert animated:YES completion:nil];
+        [self presentCalibrationFailureAlert];
     }
+}
+
+// 校準期間逐幀統計 (主執行緒)，失敗時用來說明主要原因
+- (void)recordCalibrationFrame:(const efd::EngineTelemetry&)t {
+    if (self.currentStage != EFDAppStageCalibration || !self.calibTimer) return;
+    _calibFrames++;
+    if (t.detection.hasFace) {
+        _calibFaceFrames++;
+        self.calibHintLabel.text = @"已偵測到臉部，請保持穩定...";
+    } else {
+        std::string stage = _latestFrameSynthetic ? "camera" : t.presenceDiagnostic.failStage;
+        if (stage.empty()) stage = "tracking";
+        _calibFailCounts[stage]++;
+        self.calibHintLabel.text = [NSString stringWithFormat:@"尚未偵測到臉部：%@", [self reasonTextForStage:stage]];
+    }
+}
+
+// 各關卡失敗原因的白話說明
+- (NSString *)reasonTextForStage:(const std::string&)stage {
+    if (stage == "camera")   return @"相機沒有畫面，請確認已允許相機權限";
+    if (stage == "skin")     return @"畫面中找不到足夠的臉部膚色，可能太暗或臉不在畫面中";
+    if (stage == "size")     return @"臉太大或太小，請把手機拿到約一個手臂的距離";
+    if (stage == "aspect")   return @"臉部形狀不完整，請讓整張臉出現在框內";
+    if (stage == "fill")     return @"臉部區域不連續，可能有遮擋或強烈陰影";
+    if (stage == "eyes")     return @"找不到眼睛特徵，請正視鏡頭、避免反光或太暗";
+    if (stage == "symmetry") return @"臉偏向一側，請正對鏡頭";
+    return @"臉部追蹤中斷，請保持臉部穩定";
+}
+
+- (std::string)dominantCalibrationFailStage {
+    std::string best;
+    int bestCount = 0;
+    for (const auto& kv : _calibFailCounts) {
+        if (kv.second > bestCount) {
+            best = kv.first;
+            bestCount = kv.second;
+        }
+    }
+    return best;
+}
+
+- (void)presentCalibrationFailureAlert {
+    float ratio = _engine ? _engine->getLastCalibrationValidRatio() : 0.0f;
+    std::string stage = [self dominantCalibrationFailStage];
+    NSString *reason = stage.empty() ? @"校準期間沒有收到相機畫面" : [self reasonTextForStage:stage];
+    NSString *message = [NSString stringWithFormat:@"%@\n\n有偵測到臉的畫面：%.0f%%（需要 60%% 以上）\n\n若一直失敗，請按「複製錯誤資訊」貼給研究人員。",
+                         reason, ratio * 100.0f];
+
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"校準未完成"
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"重新校準" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self switchToStage:EFDAppStageCalibration];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"複製錯誤資訊" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [UIPasteboard generalPasteboard].string = [self diagnosticReportText];
+        // 複製後回到同一個選擇，讓使用者決定重新校準或略過
+        [self presentCalibrationFailureAlert];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"略過，先使用預設基準" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+        // 記錄已走過初次設定，下次開啟不再強制從歡迎頁開始
+        if (self->_engine) {
+            self->_engine->getStudyTracker().setInitialSetupCompleted(true);
+        }
+        [self switchToStage:EFDAppStageDashboard];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 // -----------------------------------------------------------------------------
@@ -638,6 +781,12 @@ static UIImage* EFDGetAsset10Logo() {
     self.cameraStatusLabel.layer.cornerRadius = 4;
     self.cameraStatusLabel.clipsToBounds = YES;
     [self.cameraAspectBox addSubview:self.cameraStatusLabel];
+
+    if (self.diagnosticModeEnabled) {
+        CGFloat diagH = std::min<CGFloat>(96, camBoxH - 36);
+        self.diagLabel = [self makeDiagnosticLabelWithFrame:CGRectMake(6, camBoxH - diagH - 6, camBoxW - 12, diagH)];
+        [self.cameraAspectBox addSubview:self.diagLabel];
+    }
 
     // 嘗試掛載真實 AVFoundation 相機串流圖層
     [self attachCameraPreviewIfNeeded];
@@ -745,9 +894,9 @@ static UIImage* EFDGetAsset10Logo() {
             self.cameraStatusLabel.text = @"📷 前置攝影機 (實體鏡頭即時串流運作中)";
         }
     } else {
-        // 若相機仍在啟動中，安排 0.5 秒後重試一次掛載
+        // 若相機仍在啟動中，0.5 秒後重試掛載 (監控頁與校準頁都有預覽框)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if (self.currentStage == EFDAppStageDashboard && !self.cameraPreviewLayer) {
+            if (self.cameraAspectBox && !self.cameraPreviewLayer) {
                 [self attachCameraPreviewIfNeeded];
             }
         });
@@ -843,6 +992,29 @@ static UIImage* EFDGetAsset10Logo() {
     [scrollView addSubview:createSettingRow(curY, @"自動科研同步", @"每晚 21:00 後上傳；錯過時於下次開啟自動補傳", YES, nil, YES)];
     curY += (itemH + gap);
 
+    [scrollView addSubview:createSettingRow(curY, @"診斷模式", @"顯示偵測數值，可匯出畫面給研究人員除錯", self.diagnosticModeEnabled, @selector(onDiagnosticModeChanged:), NO)];
+    curY += (itemH + gap);
+
+    // 錯誤回報：任何時候都可複製診斷資訊 (純文字，不含影像)
+    auto createActionButton = ^(CGFloat y, NSString *titleText, SEL action, BOOL enabled) {
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+        btn.frame = CGRectMake(20, y, w - 40, 44);
+        [btn setTitle:titleText forState:UIControlStateNormal];
+        [btn setTitleColor:COLOR_PRIMARY_MINT forState:UIControlStateNormal];
+        [btn setTitleColor:[COLOR_TEXT_DARK colorWithAlphaComponent:0.35] forState:UIControlStateDisabled];
+        btn.backgroundColor = [COLOR_CARD_WHITE colorWithAlphaComponent:enabled ? 1.0 : 0.6];
+        btn.layer.cornerRadius = 14;
+        btn.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+        btn.enabled = enabled;
+        [btn addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+        return btn;
+    };
+    [scrollView addSubview:createActionButton(curY, @"複製錯誤資訊（貼給研究人員）", @selector(onCopyDiagnosticReportClicked), YES)];
+    curY += 44 + gap;
+    [scrollView addSubview:createActionButton(curY, self.diagnosticModeEnabled ? @"匯出診斷畫面（含臉部影像）" : @"匯出診斷畫面（需先開啟診斷模式）",
+                                              @selector(onExportDiagnosticFramesClicked), self.diagnosticModeEnabled)];
+    curY += 44 + gap;
+
     scrollView.contentSize = CGSizeMake(w, curY + 8);
     [self.contentContainer addSubview:scrollView];
 
@@ -868,6 +1040,200 @@ static UIImage* EFDGetAsset10Logo() {
 
 - (void)onSoundAlertChanged:(UISwitch*)sw {
     self.soundAlertEnabled = sw.on;
+}
+
+- (void)onDiagnosticModeChanged:(UISwitch*)sw {
+    self.diagnosticModeEnabled = sw.on;
+    [[NSUserDefaults standardUserDefaults] setBool:sw.on forKey:kDiagnosticModeDefaultsKey];
+    // 重新繪製設定頁，更新「匯出診斷畫面」按鈕狀態
+    [self switchToStage:EFDAppStageSettings];
+}
+
+- (void)onCopyDiagnosticReportClicked {
+    [UIPasteboard generalPasteboard].string = [self diagnosticReportText];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"已複製錯誤資訊"
+                                                                   message:@"請貼到 LINE、Email 或訊息中傳給研究人員。內容只有文字數值，不含影像。"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+// -----------------------------------------------------------------------------
+// 診斷模式：即時數值、錯誤回報文字、畫面匯出
+// -----------------------------------------------------------------------------
+- (UILabel *)makeDiagnosticLabelWithFrame:(CGRect)frame {
+    UILabel *label = [[UILabel alloc] initWithFrame:frame];
+    label.numberOfLines = 0;
+    label.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightRegular];
+    label.textColor = COLOR_CARD_WHITE;
+    label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.55];
+    label.layer.cornerRadius = 8;
+    label.clipsToBounds = YES;
+    label.text = @" 診斷資料等待中...";
+    return label;
+}
+
+// 目前偵測狀態的精簡數值 (診斷標籤與錯誤回報共用)
+- (NSString *)diagnosticSummaryText {
+    if (!_hasTelemetry) return @"尚未收到相機畫面";
+    const auto& d = _latestDiag;
+    NSString *result = (d.rawPersonInFrame && d.rawFacingCamera) ? @"有人臉" : @"沒有人臉";
+    NSString *stage = d.failStage.empty() ? @"-" : [NSString stringWithUTF8String:d.failStage.c_str()];
+    return [NSString stringWithFormat:
+            @"相機:%@ %dx%d %.0ffps 結果:%@ 卡在:%@\n"
+            @"膚色區 %d,%d %dx%d 臉框 %d,%d %dx%d 膚色亮度 %d\n"
+            @"左眼 暗%.2f 反%.0f 緣%.1f | 右眼 暗%.2f 反%.0f 緣%.1f\n"
+            @"長寬比 %.2f 填充 %.2f 對稱 %.2f",
+            _latestFrameSynthetic ? @"模擬" : @"實體", _latestFrameW, _latestFrameH, _latestFps, result, stage,
+            d.skinBoxX, d.skinBoxY, d.skinBoxW, d.skinBoxH, d.faceBoxX, d.faceBoxY, d.faceBoxW, d.faceBoxH, d.avgSkinLum,
+            d.eyeDarkFraction[0], d.eyeContrast[0], d.eyeGradient[0], d.eyeDarkFraction[1], d.eyeContrast[1], d.eyeGradient[1],
+            d.aspectRatio, d.fillDensity, d.symmetryRatio];
+}
+
+- (void)updateDiagnosticLabel {
+    if (!self.diagLabel) return;
+    self.diagLabel.text = [self diagnosticSummaryText];
+}
+
+// 錯誤回報：可貼給研究人員的純文字 (不含影像)
+- (NSString *)diagnosticReportText {
+    struct utsname systemInfo;
+    uname(&systemInfo);
+    NSString *model = [NSString stringWithUTF8String:systemInfo.machine];
+    NSString *appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
+    NSString *subject = _engine ? [NSString stringWithUTF8String:_engine->getStudyTracker().getSubjectUuid().c_str()] : @"-";
+    int day = _engine ? _engine->getStudyTracker().getCurrentDay() : 0;
+    float ratio = _engine ? _engine->getLastCalibrationValidRatio() : 0.0f;
+    BOOL calibrated = _engine ? _engine->hasSavedCalibration() : NO;
+
+    NSMutableString *counts = [NSMutableString string];
+    for (const auto& kv : _calibFailCounts) {
+        [counts appendFormat:@"%s=%d ", kv.first.c_str(), kv.second];
+    }
+
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+
+    return [NSString stringWithFormat:
+            @"[EFD 錯誤回報]\n"
+            @"時間: %@\n裝置: %@ / iOS %@ / App %@\n"
+            @"受試者: %@ 第 %d 天 / 已校準: %@\n"
+            @"最近一次校準: 有臉畫面 %.0f%% (%d/%d 幀) / 失敗統計: %@\n"
+            @"相機權限: %@\n"
+            @"--- 目前偵測 ---\n%@",
+            [fmt stringFromDate:[NSDate date]], model, [UIDevice currentDevice].systemVersion, appVersion,
+            subject, day, calibrated ? @"是" : @"否",
+            ratio * 100.0f, _calibFaceFrames, _calibFrames, counts.length > 0 ? counts : @"-",
+            [self cameraAuthorizationText],
+            [self diagnosticSummaryText]];
+}
+
+- (NSString *)cameraAuthorizationText {
+    switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo]) {
+        case AVAuthorizationStatusAuthorized:    return @"已允許";
+        case AVAuthorizationStatusDenied:        return @"已拒絕";
+        case AVAuthorizationStatusRestricted:    return @"受限制";
+        case AVAuthorizationStatusNotDetermined: return @"尚未詢問";
+    }
+    return @"未知";
+}
+
+- (NSURL *)diagnosticsDirectory {
+    NSURL *docs = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] firstObject];
+    NSURL *dir = [docs URLByAppendingPathComponent:@"EFD_Diagnostics" isDirectory:YES];
+    [[NSFileManager defaultManager] createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    return dir;
+}
+
+- (void)onExportDiagnosticFramesClicked {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"匯出診斷畫面"
+                                                                   message:@"將連續擷取 5 張前鏡頭畫面（含你的臉部影像）與偵測數值，只存在這支手機的「檔案」App > EFD 資料夾，由你決定是否傳給研究人員。\n\n請按「開始」後把臉對準前鏡頭，約 3 秒後擷取。"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"開始" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+        fmt.dateFormat = @"yyyyMMdd_HHmmss";
+        self.exportStamp = [fmt stringFromDate:[NSDate date]];
+        self.exportedFiles = [NSMutableArray array];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            self->_exportFrameSkip = 0;
+            self->_exportFramesRemaining.store(kDiagnosticExportFrames);
+        });
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+// 背景佇列：寫出一張畫面 (PPM 供重播工具、PNG 供檢視) 與其偵測數值 (JSON)
+- (void)writeDiagnosticFrame:(const efd::RawFrame&)frame
+                  diagnostic:(const efd::FaceLandmarker::PresenceDiagnostic&)d
+                       index:(int)index {
+    NSURL *dir = [self diagnosticsDirectory];
+    NSString *base = [NSString stringWithFormat:@"%@_%02d", self.exportStamp ?: @"efd", index];
+    const int w = frame.width, h = frame.height;
+    const bool isBgr = frame.format == efd::PixelFormat::BGR888;
+
+    std::vector<uint8_t> rgb(static_cast<size_t>(w) * h * 3);
+    for (size_t i = 0; i + 2 < rgb.size() && i + 2 < frame.data.size(); i += 3) {
+        rgb[i]     = isBgr ? frame.data[i + 2] : frame.data[i];
+        rgb[i + 1] = frame.data[i + 1];
+        rgb[i + 2] = isBgr ? frame.data[i] : frame.data[i + 2];
+    }
+
+    NSMutableData *ppm = [NSMutableData dataWithData:[[NSString stringWithFormat:@"P6\n%d %d\n255\n", w, h] dataUsingEncoding:NSASCIIStringEncoding]];
+    [ppm appendBytes:rgb.data() length:rgb.size()];
+    NSURL *ppmURL = [dir URLByAppendingPathComponent:[base stringByAppendingString:@".ppm"]];
+    [ppm writeToURL:ppmURL atomically:YES];
+
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CFDataRef cfData = CFDataCreate(NULL, rgb.data(), static_cast<CFIndex>(rgb.size()));
+    CGDataProviderRef provider = CGDataProviderCreateWithCFData(cfData);
+    CGImageRef cgImage = CGImageCreate(w, h, 8, 24, w * 3, space, kCGImageAlphaNone | kCGBitmapByteOrderDefault,
+                                       provider, NULL, false, kCGRenderingIntentDefault);
+    NSURL *pngURL = [dir URLByAppendingPathComponent:[base stringByAppendingString:@".png"]];
+    if (cgImage) {
+        [UIImagePNGRepresentation([UIImage imageWithCGImage:cgImage]) writeToURL:pngURL atomically:YES];
+        CGImageRelease(cgImage);
+    }
+    CGDataProviderRelease(provider);
+    CFRelease(cfData);
+    CGColorSpaceRelease(space);
+
+    NSDictionary *json = @{
+        @"frame": @{@"width": @(w), @"height": @(h), @"synthetic": @(frame.isSynthetic)},
+        @"result": @{@"personInFrame": @(d.rawPersonInFrame), @"facingCamera": @(d.rawFacingCamera),
+                     @"failStage": [NSString stringWithUTF8String:d.failStage.c_str()],
+                     @"reason": [NSString stringWithUTF8String:d.unconfirmedReason.c_str()] ?: @""},
+        @"skinBox": @[@(d.skinBoxX), @(d.skinBoxY), @(d.skinBoxW), @(d.skinBoxH)],
+        @"faceBox": @[@(d.faceBoxX), @(d.faceBoxY), @(d.faceBoxW), @(d.faceBoxH)],
+        @"skinPixels": @(d.skinPixels), @"avgSkinLum": @(d.avgSkinLum),
+        @"aspectRatio": @(d.aspectRatio), @"fillDensity": @(d.fillDensity), @"symmetry": @(d.symmetryRatio),
+        @"eyes": @{@"centerY": @(d.eyeCenterY),
+                   @"left": @{@"x": @(d.eyeCenterX[0]), @"dark": @(d.eyeDarkFraction[0]), @"contrast": @(d.eyeContrast[0]), @"gradient": @(d.eyeGradient[0])},
+                   @"right": @{@"x": @(d.eyeCenterX[1]), @"dark": @(d.eyeDarkFraction[1]), @"contrast": @(d.eyeContrast[1]), @"gradient": @(d.eyeGradient[1])}}
+    };
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:json options:NSJSONWritingPrettyPrinted error:nil];
+    NSURL *jsonURL = [dir URLByAppendingPathComponent:[base stringByAppendingString:@".json"]];
+    [jsonData writeToURL:jsonURL atomically:YES];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self.exportedFiles addObjectsFromArray:@[pngURL, ppmURL, jsonURL]];
+        if (index == kDiagnosticExportFrames) {
+            [self finishDiagnosticExport];
+        }
+    });
+}
+
+- (void)finishDiagnosticExport {
+    // 一併存一份錯誤回報文字，方便研究人員對照
+    NSURL *reportURL = [[self diagnosticsDirectory] URLByAppendingPathComponent:
+                        [NSString stringWithFormat:@"%@_report.txt", self.exportStamp ?: @"efd"]];
+    [[self diagnosticReportText] writeToURL:reportURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [self.exportedFiles addObject:reportURL];
+
+    UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:self.exportedFiles applicationActivities:nil];
+    share.popoverPresentationController.sourceView = self.view;
+    share.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width / 2, self.view.bounds.size.height / 2, 1, 1);
+    [self presentViewController:share animated:YES completion:nil];
 }
 
 - (void)onReturnToDashboardClicked {

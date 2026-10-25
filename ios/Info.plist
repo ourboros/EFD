@@ -45,6 +45,11 @@
     </array>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
+    <!-- 診斷模式匯出的檔案 (Documents/EFD_Diagnostics) 顯示在「檔案」App 的 EFD 資料夾 -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
 </dict>
 </plist>
 
