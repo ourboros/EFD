@@ -43,6 +43,19 @@ public:
         float userBiasY = 0.0f;
         bool isPositionBiasCalibrated = false;
         std::string unconfirmedReason;
+
+        // 診斷模式用：本幀卡在哪一關 ("" 代表全部通過；skin / size / aspect / fill / eyes / symmetry)
+        std::string failStage;
+        // 膚色連通區域 (未裁切) 與裁切後的臉部方框
+        int skinBoxX = 0, skinBoxY = 0, skinBoxW = 0, skinBoxH = 0;
+        int faceBoxX = 0, faceBoxY = 0, faceBoxW = 0, faceBoxH = 0;
+        int avgSkinLum = 0;
+        // 眼部檢查數值 [0] 左 / [1] 右，以及推算的眼睛中心
+        float eyeDarkFraction[2] = {0.0f, 0.0f};
+        float eyeContrast[2] = {0.0f, 0.0f};
+        float eyeGradient[2] = {0.0f, 0.0f};
+        int eyeCenterX[2] = {0, 0};
+        int eyeCenterY = 0;
     };
 
     PresenceDiagnostic getLatestPresenceDiagnostic() const;

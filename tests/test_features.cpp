@@ -471,6 +471,52 @@ void testPresenceRejectsUniformSkinColoredObject() {
     std::cout << " [PASS] (原因: " << landmarker.getLatestPresenceDiagnostic().unconfirmedReason << ")\n";
 }
 
+void testFaceDetectedAboveSkinColoredShirt() {
+    std::cout << "[TEST] 23. 測試穿膚色衣服時，臉與脖子、衣服連成一塊仍能偵測 (iPhone 直向 480x640)...";
+    const int w = 480, h = 640;
+    std::vector<uint8_t> px(static_cast<size_t>(w * h * 3));
+    auto fill = [&](int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+        if (x < 0 || x >= w || y < 0 || y >= h) return;
+        size_t i = static_cast<size_t>((y * w + x) * 3);
+        px[i] = r; px[i + 1] = g; px[i + 2] = b;
+    };
+    auto inEllipse = [](int x, int y, int cx, int cy, int rx, int ry) {
+        float dx = static_cast<float>(x - cx) / rx, dy = static_cast<float>(y - cy) / ry;
+        return dx * dx + dy * dy <= 1.0f;
+    };
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int n = ((x * 7 + y * 13) % 7) - 3;  // 輕微紋理
+            uint8_t r = 120, g = 125, b = 130;   // 灰色牆面
+            if (y >= 470) { r = 240; g = 190; b = 150; }                       // 淺橘色 T 恤 (整排膚色)
+            else if (x >= 180 && x < 300 && y >= 370) { r = 220; g = 170; b = 140; } // 脖子
+            if (inEllipse(x, y, 240, 240, 120, 160)) {
+                r = 220; g = 170; b = 140;                                    // 臉
+                if (y < 110) { r = 30; g = 25; b = 25; }                      // 瀏海
+                if (inEllipse(x, y, 187, 220, 22, 6) || inEllipse(x, y, 293, 220, 22, 6)) {
+                    r = 40; g = 30; b = 30;                                   // 眼睛
+                }
+                if (inEllipse(x, y, 240, 330, 30, 8)) { r = 170; g = 80; b = 85; } // 嘴唇
+            }
+            fill(x, y, static_cast<uint8_t>(std::clamp(r + n, 0, 255)),
+                       static_cast<uint8_t>(std::clamp(g + n, 0, 255)),
+                       static_cast<uint8_t>(std::clamp(b + n, 0, 255)));
+        }
+    }
+
+    efd::FaceLandmarker landmarker;
+    landmarker.initialize();
+    landmarker.detect(px.data(), w, h, efd::PixelFormat::RGB888, false);
+    const auto d = landmarker.getLatestPresenceDiagnostic();
+    assert(d.skinBoxW > w * 0.9f);          // 未裁切前，膚色區域橫跨整個畫面 (舊版會判定為佔滿畫面而失敗)
+    assert(d.rawPersonInFrame && d.rawFacingCamera);
+    assert(d.faceBoxW < w * 0.6f);          // 裁切後只剩臉的寬度
+    assert(d.faceBoxY + d.faceBoxH < 470);  // 不包含衣服
+    assert(std::abs(d.eyeCenterY - 220) < 25);
+    std::cout << " [PASS] (膚色區域寬 " << d.skinBoxW << " -> 臉框 " << d.faceBoxW << "x" << d.faceBoxH
+              << ", 眼睛 y=" << d.eyeCenterY << ")\n";
+}
+
 void testPlatformLifecycleAdapter() {
     std::cout << "[TEST] 6. 測試跨平台生命週期適配器 (PlatformLifecycleAdapter)...";
     efd::PlatformLifecycleAdapter adapter(efd::PlatformType::Windows);
@@ -948,7 +994,8 @@ int main() {
     testSensitivityLevels();
     testPayloadJsonUsesRealValues();
     testDatabaseBlinkColumnBackwardCompatible();
+    testFaceDetectedAboveSkinColoredShirt();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 22 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 23 項測試順利通過！\n";
     return 0;
 }

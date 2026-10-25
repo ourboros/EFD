@@ -291,8 +291,153 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
         if (bestCompIdx == -1 || components[bestCompIdx].cellCount < 3 || components[bestCompIdx].totalSkinCount < 150) {
             diag.unconfirmedReason = "鏡頭前未偵測到真人臉部聚集特徵 (使用者離座或採樣不足)";
+            diag.failStage = "skin";
+            if (bestCompIdx >= 0) {
+                diag.skinPixels = components[bestCompIdx].totalSkinCount;
+            }
         } else {
+            // 記錄未裁切的膚色連通區域 (診斷用)
+            diag.skinBoxX = components[bestCompIdx].minX;
+            diag.skinBoxY = components[bestCompIdx].minY;
+            diag.skinBoxW = std::max(0, components[bestCompIdx].maxX - components[bestCompIdx].minX);
+            diag.skinBoxH = std::max(0, components[bestCompIdx].maxY - components[bestCompIdx].minY);
+
+            // 只保留頭部：膚色衣服 (淺橘、米色) 或露出的脖子、胸口會和臉連成一大塊，
+            // 使方框佔滿畫面而被誤判。逐列量測膚色寬度，在「臉 → 脖子變窄 → 衣服/肩膀變寬」處切開。
+            {
+                ComponentData& comp = components[bestCompIdx];
+                const int y0 = std::max(0, comp.minY);
+                const int y1 = std::min(height - 1, comp.maxY);
+                const int x0 = std::max(0, comp.minX);
+                const int x1 = std::min(width - 1, comp.maxX);
+                const int rowCount = (y1 - y0) / step + 1;
+
+                // 每列只取最長的一段連續膚色 (容許 3 個樣本的空隙，例如眼睛、眉毛)，
+                // 排除和臉分開的背景 (米色窗簾、木頭) 與手
+                std::vector<int> rowSkin(rowCount, 0), rowMinX(rowCount, width), rowMaxX(rowCount, -1);
+                std::vector<uint64_t> rowLuma(rowCount, 0), rowSumX(rowCount, 0);
+                const int maxGap = 3;
+                for (int r = 0; r < rowCount; ++r) {
+                    const int y = y0 + r * step;
+                    int runStart = -1, runEnd = -1, runCount = 0, gap = 0;
+                    uint64_t runLuma = 0, runSumX = 0;
+                    auto closeRun = [&]() {
+                        if (runCount > rowSkin.at(r)) {
+                            rowSkin.at(r) = runCount;
+                            rowMinX.at(r) = runStart;
+                            rowMaxX.at(r) = runEnd;
+                            rowLuma.at(r) = runLuma;
+                            rowSumX.at(r) = runSumX;
+                        }
+                        runStart = -1;
+                        runCount = 0;
+                        runLuma = 0;
+                        runSumX = 0;
+                    };
+                    for (int x = x0; x <= x1; x += step) {
+                        const int idx = (y * width + x) * 3;
+                        if (isSkinPixel(pixelData[idx], pixelData[idx + 1], pixelData[idx + 2], format)) {
+                            if (runStart < 0) runStart = x;
+                            runEnd = x;
+                            runCount++;
+                            runLuma += static_cast<uint64_t>(lumaAt(pixelData, idx, format));
+                            runSumX += static_cast<uint64_t>(x);
+                            gap = 0;
+                        } else if (runStart >= 0 && ++gap > maxGap) {
+                            closeRun();
+                            gap = 0;
+                        }
+                    }
+                    if (runStart >= 0) closeRun();
+                }
+
+                // 上下 13 列的中位數 (像素寬度 = 樣本數 x step)：眼睛、鼻孔、嘴唇不是膚色，
+                // 會讓單列寬度驟降而被誤當成脖子；中位數可忽略這類細窄的特徵
+                std::vector<float> rowWidth(rowCount, 0.0f);
+                std::vector<int> window;
+                for (int r = 0; r < rowCount; ++r) {
+                    int lo = std::max(0, r - 6), hi = std::min(rowCount - 1, r + 6);
+                    window.assign(rowSkin.begin() + lo, rowSkin.begin() + hi + 1);
+                    std::nth_element(window.begin(), window.begin() + window.size() / 2, window.end());
+                    rowWidth.at(r) = static_cast<float>(window.at(window.size() / 2) * step);
+                }
+
+                // 頭頂：第一列寬度達畫面寬 4% 的位置 (略過零星髮絲)
+                int topRow = 0;
+                while (topRow < rowCount - 1 && rowWidth.at(topRow) < width * 0.04f) ++topRow;
+
+                int bottomRow = rowCount - 1;
+                float faceMaxWidth = 0.0f;
+                int neckRow = -1;
+                float neckWidth = 0.0f;
+                for (int r = topRow; r < rowCount; ++r) {
+                    const float w = rowWidth.at(r);
+                    const float depth = static_cast<float>((r - topRow) * step);
+                    if (neckRow < 0 && depth < faceMaxWidth * 0.6f) {
+                        // 額頭到臉頰：記錄臉的最大寬度
+                        faceMaxWidth = std::max(faceMaxWidth, w);
+                        continue;
+                    }
+                    if (faceMaxWidth <= 0.0f) {
+                        faceMaxWidth = w;
+                        continue;
+                    }
+                    // 臉頰通常比額頭寬：尚未開始變窄前，小幅變寬 (≤15%) 仍算臉的寬度
+                    const bool narrowedYet = (neckRow >= 0 && neckWidth < faceMaxWidth * 0.85f);
+                    if (!narrowedYet && w > faceMaxWidth && w <= faceMaxWidth * 1.15f) {
+                        faceMaxWidth = w;
+                    }
+                    // 臉頰以下：追蹤最窄處 (下巴/脖子)
+                    if (neckRow < 0 || w < neckWidth) {
+                        neckRow = r;
+                        neckWidth = w;
+                    }
+                    // 再度變寬超過臉的寬度 (肩膀或衣服) 就在最窄處切開
+                    if (w > faceMaxWidth * 1.15f && w > neckWidth * 1.3f) {
+                        bottomRow = neckRow;
+                        break;
+                    }
+                    // 頭部高度上限：臉寬的 1.5 倍 (額頭頂到下巴約為臉寬的 1.3~1.4 倍)
+                    if (depth > faceMaxWidth * 1.5f) {
+                        bottomRow = r;
+                        break;
+                    }
+                }
+
+                if (bottomRow > topRow) {
+                    // 左右邊界取各列邊界的 20 / 80 百分位，排除零星的手、牆面像素
+                    std::vector<int> lefts, rights;
+                    int skinTotal = 0;
+                    uint64_t lumaTotal = 0, sumX = 0, sumY = 0;
+                    for (int r = topRow; r <= bottomRow; ++r) {
+                        if (rowSkin.at(r) == 0) continue;
+                        lefts.push_back(rowMinX.at(r));
+                        rights.push_back(rowMaxX.at(r));
+                        skinTotal += rowSkin.at(r);
+                        lumaTotal += rowLuma.at(r);
+                        sumX += rowSumX.at(r);
+                        sumY += static_cast<uint64_t>(y0 + r * step) * static_cast<uint64_t>(rowSkin.at(r));
+                    }
+                    if (lefts.size() >= 3) {
+                        std::sort(lefts.begin(), lefts.end());
+                        std::sort(rights.begin(), rights.end());
+                        comp.minX = lefts.at(lefts.size() * 2 / 10);
+                        comp.maxX = rights.at(rights.size() * 8 / 10);
+                        comp.minY = y0 + topRow * step;
+                        comp.maxY = y0 + bottomRow * step;
+                        comp.totalSkinCount = skinTotal;
+                        comp.sumLuma = lumaTotal;
+                        comp.sumX = sumX;
+                        comp.sumY = sumY;
+                    }
+                }
+            }
+
             const auto& comp = components[bestCompIdx];
+            diag.faceBoxX = comp.minX;
+            diag.faceBoxY = comp.minY;
+            diag.faceBoxW = std::max(0, comp.maxX - comp.minX);
+            diag.faceBoxH = std::max(0, comp.maxY - comp.minY);
             int boxW = std::max(0, comp.maxX - comp.minX);
             int boxH = std::max(0, comp.maxY - comp.minY);
             float aspectRatio = (boxW > 0) ? (static_cast<float>(boxH) / static_cast<float>(boxW)) : 0.0f;
@@ -309,12 +454,16 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             // 幾何約束：寬容覆蓋不同距離、耳機、帽子等各類使用情境
             if (boxW < static_cast<int>(width * 0.07f) || boxH < static_cast<int>(height * 0.07f)) {
                 diag.unconfirmedReason = "目標特徵區域過小，非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
+                diag.failStage = "size";
             } else if (boxW > static_cast<int>(width * 0.95f) || boxH > static_cast<int>(height * 0.98f)) {
                 diag.unconfirmedReason = "目標特徵佔滿全視野，非正常人臉距鏡距離 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
+                diag.failStage = "size";
             } else if (aspectRatio < 0.35f || aspectRatio > 3.50f) {
                 diag.unconfirmedReason = "長寬比例不符合人臉頭部輪廓 (比例: " + std::to_string(aspectRatio) + ")";
+                diag.failStage = "aspect";
             } else if (fillDensity < 0.06f) {
                 diag.unconfirmedReason = "特徵分佈散亂，非連續臉部實體 (填充率: " + std::to_string(fillDensity) + ")";
+                diag.failStage = "fill";
             } else {
                 // 人體/頭部幾何定位 (避免脖子/胸口將中心下拉)
                 detectedFaceCx = (comp.minX + comp.maxX) * 0.5f;
@@ -381,10 +530,19 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 };
                 bool leftEyeOk  = eyeLooksReal(0);
                 bool rightEyeOk = eyeLooksReal(1);
+                diag.avgSkinLum = avgSkinLum;
+                diag.eyeCenterY = eyeCenterY;
+                for (int e = 0; e < 2; ++e) {
+                    diag.eyeDarkFraction[e] = eyeDarkFraction[e];
+                    diag.eyeContrast[e] = eyeContrast[e];
+                    diag.eyeGradient[e] = eyeGrad[e];
+                    diag.eyeCenterX[e] = eyeCentersX[e];
+                }
 
                 // 至少一側眼部特徵成立即通過 (防止耳機遮擋單側導致誤判離座)
                 if (!leftEyeOk && !rightEyeOk) {
                     diag.unconfirmedReason = "雙眼區域均缺乏人臉眼部生理特徵 (判定為背景物品非真人)";
+                    diag.failStage = "eyes";
                 } else {
                     personInFrame = true;
                 }
@@ -429,6 +587,7 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                     facingCamera = true;
                 } else {
                     diag.unconfirmedReason = "臉部偏轉角度過大 (對稱度: " + std::to_string(symmetryRatio) + ")";
+                    diag.failStage = "symmetry";
                 }
             }
         }
