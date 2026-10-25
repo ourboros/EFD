@@ -5,6 +5,8 @@
 #include <memory>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -67,6 +69,9 @@ static UIImage* EFDGetAsset10Logo() {
     int _calibFaceFrames;
     std::map<std::string, int> _calibFailCounts;
 
+    // 最近 10 秒的逐幀結果 (時間, "face" 或失敗關卡)，錯誤回報用來看「時好時壞」的比例
+    std::deque<std::pair<CFTimeInterval, std::string>> _recentDetections;
+
     // 診斷畫面匯出 (引擎執行緒取幀，背景佇列寫檔)
     std::atomic<int> _exportFramesRemaining;
     int _exportFrameSkip;
@@ -88,6 +93,8 @@ static UIImage* EFDGetAsset10Logo() {
 // 校準階段元件
 @property (nonatomic, strong) UIProgressView *calibProgressView;
 @property (nonatomic, strong) UILabel *calibHintLabel;
+@property (nonatomic, strong) UIView *calibDotView;
+@property (nonatomic, assign) CGRect calibDotArea;
 @property (nonatomic, strong) NSTimer *calibTimer;
 @property (nonatomic, assign) CGFloat calibElapsedSec;
 
@@ -181,6 +188,7 @@ static UIImage* EFDGetAsset10Logo() {
             self->_latestFrameH = frameH;
             self->_latestFps = slim.measuredFps;
             [self recordCalibrationFrame:slim];
+            [self recordRecentDetection:slim];
             [self updateTelemetryUI:slim];
             [self updateDiagnosticLabel];
         });
@@ -504,8 +512,8 @@ static UIImage* EFDGetAsset10Logo() {
 
     NSArray *cards = @[
         @{@"t": @"臉部正面對齊鏡頭", @"d": @"保持端正坐姿，確保 iPhone 前置原深感/FaceTime 鏡頭能清晰捕捉雙眼特徵。"},
-        @{@"t": @"視線專注平視螢幕", @"d": @"校準開始後請專注凝視螢幕中央指示標記，避免大幅度晃動手機。"},
-        @{@"t": @"保持自然眨眼狀態", @"d": @"採樣過程僅需 3.5 秒鐘，系統將自適應計算個人化基準 EAR 閉眼門檻。"}
+        @{@"t": @"眼睛跟著黃點移動", @"d": @"校準開始後黃點會依序移到螢幕四個角落，請保持頭部不動、只用眼睛跟隨，避免晃動手機。"},
+        @{@"t": @"保持自然眨眼狀態", @"d": @"採樣過程約 5 秒鐘，系統將自適應計算個人化基準 EAR 閉眼門檻。"}
     ];
 
     CGFloat curY = 0;
@@ -569,7 +577,7 @@ static UIImage* EFDGetAsset10Logo() {
 }
 
 // -----------------------------------------------------------------------------
-// 階段 3：實際眼動特徵校準 (3.5 秒動態採樣)
+// 階段 3：實際眼動特徵校準 (黃點 5 點巡迴，5 秒動態採樣，不顯示鏡頭畫面)
 // -----------------------------------------------------------------------------
 - (void)renderCalibrationScreen {
     CGFloat w = self.contentContainer.bounds.size.width;
@@ -586,32 +594,25 @@ static UIImage* EFDGetAsset10Logo() {
     title.textAlignment = NSTextAlignmentCenter;
     [self.contentContainer addSubview:title];
 
-    // 鏡頭預覽 (3:4 直向，與相機串流同比例)：讓受試者確認整張臉都在畫面中
+    // 黃點移動區域 (不顯示鏡頭畫面)：與 Windows 版相同，依 中心→左上→右上→右下→左下→中心 巡迴
     CGFloat progressY = h - bottomInset - 80;
-    CGFloat previewTop = CGRectGetMaxY(title.frame) + 28;
-    CGFloat maxPreviewH = progressY - previewTop - (self.diagnosticModeEnabled ? 150 : 90);
-    CGFloat previewW = std::min(w - 80, maxPreviewH * 3.0f / 4.0f);
-    CGFloat previewH = previewW * 4.0f / 3.0f;
-    self.cameraAspectBox = [[UIView alloc] initWithFrame:CGRectMake((w - previewW) / 2, previewTop, previewW, previewH)];
-    self.cameraAspectBox.backgroundColor = [UIColor colorWithRed:20/255.0 green:110/255.0 blue:85/255.0 alpha:1.0];
-    self.cameraAspectBox.layer.cornerRadius = 16;
-    self.cameraAspectBox.clipsToBounds = YES;
-    self.cameraAspectBox.layer.borderColor = [COLOR_WARM_AMBER CGColor];
-    self.cameraAspectBox.layer.borderWidth = 3.0f;
-    [self.contentContainer addSubview:self.cameraAspectBox];
-    [self attachCameraPreviewIfNeeded];
+    CGFloat hintH = 44;
+    CGFloat diagH = self.diagnosticModeEnabled ? 70 : 0;
+    CGFloat areaTop = CGRectGetMaxY(title.frame) + 24;
+    CGFloat areaBottom = progressY - hintH - diagH - 24;
+    self.calibDotArea = CGRectMake(24, areaTop, w - 48, std::max<CGFloat>(120, areaBottom - areaTop));
 
-    // 凝視點放在預覽框上緣中央 (靠近前鏡頭位置)
-    CGFloat dotSize = 24.0f;
-    UIView *dotView = [[UIView alloc] initWithFrame:CGRectMake((w - dotSize) / 2, previewTop - dotSize / 2, dotSize, dotSize)];
-    dotView.backgroundColor = COLOR_WARM_AMBER;
-    dotView.layer.cornerRadius = dotSize / 2.0f;
-    dotView.layer.borderColor = [[COLOR_ACCENT_BLUE colorWithAlphaComponent:0.8] CGColor];
-    dotView.layer.borderWidth = 3.0f;
-    [self.contentContainer addSubview:dotView];
+    CGFloat dotSize = 52.0f;
+    self.calibDotView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, dotSize, dotSize)];
+    self.calibDotView.backgroundColor = COLOR_WARM_AMBER;
+    self.calibDotView.layer.cornerRadius = dotSize / 2.0f;
+    self.calibDotView.layer.borderColor = [[COLOR_ACCENT_BLUE colorWithAlphaComponent:0.8] CGColor];
+    self.calibDotView.layer.borderWidth = 5.0f;
+    self.calibDotView.center = CGPointMake(CGRectGetMidX(self.calibDotArea), CGRectGetMidY(self.calibDotArea));
+    [self.contentContainer addSubview:self.calibDotView];
 
-    self.calibHintLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, CGRectGetMaxY(self.cameraAspectBox.frame) + 12, w - 40, 44)];
-    self.calibHintLabel.text = @"請凝視黃色標記，讓整張臉出現在框內...";
+    self.calibHintLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, CGRectGetMaxY(self.calibDotArea) + 12, w - 40, hintH)];
+    self.calibHintLabel.text = @"請保持臉部不動，只用眼睛跟著黃點移動...";
     self.calibHintLabel.textColor = COLOR_CARD_WHITE;
     self.calibHintLabel.font = [UIFont boldSystemFontOfSize:14];
     self.calibHintLabel.textAlignment = NSTextAlignmentCenter;
@@ -648,9 +649,23 @@ static UIImage* EFDGetAsset10Logo() {
 
 - (void)onCalibTick {
     self.calibElapsedSec += 0.05f;
-    constexpr float totalSec = 3.5f;
+    // 與 Windows 版相同：5 點巡迴，每段 1 秒，共 5 秒 (緩入緩出)
+    constexpr float totalSec = 5.0f;
     float progress = std::clamp(static_cast<float>(self.calibElapsedSec / totalSec), 0.0f, 1.0f);
     self.calibProgressView.progress = progress;
+
+    static const CGPoint kCalibPath[] = {
+        {0.50, 0.50}, {0.15, 0.22}, {0.85, 0.22}, {0.85, 0.78}, {0.15, 0.78}, {0.50, 0.50}
+    };
+    const float elapsed = std::min(static_cast<float>(self.calibElapsedSec), totalSec - 0.001f);
+    const int seg = std::clamp(static_cast<int>(elapsed), 0, 4);
+    const float segT = elapsed - static_cast<float>(seg);
+    const CGFloat smoothT = 0.5 * (1.0 - std::cos(segT * M_PI));
+    const CGPoint p0 = kCalibPath[seg];
+    const CGPoint p1 = kCalibPath[seg + 1];
+    const CGRect area = self.calibDotArea;
+    self.calibDotView.center = CGPointMake(area.origin.x + (p0.x + (p1.x - p0.x) * smoothT) * area.size.width,
+                                           area.origin.y + (p0.y + (p1.y - p0.y) * smoothT) * area.size.height);
 
     if (progress >= 1.0f) {
         [self.calibTimer invalidate];
@@ -680,6 +695,39 @@ static UIImage* EFDGetAsset10Logo() {
         _calibFailCounts[stage]++;
         self.calibHintLabel.text = [NSString stringWithFormat:@"尚未偵測到臉部：%@", [self reasonTextForStage:stage]];
     }
+}
+
+- (void)recordRecentDetection:(const efd::EngineTelemetry&)t {
+    const CFTimeInterval now = CACurrentMediaTime();
+    std::string outcome = "face";
+    if (!t.detection.hasFace) {
+        outcome = _latestFrameSynthetic ? "camera" : t.presenceDiagnostic.failStage;
+        if (outcome.empty()) outcome = "tracking";
+    }
+    _recentDetections.emplace_back(now, outcome);
+    while (!_recentDetections.empty() && now - _recentDetections.front().first > 10.0) {
+        _recentDetections.pop_front();
+    }
+}
+
+// 最近 10 秒有偵測到臉的比例與各關卡失敗次數
+- (NSString *)recentDetectionSummary {
+    if (_recentDetections.empty()) return @"無資料";
+    int faces = 0;
+    std::map<std::string, int> fails;
+    for (const auto& item : _recentDetections) {
+        if (item.second == "face") faces++;
+        else fails[item.second]++;
+    }
+    NSMutableString *text = [NSMutableString stringWithFormat:@"有臉 %.0f%% (%d/%d 幀)",
+                             100.0 * faces / _recentDetections.size(), faces, static_cast<int>(_recentDetections.size())];
+    if (!fails.empty()) {
+        [text appendString:@" / 失敗:"];
+        for (const auto& kv : fails) {
+            [text appendFormat:@" %s=%d", kv.first.c_str(), kv.second];
+        }
+    }
+    return text;
 }
 
 // 各關卡失敗原因的白話說明
@@ -773,7 +821,17 @@ static UIImage* EFDGetAsset10Logo() {
     [self.contentContainer addSubview:self.cameraAspectBox];
 
     // 攝影機內部狀態標籤
-    self.cameraStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 8, camBoxW - 20, 20)];
+    // 右上角「回報問題」：偵測異常時不必切到設定頁就能複製錯誤資訊
+    UIButton *reportBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    reportBtn.frame = CGRectMake(camBoxW - 82, 6, 76, 24);
+    [reportBtn setTitle:@"回報問題" forState:UIControlStateNormal];
+    [reportBtn setTitleColor:COLOR_CARD_WHITE forState:UIControlStateNormal];
+    reportBtn.titleLabel.font = [UIFont boldSystemFontOfSize:12];
+    reportBtn.backgroundColor = [COLOR_ALERT_CORAL colorWithAlphaComponent:0.9];
+    reportBtn.layer.cornerRadius = 12;
+    [reportBtn addTarget:self action:@selector(onCopyDiagnosticReportClicked) forControlEvents:UIControlEventTouchUpInside];
+
+    self.cameraStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 8, camBoxW - 100, 20)];
     self.cameraStatusLabel.text = @"📷 前置攝影機畫面 (4:3 比例鎖定)";
     self.cameraStatusLabel.textColor = COLOR_TEXT_DARK;
     self.cameraStatusLabel.font = [UIFont boldSystemFontOfSize:11];
@@ -781,6 +839,7 @@ static UIImage* EFDGetAsset10Logo() {
     self.cameraStatusLabel.layer.cornerRadius = 4;
     self.cameraStatusLabel.clipsToBounds = YES;
     [self.cameraAspectBox addSubview:self.cameraStatusLabel];
+    [self.cameraAspectBox addSubview:reportBtn];
 
     if (self.diagnosticModeEnabled) {
         CGFloat diagH = std::min<CGFloat>(96, camBoxH - 36);
@@ -1120,11 +1179,13 @@ static UIImage* EFDGetAsset10Logo() {
             @"受試者: %@ 第 %d 天 / 已校準: %@\n"
             @"最近一次校準: 有臉畫面 %.0f%% (%d/%d 幀) / 失敗統計: %@\n"
             @"相機權限: %@\n"
+            @"最近 10 秒: %@\n"
             @"--- 目前偵測 ---\n%@",
             [fmt stringFromDate:[NSDate date]], model, [UIDevice currentDevice].systemVersion, appVersion,
             subject, day, calibrated ? @"是" : @"否",
             ratio * 100.0f, _calibFaceFrames, _calibFrames, counts.length > 0 ? counts : @"-",
             [self cameraAuthorizationText],
+            [self recentDetectionSummary],
             [self diagnosticSummaryText]];
 }
 
