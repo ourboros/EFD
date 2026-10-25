@@ -106,7 +106,7 @@ static UIImage* EFDGetAsset10Logo() {
 // 診斷模式：顯示即時偵測數值，並可匯出實際畫面供開發者重現問題 (預設關閉，不影響研究資料)
 @property (nonatomic, assign) BOOL diagnosticModeEnabled;
 @property (nonatomic, strong) UILabel *diagLabel;
-@property (nonatomic, strong) NSMutableArray<NSURL *> *exportedFiles;
+@property (nonatomic, assign) BOOL exportFinished;
 @property (nonatomic, copy) NSString *exportStamp;
 
 // 背景定時檢查 (科研同步 & 門禁檢查)
@@ -1199,6 +1199,7 @@ static UIImage* EFDGetAsset10Logo() {
     return @"未知";
 }
 
+// 匯出根目錄：Documents/EFD_Diagnostics (「檔案」App > 我的 iPhone > EFD_iOS)
 - (NSURL *)diagnosticsDirectory {
     NSURL *docs = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] firstObject];
     NSURL *dir = [docs URLByAppendingPathComponent:@"EFD_Diagnostics" isDirectory:YES];
@@ -1206,95 +1207,195 @@ static UIImage* EFDGetAsset10Logo() {
     return dir;
 }
 
+// 本次匯出的資料夾：Documents/EFD_Diagnostics/<時間>/，最後整個資料夾打包成一個 zip 分享
+- (NSURL *)exportBatchDirectory {
+    NSURL *dir = [[self diagnosticsDirectory] URLByAppendingPathComponent:(self.exportStamp ?: @"efd") isDirectory:YES];
+    [[NSFileManager defaultManager] createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    return dir;
+}
+
+// 匯出過程逐步記錄 (export_log.txt)，萬一某個檔案沒寫出來，可看出停在哪一步
+- (void)appendExportLog:(NSString *)line {
+    NSURL *logURL = [[self exportBatchDirectory] URLByAppendingPathComponent:@"export_log.txt"];
+    NSString *stamped = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], line];
+    NSData *data = [stamped dataUsingEncoding:NSUTF8StringEncoding];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:logURL.path]) {
+        [data writeToURL:logURL atomically:YES];
+        return;
+    }
+    NSFileHandle *handle = [NSFileHandle fileHandleForWritingToURL:logURL error:nil];
+    [handle seekToEndOfFile];
+    [handle writeData:data];
+    [handle closeFile];
+}
+
+static NSNumber *EFDFiniteNumber(double value) {
+    return @(std::isfinite(value) ? value : 0.0);
+}
+
+static NSString *EFDSafeString(const std::string& s) {
+    NSString *str = [[NSString alloc] initWithBytes:s.data() length:s.size() encoding:NSUTF8StringEncoding];
+    return str ?: @"";
+}
+
 - (void)onExportDiagnosticFramesClicked {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"匯出診斷畫面"
-                                                                   message:@"將連續擷取 5 張前鏡頭畫面（含你的臉部影像）與偵測數值，只存在這支手機的「檔案」App > EFD 資料夾，由你決定是否傳給研究人員。\n\n請按「開始」後把臉對準前鏡頭，約 3 秒後擷取。"
+                                                                   message:@"將連續擷取 5 張前鏡頭畫面（含你的臉部影像）與偵測數值，打包成一個 zip 檔，只存在這支手機，由你決定是否傳給研究人員。\n\n請按「開始」後把臉對準前鏡頭，約 3 秒後擷取。"
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"開始" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
         fmt.dateFormat = @"yyyyMMdd_HHmmss";
         self.exportStamp = [fmt stringFromDate:[NSDate date]];
-        self.exportedFiles = [NSMutableArray array];
+        self.exportFinished = NO;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             self->_exportFrameSkip = 0;
             self->_exportFramesRemaining.store(kDiagnosticExportFrames);
+        });
+        // 6 秒內沒擷取滿 5 張 (例如相機暫停)，就把已擷取的檔案先打包
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(9.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (!self.exportFinished) {
+                self->_exportFramesRemaining.store(0);
+                [self finishDiagnosticExport];
+            }
         });
     }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
-// 背景佇列：寫出一張畫面 (PPM 供重播工具、PNG 供檢視) 與其偵測數值 (JSON)
+// 背景佇列：寫出一張畫面的偵測數值 (JSON)、檢視用 PNG、重播用 PPM；每一步各自防護並記錄結果
 - (void)writeDiagnosticFrame:(const efd::RawFrame&)frame
                   diagnostic:(const efd::FaceLandmarker::PresenceDiagnostic&)d
                        index:(int)index {
-    NSURL *dir = [self diagnosticsDirectory];
-    NSString *base = [NSString stringWithFormat:@"%@_%02d", self.exportStamp ?: @"efd", index];
+    NSURL *dir = [self exportBatchDirectory];
+    NSString *base = [NSString stringWithFormat:@"frame_%02d", index];
     const int w = frame.width, h = frame.height;
     const bool isBgr = frame.format == efd::PixelFormat::BGR888;
+    [self appendExportLog:[NSString stringWithFormat:@"%@ 開始 %dx%d synthetic=%d", base, w, h, frame.isSynthetic ? 1 : 0]];
 
-    std::vector<uint8_t> rgb(static_cast<size_t>(w) * h * 3);
+    // 1. 偵測數值 JSON (數值先檢查，避免 NaN 讓 NSJSONSerialization 拋出例外)
+    @try {
+        NSDictionary *json = @{
+            @"frame": @{@"width": @(w), @"height": @(h), @"synthetic": @(frame.isSynthetic)},
+            @"result": @{@"personInFrame": @(d.rawPersonInFrame), @"facingCamera": @(d.rawFacingCamera),
+                         @"failStage": EFDSafeString(d.failStage), @"reason": EFDSafeString(d.unconfirmedReason)},
+            @"skinBox": @[@(d.skinBoxX), @(d.skinBoxY), @(d.skinBoxW), @(d.skinBoxH)],
+            @"faceBox": @[@(d.faceBoxX), @(d.faceBoxY), @(d.faceBoxW), @(d.faceBoxH)],
+            @"skinPixels": @(d.skinPixels), @"avgSkinLum": @(d.avgSkinLum),
+            @"aspectRatio": EFDFiniteNumber(d.aspectRatio), @"fillDensity": EFDFiniteNumber(d.fillDensity),
+            @"symmetry": EFDFiniteNumber(d.symmetryRatio),
+            @"eyes": @{@"centerY": @(d.eyeCenterY),
+                       @"left": @{@"x": @(d.eyeCenterX[0]), @"dark": EFDFiniteNumber(d.eyeDarkFraction[0]),
+                                  @"contrast": EFDFiniteNumber(d.eyeContrast[0]), @"gradient": EFDFiniteNumber(d.eyeGradient[0])},
+                       @"right": @{@"x": @(d.eyeCenterX[1]), @"dark": EFDFiniteNumber(d.eyeDarkFraction[1]),
+                                   @"contrast": EFDFiniteNumber(d.eyeContrast[1]), @"gradient": EFDFiniteNumber(d.eyeGradient[1])}}
+        };
+        NSData *jsonData = [NSJSONSerialization isValidJSONObject:json]
+            ? [NSJSONSerialization dataWithJSONObject:json options:NSJSONWritingPrettyPrinted error:nil] : nil;
+        BOOL ok = jsonData && [jsonData writeToURL:[dir URLByAppendingPathComponent:[base stringByAppendingString:@".json"]] atomically:YES];
+        [self appendExportLog:[NSString stringWithFormat:@"%@.json %@", base, ok ? @"OK" : @"失敗"]];
+    } @catch (NSException *e) {
+        [self appendExportLog:[NSString stringWithFormat:@"%@.json 例外: %@", base, e.reason]];
+    }
+
+    // 轉為 RGB 位元組 (BGR 來源時交換 R/B)
+    std::vector<uint8_t> rgb(static_cast<size_t>(w) * h * 3, 0);
     for (size_t i = 0; i + 2 < rgb.size() && i + 2 < frame.data.size(); i += 3) {
         rgb[i]     = isBgr ? frame.data[i + 2] : frame.data[i];
         rgb[i + 1] = frame.data[i + 1];
         rgb[i + 2] = isBgr ? frame.data[i] : frame.data[i + 2];
     }
 
-    NSMutableData *ppm = [NSMutableData dataWithData:[[NSString stringWithFormat:@"P6\n%d %d\n255\n", w, h] dataUsingEncoding:NSASCIIStringEncoding]];
-    [ppm appendBytes:rgb.data() length:rgb.size()];
-    NSURL *ppmURL = [dir URLByAppendingPathComponent:[base stringByAppendingString:@".ppm"]];
-    [ppm writeToURL:ppmURL atomically:YES];
-
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CFDataRef cfData = CFDataCreate(NULL, rgb.data(), static_cast<CFIndex>(rgb.size()));
-    CGDataProviderRef provider = CGDataProviderCreateWithCFData(cfData);
-    CGImageRef cgImage = CGImageCreate(w, h, 8, 24, w * 3, space, kCGImageAlphaNone | kCGBitmapByteOrderDefault,
-                                       provider, NULL, false, kCGRenderingIntentDefault);
-    NSURL *pngURL = [dir URLByAppendingPathComponent:[base stringByAppendingString:@".png"]];
-    if (cgImage) {
-        [UIImagePNGRepresentation([UIImage imageWithCGImage:cgImage]) writeToURL:pngURL atomically:YES];
-        CGImageRelease(cgImage);
-    }
-    CGDataProviderRelease(provider);
-    CFRelease(cfData);
-    CGColorSpaceRelease(space);
-
-    NSDictionary *json = @{
-        @"frame": @{@"width": @(w), @"height": @(h), @"synthetic": @(frame.isSynthetic)},
-        @"result": @{@"personInFrame": @(d.rawPersonInFrame), @"facingCamera": @(d.rawFacingCamera),
-                     @"failStage": [NSString stringWithUTF8String:d.failStage.c_str()],
-                     @"reason": [NSString stringWithUTF8String:d.unconfirmedReason.c_str()] ?: @""},
-        @"skinBox": @[@(d.skinBoxX), @(d.skinBoxY), @(d.skinBoxW), @(d.skinBoxH)],
-        @"faceBox": @[@(d.faceBoxX), @(d.faceBoxY), @(d.faceBoxW), @(d.faceBoxH)],
-        @"skinPixels": @(d.skinPixels), @"avgSkinLum": @(d.avgSkinLum),
-        @"aspectRatio": @(d.aspectRatio), @"fillDensity": @(d.fillDensity), @"symmetry": @(d.symmetryRatio),
-        @"eyes": @{@"centerY": @(d.eyeCenterY),
-                   @"left": @{@"x": @(d.eyeCenterX[0]), @"dark": @(d.eyeDarkFraction[0]), @"contrast": @(d.eyeContrast[0]), @"gradient": @(d.eyeGradient[0])},
-                   @"right": @{@"x": @(d.eyeCenterX[1]), @"dark": @(d.eyeDarkFraction[1]), @"contrast": @(d.eyeContrast[1]), @"gradient": @(d.eyeGradient[1])}}
-    };
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:json options:NSJSONWritingPrettyPrinted error:nil];
-    NSURL *jsonURL = [dir URLByAppendingPathComponent:[base stringByAppendingString:@".json"]];
-    [jsonData writeToURL:jsonURL atomically:YES];
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self.exportedFiles addObjectsFromArray:@[pngURL, ppmURL, jsonURL]];
-        if (index == kDiagnosticExportFrames) {
-            [self finishDiagnosticExport];
+    // 2. 檢視用 PNG (32 位元 RGBX，iOS 最標準的影像格式)
+    @try {
+        std::vector<uint8_t> rgbx(static_cast<size_t>(w) * h * 4, 255);
+        for (size_t p = 0, q = 0; p + 2 < rgb.size(); p += 3, q += 4) {
+            rgbx[q] = rgb[p];
+            rgbx[q + 1] = rgb[p + 1];
+            rgbx[q + 2] = rgb[p + 2];
         }
-    });
+        CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+        CGContextRef ctx = CGBitmapContextCreate(rgbx.data(), w, h, 8, w * 4, space,
+                                                 kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big);
+        CGImageRef cgImage = ctx ? CGBitmapContextCreateImage(ctx) : NULL;
+        NSData *png = cgImage ? UIImagePNGRepresentation([UIImage imageWithCGImage:cgImage]) : nil;
+        BOOL ok = png && [png writeToURL:[dir URLByAppendingPathComponent:[base stringByAppendingString:@".png"]] atomically:YES];
+        if (cgImage) CGImageRelease(cgImage);
+        if (ctx) CGContextRelease(ctx);
+        CGColorSpaceRelease(space);
+        [self appendExportLog:[NSString stringWithFormat:@"%@.png %@", base, ok ? @"OK" : @"失敗"]];
+    } @catch (NSException *e) {
+        [self appendExportLog:[NSString stringWithFormat:@"%@.png 例外: %@", base, e.reason]];
+    }
+
+    // 3. 重播用 PPM (efd_diag_replay 直接讀取)
+    @try {
+        NSMutableData *ppm = [NSMutableData dataWithData:[[NSString stringWithFormat:@"P6\n%d %d\n255\n", w, h] dataUsingEncoding:NSASCIIStringEncoding]];
+        [ppm appendBytes:rgb.data() length:rgb.size()];
+        BOOL ok = [ppm writeToURL:[dir URLByAppendingPathComponent:[base stringByAppendingString:@".ppm"]] atomically:YES];
+        [self appendExportLog:[NSString stringWithFormat:@"%@.ppm %@", base, ok ? @"OK" : @"失敗"]];
+    } @catch (NSException *e) {
+        [self appendExportLog:[NSString stringWithFormat:@"%@.ppm 例外: %@", base, e.reason]];
+    }
+
+    if (index == kDiagnosticExportFrames) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self finishDiagnosticExport];
+        });
+    }
 }
 
+// 寫入錯誤回報文字，把整個資料夾打包成一個 zip，再開啟分享選單
+// (LINE、AirDrop 一次分享多個不同類型的檔案時常只收到其中一個，打包成單一 zip 才不會漏)
 - (void)finishDiagnosticExport {
-    // 一併存一份錯誤回報文字，方便研究人員對照
-    NSURL *reportURL = [[self diagnosticsDirectory] URLByAppendingPathComponent:
-                        [NSString stringWithFormat:@"%@_report.txt", self.exportStamp ?: @"efd"]];
-    [[self diagnosticReportText] writeToURL:reportURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    [self.exportedFiles addObject:reportURL];
+    if (self.exportFinished) return;
+    self.exportFinished = YES;
+    NSString *report = [self diagnosticReportText];
+    NSString *stamp = self.exportStamp ?: @"efd";
 
-    UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:self.exportedFiles applicationActivities:nil];
-    share.popoverPresentationController.sourceView = self.view;
-    share.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width / 2, self.view.bounds.size.height / 2, 1, 1);
-    [self presentViewController:share animated:YES completion:nil];
+    dispatch_async(_exportQueue, ^{
+        NSURL *dir = [self exportBatchDirectory];
+        [report writeToURL:[dir URLByAppendingPathComponent:@"report.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [self appendExportLog:@"report.txt 已寫入，開始打包 zip"];
+
+        __block NSURL *zipURL = nil;
+        NSError *coordError = nil;
+        NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] init];
+        [coordinator coordinateReadingItemAtURL:dir
+                                        options:NSFileCoordinatorReadingForUploading
+                                          error:&coordError
+                                     byAccessor:^(NSURL *tempZip) {
+            NSURL *dest = [[self diagnosticsDirectory] URLByAppendingPathComponent:[NSString stringWithFormat:@"EFD_diag_%@.zip", stamp]];
+            [[NSFileManager defaultManager] removeItemAtURL:dest error:nil];
+            if ([[NSFileManager defaultManager] copyItemAtURL:tempZip toURL:dest error:nil]) {
+                zipURL = dest;
+            }
+        }];
+
+        NSArray *items = nil;
+        if (zipURL) {
+            items = @[zipURL];
+        } else {
+            // 打包失敗時退回逐檔分享
+            NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:dir includingPropertiesForKeys:nil options:0 error:nil];
+            items = files ?: @[];
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (items.count == 0) {
+                UIAlertController *fail = [UIAlertController alertControllerWithTitle:@"匯出失敗"
+                                                                              message:@"沒有擷取到畫面。請確認相機正在運作後再試一次，或改用「複製錯誤資訊」。"
+                                                                       preferredStyle:UIAlertControllerStyleAlert];
+                [fail addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+                [self presentViewController:fail animated:YES completion:nil];
+                return;
+            }
+            UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
+            share.popoverPresentationController.sourceView = self.view;
+            share.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width / 2, self.view.bounds.size.height / 2, 1, 1);
+            [self presentViewController:share animated:YES completion:nil];
+        });
+    });
 }
 
 - (void)onReturnToDashboardClicked {

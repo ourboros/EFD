@@ -2,7 +2,7 @@
 // 印出每張卡在哪一關與各項數值，用來在電腦上重現手機上的偵測失敗。
 //
 // 用法：efd_diag_replay <目錄或 .ppm 檔> [...]
-//       目錄會讀取其中所有 .ppm 檔 (例如專案根目錄的 debug_frames/)
+//       目錄會讀取其中 (含子資料夾) 所有 .ppm 檔 (例如專案根目錄的 debug_frames/)
 
 #include "vision/FaceLandmarker.hpp"
 
@@ -66,7 +66,8 @@ bool readPpm(const fs::path& path, std::vector<uint8_t>& rgb, int& width, int& h
 
 void collect(const fs::path& arg, std::vector<fs::path>& files) {
     if (fs::is_directory(arg)) {
-        for (const auto& entry : fs::directory_iterator(arg)) {
+        // 包含子資料夾：解壓縮 iOS 匯出的 zip 後會是 <時間>/frame_01.ppm ...
+        for (const auto& entry : fs::recursive_directory_iterator(arg)) {
             if (entry.is_regular_file() && entry.path().extension() == ".ppm") {
                 files.push_back(entry.path());
             }
@@ -116,7 +117,8 @@ int main(int argc, char** argv) {
         if (ok) ++passed;
 
         std::cout << std::fixed << std::setprecision(3)
-                  << "== " << file.filename().string() << " (" << w << "x" << h << ")\n"
+                  << "== " << file.parent_path().filename().string() << "/" << file.filename().string()
+                  << " (" << w << "x" << h << ")\n"
                   << "  結果: " << (ok ? "有人臉" : "沒有人臉")
                   << (d.failStage.empty() ? "" : "  卡在: " + d.failStage) << "\n";
         if (!d.unconfirmedReason.empty() && !ok) {
