@@ -72,6 +72,10 @@ public:
     // 執行初始基準校準
     void calibrate(float durationSeconds = 3.0f);
 
+    // 高靈敏度提醒：平滑分數 >= 58 持續 5 秒即提醒 (標準為 >= 65 持續 10 秒)
+    void setHighSensitivityMode(bool enabled) { m_highSensitivity.store(enabled); }
+    bool isHighSensitivityMode() const { return m_highSensitivity.load(); }
+
     // 設定模擬眼睛開合狀態 (供測試與驗證)
     void setSimulatedEyeOpenness(float openness);
 
@@ -109,6 +113,7 @@ private:
 
     std::atomic<bool> m_isRunning{false};
     std::atomic<bool> m_isPaused{false};
+    std::atomic<bool> m_highSensitivity{false};
 
     // Thread 2: 視覺推論執行緒
     std::thread m_inferenceThread;

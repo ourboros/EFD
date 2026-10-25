@@ -10,7 +10,7 @@ FatigueStateMachine::FatigueStateMachine(int cooldownSeconds, int screeningInter
       m_awayResetThreshold(awayResetSeconds) {
 }
 
-float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, float complexityIndex) const {
+float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, float complexityIndex) {
     // 融合公式: PERCLOS (55%) + 眨眼率異常權重 (25%) + 非線性複雜度 CI (20%)
     // 1. PERCLOS: 0.0 ~ 0.20 -> 0 ~ 100 分 (採用多段動態靈敏度，擴大動態範圍，解決過去分數卡在 40~48 的問題)
     float perclosScore = 0.0f;
@@ -53,128 +53,132 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
     return std::clamp((0.55f * perclosScore) + (0.25f * blinkScore) + (0.20f * complexityScore), 0.0f, 100.0f);
 }
 
+namespace {
+const char* const kAlertMessage = "你的眼睛處於疲勞狀態，請適當休息";
+}
+
+float FatigueStateMachine::alertScore() const {
+    return m_highSensitivity ? kHighSensAlertScore : kStandardAlertScore;
+}
+
+float FatigueStateMachine::sustainSeconds() const {
+    return m_highSensitivity ? kHighSensSustainSec : kStandardSustainSec;
+}
+
+FatigueLevel FatigueStateMachine::levelForScore(float score) const {
+    if (score >= kSevereScore) return FatigueLevel::SevereWarning;
+    if (score >= kAttentionScore) return FatigueLevel::Attention;
+    return FatigueLevel::Relaxed;
+}
+
+void FatigueStateMachine::fireAlert(float score) {
+    if (m_alertCallback) {
+        m_alertCallback(FatigueLevel::SevereWarning, score, kAlertMessage);
+    }
+}
+
+void FatigueStateMachine::enterCooldown() {
+    m_cooldownState = CooldownState::InCooldown;
+    m_cooldownTimer = static_cast<float>(m_cooldownDuration);
+    m_aboveAlertSeconds = 0.0f;
+}
+
+void FatigueStateMachine::enterScreening() {
+    m_cooldownState = CooldownState::FastScreening;
+    m_cooldownTimer = 0.0f;
+    m_screeningScoreSum = 0.0f;
+    m_screeningSeconds = 0.0f;
+}
+
+void FatigueStateMachine::enterNormalTracking() {
+    m_cooldownState = CooldownState::NormalTracking;
+    m_cooldownTimer = 0.0f;
+    m_aboveAlertSeconds = 0.0f;
+    m_screeningScoreSum = 0.0f;
+    m_screeningSeconds = 0.0f;
+}
+
 SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds) {
+    deltaSeconds = std::max(0.0f, deltaSeconds);
     m_userPresent = faceDetected;
+
+    // 冷卻期不論在座或離座都照常倒數
+    if (m_cooldownState == CooldownState::InCooldown) {
+        m_cooldownTimer -= deltaSeconds;
+        if (m_cooldownTimer <= 0.0f) {
+            enterScreening();
+        }
+    }
+
     if (!faceDetected) {
         m_awayTimer += deltaSeconds;
+        m_aboveAlertSeconds = 0.0f;
         if (m_awayTimer >= 1.0f) {
             m_currentLevel = FatigueLevel::UserAway;
         }
         if (m_awayTimer >= static_cast<float>(m_awayResetThreshold)) {
-            // 離座達到 5 分鐘，自動跳回 20 分鐘冷卻保護（防離座回座時直接彈窗或重複警報）
-            m_cooldownState = CooldownState::InCooldown;
+            // 離座滿 5 分鐘視為已休息：清除冷卻與平滑分數，回到常態追蹤
+            enterNormalTracking();
+            m_smoothedScore = 0.0f;
+            m_lastScore = 0.0f;
             m_currentLevel = FatigueLevel::UserAway;
-            m_cooldownTimer = static_cast<float>(m_cooldownDuration); // 20 分鐘 (1200 秒)
-            m_screeningTimer = static_cast<float>(m_screeningInterval); // 5 分鐘快篩倒數計時
-            m_fatigueTriggered = true;
-            m_screeningAlertFired = false;
         }
         return getState();
     }
 
-    // 使用者在座 (人臉偵測成功)
     m_awayTimer = 0.0f;
-
     m_lastScore = computeFatigueScore(perclos, blinkRate, complexityIndex);
 
-    // 20/5/5 狀態機推進 (嚴重疲勞閾值 65.0 分)
+    // 60 秒時間常數 EWMA (依真實時間間隔計算權重，與幀率無關)
+    const float alpha = 1.0f - std::exp(-deltaSeconds / kSmoothingTauSeconds);
+    m_smoothedScore += alpha * (m_lastScore - m_smoothedScore);
+    m_currentLevel = levelForScore(m_smoothedScore);
+
     switch (m_cooldownState) {
     case CooldownState::NormalTracking:
-        // 常態追蹤中：若使用者曾觸發提醒，必須先完全恢復到放鬆狀態 (疲勞分數 < 45.0) 才能重置
-        if (m_fatigueTriggered) {
-            if (m_lastScore < 45.0f) {
-                m_fatigueTriggered = false;
-                m_currentLevel = FatigueLevel::Relaxed;
-            } else {
-                m_currentLevel = (m_lastScore >= 65.0f) ? FatigueLevel::SevereWarning : FatigueLevel::Attention;
-            }
+    case CooldownState::AwayPaused:
+        m_cooldownState = CooldownState::NormalTracking;
+        if (m_smoothedScore >= alertScore()) {
+            m_aboveAlertSeconds += deltaSeconds;
         } else {
-            if (m_lastScore >= 65.0f) {
-                // 直接進入紅色危險狀態 (嚴重疲勞警告：門檻 65.0 分)
-                // 觸發 Windows 氣泡/Toast 警報，並強制進入 20 分鐘絕對靜默冷卻期
-                m_fatigueTriggered = true;
-                m_currentLevel = FatigueLevel::SevereWarning;
-                m_cooldownState = CooldownState::InCooldown;
-                m_cooldownTimer = static_cast<float>(m_cooldownDuration);   // 20 分鐘 (1200 秒)
-                m_screeningTimer = static_cast<float>(m_screeningInterval); // 5 分鐘 (300 秒)
-                m_screeningAlertFired = false;
-
-                if (m_alertCallback) {
-                    m_alertCallback(m_currentLevel, m_lastScore, "你的眼睛處於疲勞狀態，請適當休息");
-                }
-            } else if (m_lastScore >= 45.0f) {
-                // 輕度注意力提醒：更新 UI 狀態，但不消耗 20 分鐘冷卻，亦不彈窗打擾
-                m_currentLevel = FatigueLevel::Attention;
-            } else {
-                m_currentLevel = FatigueLevel::Relaxed;
-            }
+            m_aboveAlertSeconds = 0.0f;
+        }
+        if (m_aboveAlertSeconds >= sustainSeconds()) {
+            fireAlert(m_smoothedScore);
+            enterCooldown();
         }
         break;
 
     case CooldownState::InCooldown:
-        m_cooldownTimer -= deltaSeconds;
-
-        // 20 分鐘冷卻期內真實狀態跟隨即時疲勞分數，以反映真實生理狀況；冷卻機制專注於絕對靜默抑制彈窗
-        if (m_lastScore >= 65.0f) {
-            m_currentLevel = FatigueLevel::SevereWarning;
-        } else if (m_lastScore >= 45.0f) {
-            m_currentLevel = FatigueLevel::Attention;
-        } else {
-            m_currentLevel = FatigueLevel::Relaxed;
-            m_fatigueTriggered = false; // 已恢復清醒放鬆
-        }
-
-        // 20 分鐘絕對靜默期滿，切換至 5 分鐘總體分數計算與快篩期
-        if (m_cooldownTimer <= 0.0f) {
-            m_cooldownTimer = 0.0f;
-            m_cooldownState = CooldownState::FastScreening;
-            m_screeningTimer = static_cast<float>(m_screeningInterval); // 5 分鐘 (300 秒)
-            m_screeningAlertFired = false;
-        }
+        // 20 分鐘內完全不提醒，僅更新畫面狀態
         break;
 
     case CooldownState::FastScreening:
-        // 20 分鐘冷卻後，每 5 分鐘進行一次總體分數計算與快篩
-        m_screeningTimer -= deltaSeconds;
-
-        if (m_lastScore >= 65.0f) {
-            m_currentLevel = FatigueLevel::SevereWarning;
-            // 快篩判定仍處於嚴重疲勞，發送升級提醒並立刻重啟新一輪 20 分鐘冷卻保護
-            if (!m_screeningAlertFired) {
-                m_screeningAlertFired = true;
-                if (m_alertCallback) {
-                    m_alertCallback(m_currentLevel, m_lastScore, "你的眼睛處於疲勞狀態，請適當休息");
-                }
+        m_screeningScoreSum += m_lastScore * deltaSeconds;
+        m_screeningSeconds += deltaSeconds;
+        if (m_screeningSeconds >= static_cast<float>(m_screeningInterval)) {
+            const float average = m_screeningScoreSum / m_screeningSeconds;
+            if (average >= alertScore()) {
+                fireAlert(average);
+                enterCooldown();
+            } else if (average < kAttentionScore) {
+                enterNormalTracking();
+            } else {
+                enterScreening();
             }
-            m_cooldownState = CooldownState::InCooldown;
-            m_cooldownTimer = static_cast<float>(m_cooldownDuration);   // 重新鎖定 20 分鐘
-            m_screeningTimer = static_cast<float>(m_screeningInterval); // 5 分鐘
-            m_screeningAlertFired = false;
-        } else if (m_lastScore >= 45.0f) {
-            m_currentLevel = FatigueLevel::Attention;
-            if (m_screeningTimer <= 0.0f) {
-                // 快篩 5 分鐘週期結束，若使用者仍處於輕度疲勞，重置快篩計時器進行下一輪 5 分鐘檢測
-                m_screeningTimer = static_cast<float>(m_screeningInterval);
-            }
-        } else {
-            m_currentLevel = FatigueLevel::Relaxed;
-            m_fatigueTriggered = false;
-            // 使用者已完全清醒放鬆，平穩回歸常態全量追蹤
-            m_cooldownState = CooldownState::NormalTracking;
-            m_cooldownTimer = 0.0f;
-            m_screeningTimer = 0.0f;
-            m_screeningAlertFired = false;
         }
-        break;
-
-    case CooldownState::AwayPaused:
-        // 兼容狀態
-        m_cooldownState = CooldownState::InCooldown;
-        m_cooldownTimer = static_cast<float>(m_cooldownDuration);
         break;
     }
 
     return getState();
+}
+
+void FatigueStateMachine::setHighSensitivity(bool enabled) {
+    m_highSensitivity = enabled;
+}
+
+bool FatigueStateMachine::isHighSensitivity() const {
+    return m_highSensitivity;
 }
 
 void FatigueStateMachine::setAlertCallback(AlertCallback cb) {
@@ -186,7 +190,9 @@ SystemState FatigueStateMachine::getState() const {
     state.fatigueLevel = m_currentLevel;
     state.cooldownState = m_cooldownState;
     state.currentFatigueScore = m_lastScore;
+    state.smoothedFatigueScore = m_smoothedScore;
     state.cooldownRemainingSeconds = std::max(0, static_cast<int>(m_cooldownTimer));
+    state.cooldownRemainingSec = state.cooldownRemainingSeconds;
     state.awaySeconds = static_cast<int>(m_awayTimer);
     state.studyDay = m_studyDay;
     state.isStudyLocked = m_isStudyLocked;
@@ -199,11 +205,12 @@ void FatigueStateMachine::reset() {
     m_cooldownState = CooldownState::NormalTracking;
     m_currentLevel = FatigueLevel::Relaxed;
     m_cooldownTimer = 0.0f;
-    m_screeningTimer = 0.0f;
     m_awayTimer = 0.0f;
     m_lastScore = 0.0f;
-    m_fatigueTriggered = false;
-    m_screeningAlertFired = false;
+    m_smoothedScore = 0.0f;
+    m_aboveAlertSeconds = 0.0f;
+    m_screeningScoreSum = 0.0f;
+    m_screeningSeconds = 0.0f;
 }
 
 void FatigueStateMachine::setStudyProgress(int currentDay, bool isLocked) {

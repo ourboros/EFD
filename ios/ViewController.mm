@@ -800,7 +800,7 @@ static UIImage* EFDGetAsset10Logo() {
         return card;
     };
 
-    [scrollView addSubview:createSettingRow(curY, @"高靈敏度疲勞偵測", @"縮短判定窗口 (提升至 3 分鐘快篩頻率)", self.highSensitivityEnabled, @selector(onHighSensitivityChanged:), NO)];
+    [scrollView addSubview:createSettingRow(curY, @"高靈敏度疲勞偵測", @"平滑分數 ≥58 持續 5 秒即提醒 (標準為 ≥65 持續 10 秒)", self.highSensitivityEnabled, @selector(onHighSensitivityChanged:), NO)];
     curY += (itemH + gap);
 
     [scrollView addSubview:createSettingRow(curY, @"疲勞警報提示音", @"疲勞超標時發出柔和提示聲響與震動", self.soundAlertEnabled, @selector(onSoundAlertChanged:), NO)];
@@ -828,6 +828,7 @@ static UIImage* EFDGetAsset10Logo() {
 
 - (void)onHighSensitivityChanged:(UISwitch*)sw {
     self.highSensitivityEnabled = sw.on;
+    if (_engine) _engine->setHighSensitivityMode(sw.on);
 }
 
 - (void)onSoundAlertChanged:(UISwitch*)sw {

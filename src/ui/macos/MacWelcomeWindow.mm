@@ -892,8 +892,8 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
     // 設定項目 1: 高靈敏度即時警報
     CGFloat item1Y = startY;
     NSString* s1Desc = _highSensitivityMode 
-        ? @"已啟用高靈敏度即時警報 (當 PERCLOS 或疲勞分偏高即刻提醒)" 
-        : @"標準靈敏度 (防誤報平滑過濾模式，推薦)";
+        ? @"已啟用：平滑分數 ≥58 持續 5 秒即提醒" 
+        : @"標準：平滑分數 ≥65 持續 10 秒才提醒 (推薦)";
     drawSettingToggle(item1Y, _sensitivityBtnRect, _isHoveringSensitivityBtn, @"高靈敏度即時警報", s1Desc, _highSensitivityMode);
 
     // 設定項目 2: 疲勞警報提示音
@@ -1065,6 +1065,7 @@ static void drawRightText(NSString* text, NSRect rect, NSFont* font, NSColor* co
         case efd::MacUIStage::SettingsPanel:
             if (NSPointInRect(loc, _sensitivityBtnRect)) {
                 _highSensitivityMode = !_highSensitivityMode;
+                if (_engine) _engine->setHighSensitivityMode(_highSensitivityMode);
                 [self setNeedsDisplay:YES];
             } else if (NSPointInRect(loc, _toggleSoundBtnRect)) {
                 _soundAlertEnabled = !_soundAlertEnabled;

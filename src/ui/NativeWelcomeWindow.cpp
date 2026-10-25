@@ -503,6 +503,7 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
         if (PtInRect(&m_sensitivityBtnRect, pt)) {
             m_highSensitivityMode = !m_highSensitivityMode;
             m_sensitivityLevel = m_highSensitivityMode ? 2 : 1;
+            m_engine.setHighSensitivityMode(m_highSensitivityMode);
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_toggleSoundBtnRect, pt)) {
             m_soundAlertEnabled = !m_soundAlertEnabled;
@@ -1995,8 +1996,8 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
     // 設定項目 1: 高靈敏度即時警報
     int item1Y = startY;
     const wchar_t* s1Desc = m_highSensitivityMode 
-        ? L"已啟用高靈敏度即時警報 (當 PERCLOS 或疲勞分偏高即刻提醒)" 
-        : L"標準靈敏度 (防誤報平滑過濾模式，推薦)";
+        ? L"已啟用：平滑分數 ≥58 持續 5 秒即提醒" 
+        : L"標準：平滑分數 ≥65 持續 10 秒才提醒 (推薦)";
     drawSettingToggleItem(item1Y, m_sensitivityBtnRect, m_isHoveringSensitivityBtn, L"高靈敏度即時警報", s1Desc, m_highSensitivityMode);
 
     // 設定項目 2: 疲勞警報提示音

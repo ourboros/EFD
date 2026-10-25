@@ -55,69 +55,48 @@ EyeMetrics FeatureExtractor::processFrame(const std::vector<Point3D>& landmarks,
 EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps) {
     float earAvg = (earLeft + earRight) * 0.5f;
     bool isClosed = (earAvg < m_threshold);
+    const float sampleSec = (fps > 0.0f) ? (1.0f / fps) : (1.0f / 30.0f);
+    m_elapsedSec += sampleSec;
 
-    // 更新歷史序列
+    // EAR 序列 (供 EMD / MSE)
     m_earHistory.push_back(earAvg);
     if (m_earHistory.size() > m_maxHistorySize) {
         m_earHistory.pop_front();
     }
 
-    m_closedHistory.push_back(isClosed);
-    if (m_closedHistory.size() > m_maxHistorySize) {
-        m_closedHistory.pop_front();
+    // 60 秒時間窗口
+    m_samples.push_back({isClosed, sampleSec});
+    m_windowSec += sampleSec;
+    if (isClosed) m_closedSec += sampleSec;
+    while (!m_samples.empty() && m_windowSec - m_samples.front().durationSec >= kPerclosWindowSec) {
+        m_windowSec -= m_samples.front().durationSec;
+        if (m_samples.front().closed) m_closedSec -= m_samples.front().durationSec;
+        m_samples.pop_front();
     }
 
-    // 眨眼檢測狀態機
-    float frameDurationMs = (fps > 0.0f) ? (1000.0f / fps) : 33.33f;
+    // 眨眼以持續時間判斷：60 ms ~ 800 ms 為有效眨眼；更長的閉眼只計入 PERCLOS
     if (isClosed) {
-        m_currentClosedFrames++;
-    } else {
-        if (m_wasClosed) {
-            // 一次眨眼完成 (需超過 1 幀以避免雜訊，通常 2~15 幀)
-            if (m_currentClosedFrames >= 2 && m_currentClosedFrames <= 25) {
-                m_totalBlinks++;
-                m_totalBlinkDurationMs += (m_currentClosedFrames * frameDurationMs);
-            }
-            m_currentClosedFrames = 0;
+        m_currentClosedSec += sampleSec;
+    } else if (m_wasClosed) {
+        if (m_currentClosedSec >= kMinBlinkSec - 1e-4f && m_currentClosedSec <= kMaxBlinkSec + 1e-4f) {
+            m_totalBlinks++;
+            m_totalBlinkDurationMs += m_currentClosedSec * 1000.0f;
+            m_blinkTimes.push_back(m_elapsedSec);
         }
+        m_currentClosedSec = 0.0f;
     }
     m_wasClosed = isClosed;
 
-    // 計算 PERCLOS (閉眼幀數佔窗口比例)
-    float perclos = 0.0f;
-    if (!m_closedHistory.empty()) {
-        int closedCount = 0;
-        for (bool c : m_closedHistory) {
-            if (c) closedCount++;
-        }
-        perclos = static_cast<float>(closedCount) / static_cast<float>(m_closedHistory.size());
+    while (!m_blinkTimes.empty() && m_elapsedSec - m_blinkTimes.front() > kPerclosWindowSec) {
+        m_blinkTimes.pop_front();
     }
 
-    // [修正 D & 生理學約束] 計算眨眼率：
-    // 使用滑動窗口內的完整眨眼段落計數 (要求閉眼持續 2~25 幀，約 67ms~800ms，符合眨眼生理學特徵)
-    int windowBlinkCount = 0;
-    {
-        int segLen = 0;
-        for (bool c : m_closedHistory) {
-            if (c) {
-                segLen++;
-            } else {
-                if (segLen >= 2 && segLen <= 25) {
-                    windowBlinkCount++;
-                }
-                segLen = 0;
-            }
-        }
+    float perclos = (m_windowSec > 0.0f) ? static_cast<float>(std::clamp(m_closedSec / m_windowSec, 0.0, 1.0)) : 0.0f;
+
+    float blinkRatePerMin = 0.0f;
+    if (m_windowSec >= kBlinkRateMinWindowSec) {
+        blinkRatePerMin = static_cast<float>(std::clamp(static_cast<double>(m_blinkTimes.size()) / m_windowSec * 60.0, 0.0, 60.0));
     }
-    float windowDurationSec = (m_closedHistory.size() > 0 && fps > 0.0f)
-                                  ? (static_cast<float>(m_closedHistory.size()) / fps)
-                                  : 1.0f;
-    // 只有窗口累積到 >= 5 秒才開始計算，避免初始短窗口產生誇大的眨眼率
-    // 同時加入生理學合理性上限 (正常人類最大眨眼頻率不超過 60 次/分)
-    float rawRate = (windowDurationSec >= 5.0f)
-                        ? ((static_cast<float>(windowBlinkCount) / windowDurationSec) * 60.0f)
-                        : 0.0f;
-    float blinkRatePerMin = std::clamp(rawRate, 0.0f, 60.0f);
 
     float avgDurationMs = (m_totalBlinks > 0)
                               ? (m_totalBlinkDurationMs / static_cast<float>(m_totalBlinks))
@@ -150,16 +129,20 @@ std::vector<float> FeatureExtractor::getEarHistory() const {
 
 void FeatureExtractor::reset() {
     m_earHistory.clear();
-    m_closedHistory.clear();
+    m_samples.clear();
+    m_blinkTimes.clear();
+    m_windowSec = 0.0;
+    m_closedSec = 0.0;
+    m_elapsedSec = 0.0;
     m_wasClosed = false;
-    m_currentClosedFrames = 0;
+    m_currentClosedSec = 0.0f;
     m_totalBlinks = 0;
     m_totalBlinkDurationMs = 0.0f;
 }
 
 void FeatureExtractor::resetTemporaryCounters() {
     m_wasClosed = false;
-    m_currentClosedFrames = 0;
+    m_currentClosedSec = 0.0f;
 }
 
 } // namespace efd

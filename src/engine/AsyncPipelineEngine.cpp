@@ -206,8 +206,8 @@ void AsyncPipelineEngine::handleLifecycleEvent(const LifecycleEvent& event) {
         m_baseline.fastRecalibrate(resumeSamples);
         m_extractor.setEyeClosedThreshold(m_baseline.getCurrentThreshold());
 
-        // 若在背景或休眠超過 5 分鐘，自動向狀態機發送離座清零
-        if (event.elapsedBackgroundSeconds >= 300) {
+        // 背景 / 休眠時間比照離座：冷卻照常倒數，滿 5 分鐘清除冷卻
+        if (event.elapsedBackgroundSeconds > 0) {
             m_stateMachine.update(false, 0.0f, 0.0f, 0.0f, static_cast<float>(event.elapsedBackgroundSeconds));
         }
     }
@@ -267,11 +267,18 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             m_inferenceQueue.pop();
         }
 
+        // 真實時間增量（而非固定 1/FPS 估算值），供 PERCLOS / 眨眼時長與狀態機共用
+        auto nowFrameTime = std::chrono::steady_clock::now();
+        float deltaSec = std::chrono::duration<float>(nowFrameTime - lastFrameTime).count();
+        // 防止初始化或長時間暫停後的時間跳躍（限制在合理範圍 0.001s ~ 0.5s）
+        deltaSec = std::clamp(deltaSec, 0.001f, 0.5f);
+        lastFrameTime = nowFrameTime;
+
         // 1. 計算幾何特徵 (EAR / PERCLOS / 眨眼率) - 僅在偵測到正對鏡頭人臉時計算
         EyeMetrics eyeMetrics;
         if (package.detection.hasFace) {
             m_consecutiveAbsentFrames = 0;
-            eyeMetrics = m_extractor.processFrame(package.detection.landmarks, m_camera->getFps());
+            eyeMetrics = m_extractor.processFrame(package.detection.landmarks, 1.0f / deltaSec);
         } else {
             // 人臉未偵測到或離座：重置暫態計數器，幾何指標全部歸零，杜絕假疲勞數據
             m_extractor.resetTemporaryCounters();
@@ -308,12 +315,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         }
 
         // 4. 20/5/5 防打擾狀態機推進 (傳入即時人臉在場與正視狀態)
-        // [修正 B] 計算真實時間增量（而非固定 1/FPS 估算值）
-        auto nowFrameTime = std::chrono::steady_clock::now();
-        float deltaSec = std::chrono::duration<float>(nowFrameTime - lastFrameTime).count();
-        // 防止初始化或長時間暫停後的時間跳躍（限制在合理範圍 0.001s ~ 0.5s）
-        deltaSec = std::clamp(deltaSec, 0.001f, 0.5f);
-        lastFrameTime = nowFrameTime;
+        m_stateMachine.setHighSensitivity(m_highSensitivity.load());
         SystemState state = m_stateMachine.update(
             package.detection.hasFace,
             eyeMetrics.perclos,
