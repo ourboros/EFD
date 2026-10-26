@@ -316,6 +316,8 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
         FaceLandmarker::PresenceDiagnostic bestFailDiag = diag;
         int bestFailRank = -1;
         int bestCompIdx = -1;
+        bool haveTrackCandidate = false;
+        float trackCandidateCx = 0.0f, trackCandidateCy = 0.0f, trackCandidateScale = 0.0f;
 
         for (int candidate : candidates) {
         bestCompIdx = candidate;
@@ -497,6 +499,18 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                                                static_cast<float>(std::min(width, height)) * 0.15f,
                                                static_cast<float>(std::min(width, height)) * 0.98f);
 
+                // 已鎖定臉部時，記錄位置與大小都接近追蹤框的候選 (眼睛檢查失敗時仍可視為在座)
+                if (!haveTrackCandidate && m_isFaceConfirmed && m_trackedScale > 1.0f) {
+                    const float dist = std::hypot(detectedFaceCx - m_trackedCx, detectedFaceCy - m_trackedCy);
+                    const float ratio = detectedFaceScale / m_trackedScale;
+                    if (dist < m_trackedScale * 0.5f && ratio > 0.6f && ratio < 1.6f) {
+                        haveTrackCandidate = true;
+                        trackCandidateCx = detectedFaceCx;
+                        trackCandidateCy = detectedFaceCy;
+                        trackCandidateScale = detectedFaceScale;
+                    }
+                }
+
                 int avgSkinLum = (comp.totalSkinCount > 0) ? static_cast<int>(comp.sumLuma / comp.totalSkinCount) : 128;
 
                 // 雙眼真實解剖位置 (眼睛位於頭頂至下巴的 38% 處)
@@ -628,6 +642,18 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
 
         if (!candidates.empty() && !(personInFrame && facingCamera)) {
             diag = bestFailDiag;
+        }
+
+        // 在座 ≠ 看得到眼睛：PERCLOS 統計的正是「閉眼時間」，閉眼、眨眼、低頭時人仍在座。
+        // 第一次鎖定臉部需要眼睛特徵 (排除牆面等膚色物體)；鎖定後只要同一位置仍有符合臉形的膚色區域，
+        // 即使眼睛檢查或對稱檢查失敗，也視為在座 (疲勞特徵照常計算，閉眼會計入 PERCLOS)
+        if (!(personInFrame && facingCamera) && haveTrackCandidate) {
+            personInFrame = true;
+            facingCamera = true;
+            detectedFaceCx = trackCandidateCx;
+            detectedFaceCy = trackCandidateCy;
+            detectedFaceScale = trackCandidateScale;
+            diag.presenceByTracking = true;
         }
     } else {
         // Synthetic 模擬測試驅動模式 (專用於無相機單元測試環境)

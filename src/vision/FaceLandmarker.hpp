@@ -46,6 +46,8 @@ public:
 
         // 診斷模式用：本幀卡在哪一關 ("" 代表全部通過；skin / size / aspect / fill / eyes / symmetry)
         std::string failStage;
+        // 眼睛或對稱檢查未過，但位置與已鎖定的臉相符而判定在座 (閉眼、低頭、眨眼)
+        bool presenceByTracking = false;
         // 膚色連通區域 (未裁切) 與裁切後的臉部方框
         int skinBoxX = 0, skinBoxY = 0, skinBoxW = 0, skinBoxH = 0;
         int faceBoxX = 0, faceBoxY = 0, faceBoxW = 0, faceBoxH = 0;

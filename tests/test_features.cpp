@@ -591,6 +591,72 @@ void testWarmLitWallIsNotSkin() {
               << ", 眼睛 y=" << d.eyeCenterY << ")\n";
 }
 
+// 灰牆前的臉 (480x640)；eyesOpen=false 時眼睛位置填成膚色 (模擬閉眼、低頭)，personPresent=false 時只有牆
+static std::vector<uint8_t> makePresenceFrame(bool personPresent, bool eyesOpen) {
+    const int w = 480, h = 640;
+    std::vector<uint8_t> px(static_cast<size_t>(w * h * 3));
+    auto inEllipse = [](int x, int y, int cx, int cy, int rx, int ry) {
+        float dx = static_cast<float>(x - cx) / rx, dy = static_cast<float>(y - cy) / ry;
+        return dx * dx + dy * dy <= 1.0f;
+    };
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            int n = ((x * 7 + y * 13) % 7) - 3;
+            int r = 120, g = 125, b = 130;
+            if (personPresent && inEllipse(x, y, 240, 260, 100, 135)) {
+                r = 215; g = 165; b = 135;
+                if (y < 150) { r = 30; g = 25; b = 25; }
+                if (eyesOpen && (inEllipse(x, y, 196, 245, 18, 6) || inEllipse(x, y, 284, 245, 18, 6))) {
+                    r = 40; g = 30; b = 30;
+                }
+            }
+            size_t i = static_cast<size_t>((y * w + x) * 3);
+            px[i] = static_cast<uint8_t>(std::clamp(r + n, 0, 255));
+            px[i + 1] = static_cast<uint8_t>(std::clamp(g + n, 0, 255));
+            px[i + 2] = static_cast<uint8_t>(std::clamp(b + n, 0, 255));
+        }
+    }
+    return px;
+}
+
+void testClosedEyesStillPresentAfterLock() {
+    std::cout << "[TEST] 26. 測試鎖定臉部後閉眼/低頭仍判定在座，人離開後 1 秒判定離座...";
+    const auto open = makePresenceFrame(true, true);
+    const auto closed = makePresenceFrame(true, false);
+    const auto empty = makePresenceFrame(false, false);
+
+    // 沒有鎖定過的臉：只有膚色、看不到眼睛時不可判定為人臉 (避免把膚色物體當成人)
+    {
+        efd::FaceLandmarker fresh;
+        fresh.initialize();
+        bool any = false;
+        for (int i = 0; i < 5; ++i) any = any || fresh.detect(closed.data(), 480, 640, efd::PixelFormat::RGB888, false).hasFace;
+        assert(!any);
+    }
+
+    efd::FaceLandmarker lm;
+    lm.initialize();
+    for (int i = 0; i < 3; ++i) lm.detect(open.data(), 480, 640, efd::PixelFormat::RGB888, false);
+    assert(lm.detect(open.data(), 480, 640, efd::PixelFormat::RGB888, false).hasFace);
+
+    // 閉眼 2 秒 (以 10 fps 餵入)：仍在座
+    for (int i = 0; i < 20; ++i) {
+        auto r = lm.detect(closed.data(), 480, 640, efd::PixelFormat::RGB888, false);
+        assert(r.hasFace);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    assert(lm.getLatestPresenceDiagnostic().presenceByTracking);
+
+    // 人離開：超過 1 秒後判定離座
+    bool stillPresent = true;
+    for (int i = 0; i < 15; ++i) {
+        stillPresent = lm.detect(empty.data(), 480, 640, efd::PixelFormat::RGB888, false).hasFace;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    assert(!stillPresent);
+    std::cout << " [PASS]\n";
+}
+
 void testPlatformLifecycleAdapter() {
     std::cout << "[TEST] 6. 測試跨平台生命週期適配器 (PlatformLifecycleAdapter)...";
     efd::PlatformLifecycleAdapter adapter(efd::PlatformType::Windows);
@@ -1071,7 +1137,8 @@ int main() {
     testFaceDetectedAboveSkinColoredShirt();
     testFaceSeparatedFromLargerSkinColoredShirt();
     testWarmLitWallIsNotSkin();
+    testClosedEyesStillPresentAfterLock();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 25 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 26 項測試順利通過！\n";
     return 0;
 }
