@@ -13,11 +13,96 @@
 #include <iomanip>
 #include <sstream>
 #include <sys/utsname.h>
+#include <exception>
+#include <fcntl.h>
+#include <signal.h>
+#include <unistd.h>
 #include "engine/AsyncPipelineEngine.hpp"
 
 // 診斷模式一次匯出的畫面張數 (每隔 4 幀取一張，約 0.4 秒)
 static const int kDiagnosticExportFrames = 5;
 static NSString * const kDiagnosticModeDefaultsKey = @"efd_diagnostic_mode";
+
+// -----------------------------------------------------------------------------
+// 啟動紀錄 (Documents/EFD_Diagnostics/launch_log.txt)
+// App 被系統強制關閉時無法即時回報，因此逐步寫下啟動進度與主執行緒心跳；
+// 下次開啟若上次沒有寫到 RUNNING_OK / BACKGROUND，就提示使用者複製上次紀錄。
+// -----------------------------------------------------------------------------
+static int gLaunchLogFd = -1;
+
+static void EFDLaunchLog(NSString *message) {
+    if (gLaunchLogFd < 0) return;
+    static NSDateFormatter *fmt = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        fmt = [[NSDateFormatter alloc] init];
+        fmt.dateFormat = @"HH:mm:ss.SSS";
+    });
+    NSString *line = [NSString stringWithFormat:@"%@ [%@] %@\n", [fmt stringFromDate:[NSDate date]],
+                      [NSThread isMainThread] ? @"main" : @"bg", message];
+    NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
+    write(gLaunchLogFd, data.bytes, data.length);
+}
+
+// 崩潰訊號處理：只能使用 async-signal-safe 的 write()
+static void EFDSignalHandler(int sig) {
+    if (gLaunchLogFd >= 0) {
+        char msg[64];
+        int len = snprintf(msg, sizeof(msg), "CRASH signal %d\n", sig);
+        if (len > 0) write(gLaunchLogFd, msg, static_cast<size_t>(len));
+    }
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static void EFDUncaughtExceptionHandler(NSException *exception) {
+    EFDLaunchLog([NSString stringWithFormat:@"CRASH NSException %@: %@\n%@", exception.name, exception.reason,
+                  [exception.callStackSymbols componentsJoinedByString:@"\n"]]);
+}
+
+static void EFDTerminateHandler() {
+    NSString *what = @"(未知)";
+    if (std::exception_ptr ep = std::current_exception()) {
+        try {
+            std::rethrow_exception(ep);
+        } catch (const std::exception& e) {
+            what = [NSString stringWithUTF8String:e.what()] ?: @"(無法解碼)";
+        } catch (...) {
+            what = @"(非 std::exception)";
+        }
+    }
+    EFDLaunchLog([NSString stringWithFormat:@"CRASH std::terminate: %@", what]);
+    abort();
+}
+
+// 開啟本次啟動紀錄；回傳上次異常結束時的紀錄內容 (正常結束則回傳 nil)
+static NSString *EFDBeginLaunchLog() {
+    NSURL *docs = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] firstObject];
+    NSURL *dir = [docs URLByAppendingPathComponent:@"EFD_Diagnostics" isDirectory:YES];
+    [[NSFileManager defaultManager] createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString *path = [dir URLByAppendingPathComponent:@"launch_log.txt"].path;
+    NSString *prevPath = [dir URLByAppendingPathComponent:@"launch_log_prev.txt"].path;
+
+    NSString *previous = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+    NSString *abnormal = nil;
+    if (previous.length > 0 && [previous rangeOfString:@"RUNNING_OK"].location == NSNotFound &&
+        [previous rangeOfString:@"BACKGROUND"].location == NSNotFound) {
+        abnormal = previous;
+    }
+    if (previous) {
+        [[NSFileManager defaultManager] removeItemAtPath:prevPath error:nil];
+        [[NSFileManager defaultManager] moveItemAtPath:path toPath:prevPath error:nil];
+    }
+
+    gLaunchLogFd = open(path.fileSystemRepresentation, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
+    NSSetUncaughtExceptionHandler(&EFDUncaughtExceptionHandler);
+    std::set_terminate(EFDTerminateHandler);
+    for (int sig : {SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE}) {
+        signal(sig, EFDSignalHandler);
+    }
+    EFDLaunchLog([NSString stringWithFormat:@"LAUNCH iOS %@", [UIDevice currentDevice].systemVersion]);
+    return abnormal;
+}
 
 // -----------------------------------------------------------------------------
 // EFD iOS 設計系統規範色碼 (5 大核心配色)
@@ -76,6 +161,12 @@ static UIImage* EFDGetAsset10Logo() {
     std::atomic<int> _exportFramesRemaining;
     int _exportFrameSkip;
     dispatch_queue_t _exportQueue;
+
+    // 引擎送出的遙測幀數 (啟動紀錄的引擎心跳)
+    std::atomic<int> _telemetryFrames;
+
+    // 引擎控制佇列：啟動、暫停、恢復依序執行 (開關相機不在主執行緒、也不會同時進行)
+    dispatch_queue_t _engineQueue;
 }
 
 @property (nonatomic, assign) EFDAppStage currentStage;
@@ -115,6 +206,10 @@ static UIImage* EFDGetAsset10Logo() {
 @property (nonatomic, assign) int exportSavedCount;
 @property (nonatomic, assign) BOOL exportSaveFailed;
 
+// 啟動紀錄：上次異常結束的內容 (開啟後提示複製)、主執行緒心跳
+@property (nonatomic, copy) NSString *abnormalPreviousLog;
+@property (nonatomic, strong) NSTimer *heartbeatTimer;
+
 // 背景定時檢查 (科研同步 & 門禁檢查)
 @property (nonatomic, strong) NSTimer *backgroundCheckTimer;
 
@@ -126,12 +221,17 @@ static UIImage* EFDGetAsset10Logo() {
     [super viewDidLoad];
     self.view.backgroundColor = COLOR_PRIMARY_MINT;
 
+    self.abnormalPreviousLog = EFDBeginLaunchLog();
+    EFDLaunchLog(@"viewDidLoad 開始");
+
     self.highSensitivityEnabled = NO;
     self.soundAlertEnabled = YES;
     self.diagnosticModeEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:kDiagnosticModeDefaultsKey];
+    _telemetryFrames.store(0);
     _exportFramesRemaining.store(0);
     _exportFrameSkip = 0;
     _exportQueue = dispatch_queue_create("com.efd.diagnostic.export", DISPATCH_QUEUE_SERIAL);
+    _engineQueue = dispatch_queue_create("com.efd.engine.control", DISPATCH_QUEUE_SERIAL);
     self.currentStage = EFDAppStageWelcome;
 
     // 建立全螢幕自適應容器
@@ -142,12 +242,16 @@ static UIImage* EFDGetAsset10Logo() {
 
     // 初始化 C++20 跨平台管線引擎 (iOS 平台原生)
     _engine = new efd::AsyncPipelineEngine(efd::PlatformType::iOS);
+    EFDLaunchLog(@"引擎物件建立完成");
 
     // App 工作目錄為唯讀，設定檔/資料庫/冷卻狀態必須存放在 Application Support，
     // 否則每次開啟都會產生新受試者、回到第 1 天且需要重新校準
     NSString *dataDir = [ViewController efdDataDirectory];
     if (dataDir) {
+        NSDate *t0 = [NSDate date];
         _engine->setDataDirectory(std::string(dataDir.UTF8String));
+        EFDLaunchLog([NSString stringWithFormat:@"資料目錄載入完成 %.0f ms，資料庫 %zu 筆",
+                      -[t0 timeIntervalSinceNow] * 1000.0, _engine->getDatabaseService().getRecordCount()]);
     }
     self.highSensitivityEnabled = (_engine->getSensitivity() == efd::FatigueStateMachine::kSensitivityHigh);
 
@@ -171,6 +275,13 @@ static UIImage* EFDGetAsset10Logo() {
         const BOOL synthetic = t.latestFrame.isSynthetic ? YES : NO;
         const int frameW = t.latestFrame.width;
         const int frameH = t.latestFrame.height;
+
+        // 引擎心跳：第一幀與之後每 150 幀 (約 5 秒) 記錄一次
+        const int frames = ++self->_telemetryFrames;
+        if (frames == 1 || frames % 150 == 0) {
+            EFDLaunchLog([NSString stringWithFormat:@"引擎第 %d 幀 %dx%d %@ hasFace=%d stage=%s", frames, frameW, frameH,
+                          synthetic ? @"模擬" : @"實體", t.detection.hasFace ? 1 : 0, t.presenceDiagnostic.failStage.c_str()]);
+        }
 
         // 診斷匯出：每隔 4 幀複製一張實際畫面 (只在使用者按下匯出時)
         if (self->_exportFramesRemaining.load() > 0 && t.latestFrame.isValid() && (++self->_exportFrameSkip % 4) == 0) {
@@ -209,8 +320,8 @@ static UIImage* EFDGetAsset10Logo() {
         });
     });
 
-    // 啟動管線
-    _engine->start();
+    // 啟動管線：先非同步取得相機權限，再於背景執行緒啟動 (開相機與 startRunning 不可阻塞主執行緒)
+    [self startEngineWhenCameraReady];
 
     // 背景定時定點檢查 (每 30 秒執行一次夜間 21:00 科研同步與門禁檢查)
     self.backgroundCheckTimer = [NSTimer scheduledTimerWithTimeInterval:30.0
@@ -234,6 +345,73 @@ static UIImage* EFDGetAsset10Logo() {
 
     // 初始渲染
     [self renderCurrentStage];
+    EFDLaunchLog([NSString stringWithFormat:@"畫面已繪製 stage=%ld", (long)self.currentStage]);
+
+    // 主執行緒心跳：每 2 秒記錄一次，紀錄中斷的時間點即主執行緒卡住的位置；持續 20 秒視為正常啟動
+    __block int beats = 0;
+    self.heartbeatTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *timer) {
+        beats++;
+        EFDLaunchLog([NSString stringWithFormat:@"主執行緒心跳 %d", beats]);
+        if (beats == 10) {
+            EFDLaunchLog(@"RUNNING_OK 已穩定運作 20 秒");
+        }
+        if (beats >= 30) {
+            [timer invalidate];
+        }
+    }];
+
+    if (self.abnormalPreviousLog) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self presentAbnormalExitAlert];
+        });
+    }
+}
+
+- (void)startEngineWhenCameraReady {
+    AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+    EFDLaunchLog([NSString stringWithFormat:@"相機權限狀態 %ld", (long)status]);
+    if (status == AVAuthorizationStatusNotDetermined) {
+        // 系統權限視窗需要主執行緒；在使用者回答後才啟動引擎
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) {
+            EFDLaunchLog([NSString stringWithFormat:@"相機權限回覆 granted=%d", granted ? 1 : 0]);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self startEngineInBackground];
+            });
+        }];
+        return;
+    }
+    [self startEngineInBackground];
+}
+
+- (void)startEngineInBackground {
+    efd::AsyncPipelineEngine *engine = _engine;
+    if (!engine) return;
+    dispatch_async(_engineQueue, ^{
+        EFDLaunchLog(@"引擎啟動開始");
+        NSDate *t0 = [NSDate date];
+        bool ok = engine->start();
+        EFDLaunchLog([NSString stringWithFormat:@"引擎啟動%@ %.0f ms", ok ? @"完成" : @"失敗", -[t0 timeIntervalSinceNow] * 1000.0]);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (self.cameraAspectBox && !self.cameraPreviewLayer) {
+                [self attachCameraPreviewIfNeeded];
+            }
+        });
+    });
+}
+
+// 上次開啟時 App 異常結束：提示使用者複製紀錄回傳
+- (void)presentAbnormalExitAlert {
+    NSString *previous = self.abnormalPreviousLog;
+    self.abnormalPreviousLog = nil;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"上次 App 異常結束"
+                                                                   message:@"上次開啟時 App 沒有正常運作就被關閉了。\n請按「複製紀錄」，貼到 LINE 傳給研究人員，協助找出原因。"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"複製紀錄" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [UIPasteboard generalPasteboard].string = [NSString stringWithFormat:@"[EFD 上次異常結束紀錄]\n%@\n%@",
+                                                   previous, [self diagnosticReportText]];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"略過" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)viewDidLayoutSubviews {
@@ -283,9 +461,14 @@ static UIImage* EFDGetAsset10Logo() {
 }
 
 - (void)onAppDidEnterBackground {
+    EFDLaunchLog(@"BACKGROUND 進入背景");
     // iOS 不允許 App 在背景使用相機：暫停管線並保存冷卻狀態
     if (_engine) {
-        _engine->pause();
+        // 在引擎控制佇列上同步執行：若背景啟動仍在進行，先等它完成，避免同時開關相機
+        efd::AsyncPipelineEngine *engine = _engine;
+        dispatch_sync(_engineQueue, ^{
+            engine->pause();
+        });
     }
     // 背景期間無法偵測，改排定一次性的休息提醒；冷卻期間不提醒，延到冷卻結束
     int delaySeconds = 20 * 60;
@@ -299,11 +482,16 @@ static UIImage* EFDGetAsset10Logo() {
 }
 
 - (void)onAppWillEnterForeground {
+    EFDLaunchLog(@"FOREGROUND 回到前景");
     // 使用者返回 EFD，清除排程中尚未觸發的疲勞提醒
     [[UNUserNotificationCenter currentNotificationCenter] removePendingNotificationRequestsWithIdentifiers:@[@"EFD_FATIGUE_ALARM_20M"]];
     if (_engine) {
         // 背景時間會比照離座處理 (滿 5 分鐘清除冷卻)，並補傳錯過的每日資料
-        _engine->resume();
+        // 重新開啟相機可能耗時，放在引擎控制佇列，不阻塞主執行緒
+        efd::AsyncPipelineEngine *engine = _engine;
+        dispatch_async(_engineQueue, ^{
+            engine->resume();
+        });
         _engine->checkAndTriggerNightlySync();
     }
     if (self.currentStage == EFDAppStageDashboard) {
