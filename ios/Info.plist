@@ -22,6 +22,8 @@
     <string>1</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>診斷模式匯出時，會把擷取的前鏡頭畫面存到「照片」，方便你用 LINE 傳給研究人員。</string>
     <key>NSCameraUsageDescription</key>
     <string>EFD 需要使用前鏡頭進行即時眼動特徵萃取、閉眼分析與疲勞預警。</string>
     <key>UILaunchScreen</key>

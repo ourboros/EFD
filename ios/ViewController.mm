@@ -108,6 +108,12 @@ static UIImage* EFDGetAsset10Logo() {
 @property (nonatomic, strong) UILabel *diagLabel;
 @property (nonatomic, assign) BOOL exportFinished;
 @property (nonatomic, copy) NSString *exportStamp;
+@property (nonatomic, strong) NSMutableString *exportSummary;          // 每張畫面的數值摘要 (複製成文字)
+@property (nonatomic, strong) NSMutableArray<UIImage *> *exportImages;  // 擷取的畫面 (存到「照片」)
+@property (nonatomic, strong) UILabel *exportStatusLabel;              // 擷取進度提示
+@property (nonatomic, assign) int exportPendingSaves;
+@property (nonatomic, assign) int exportSavedCount;
+@property (nonatomic, assign) BOOL exportSaveFailed;
 
 // 背景定時檢查 (科研同步 & 門禁檢查)
 @property (nonatomic, strong) NSTimer *backgroundCheckTimer;
@@ -1070,7 +1076,7 @@ static UIImage* EFDGetAsset10Logo() {
     };
     [scrollView addSubview:createActionButton(curY, @"複製錯誤資訊（貼給研究人員）", @selector(onCopyDiagnosticReportClicked), YES)];
     curY += 44 + gap;
-    [scrollView addSubview:createActionButton(curY, self.diagnosticModeEnabled ? @"匯出診斷畫面（含臉部影像）" : @"匯出診斷畫面（需先開啟診斷模式）",
+    [scrollView addSubview:createActionButton(curY, self.diagnosticModeEnabled ? @"匯出診斷畫面（存到照片＋複製數值）" : @"匯出診斷畫面（需先開啟診斷模式）",
                                               @selector(onExportDiagnosticFramesClicked), self.diagnosticModeEnabled)];
     curY += 44 + gap;
 
@@ -1136,7 +1142,8 @@ static UIImage* EFDGetAsset10Logo() {
 - (NSString *)diagnosticSummaryText {
     if (!_hasTelemetry) return @"尚未收到相機畫面";
     const auto& d = _latestDiag;
-    NSString *result = (d.rawPersonInFrame && d.rawFacingCamera) ? @"有人臉" : @"沒有人臉";
+    NSString *result = (d.rawPersonInFrame && d.rawFacingCamera)
+        ? (d.presenceByTracking ? @"在座(追蹤)" : @"有人臉") : @"沒有人臉";
     NSString *stage = d.failStage.empty() ? @"-" : [NSString stringWithUTF8String:d.failStage.c_str()];
     return [NSString stringWithFormat:
             @"相機:%@ %dx%d %.0ffps 結果:%@ 卡在:%@\n"
@@ -1238,9 +1245,31 @@ static NSString *EFDSafeString(const std::string& s) {
     return str ?: @"";
 }
 
+// 擷取進度提示 (畫面上方)：讓使用者知道正在擷取、看著鏡頭
+- (void)showExportStatus:(NSString *)text {
+    if (!self.exportStatusLabel) {
+        CGFloat w = self.view.bounds.size.width;
+        CGFloat top = (self.view.safeAreaInsets.top > 0 ? self.view.safeAreaInsets.top : 44) + 8;
+        self.exportStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(24, top, w - 48, 40)];
+        self.exportStatusLabel.textAlignment = NSTextAlignmentCenter;
+        self.exportStatusLabel.font = [UIFont boldSystemFontOfSize:15];
+        self.exportStatusLabel.textColor = COLOR_CARD_WHITE;
+        self.exportStatusLabel.backgroundColor = [COLOR_TEXT_DARK colorWithAlphaComponent:0.85];
+        self.exportStatusLabel.layer.cornerRadius = 12;
+        self.exportStatusLabel.clipsToBounds = YES;
+        [self.view addSubview:self.exportStatusLabel];
+    }
+    self.exportStatusLabel.text = text;
+}
+
+- (void)hideExportStatus {
+    [self.exportStatusLabel removeFromSuperview];
+    self.exportStatusLabel = nil;
+}
+
 - (void)onExportDiagnosticFramesClicked {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"匯出診斷畫面"
-                                                                   message:@"將連續擷取 5 張前鏡頭畫面（含你的臉部影像）與偵測數值，打包成一個 zip 檔，只存在這支手機，由你決定是否傳給研究人員。\n\n請按「開始」後把臉對準前鏡頭，約 3 秒後擷取。"
+                                                                   message:@"將連續擷取 5 張前鏡頭畫面（含你的臉部影像），存到「照片」App，並把偵測數值複製成文字。\n\n之後在 LINE 傳送這 5 張照片、再貼上文字給研究人員即可，不需要處理任何檔案。\n\n請按「開始」後看著前鏡頭，約 3 秒後擷取。"
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"開始" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
@@ -1248,22 +1277,30 @@ static NSString *EFDSafeString(const std::string& s) {
         fmt.dateFormat = @"yyyyMMdd_HHmmss";
         self.exportStamp = [fmt stringFromDate:[NSDate date]];
         self.exportFinished = NO;
+        self.exportSummary = [NSMutableString string];
+        self.exportImages = [NSMutableArray array];
+        [self showExportStatus:@"3 秒後擷取，請看著前鏡頭..."];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self showExportStatus:@"擷取中 0/5，請保持看著鏡頭..."];
             self->_exportFrameSkip = 0;
             self->_exportFramesRemaining.store(kDiagnosticExportFrames);
         });
-        // 6 秒內沒擷取滿 5 張 (例如相機暫停)，就把已擷取的檔案先打包
+        // 6 秒內沒擷取滿 5 張 (例如相機暫停)，就用已擷取的畫面完成
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(9.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             if (!self.exportFinished) {
                 self->_exportFramesRemaining.store(0);
-                [self finishDiagnosticExport];
+                dispatch_async(self->_exportQueue, ^{
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self finishDiagnosticExport];
+                    });
+                });
             }
         });
     }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
-// 背景佇列：寫出一張畫面的偵測數值 (JSON)、檢視用 PNG、重播用 PPM；每一步各自防護並記錄結果
+// 背景佇列：產生一張畫面的 PNG (存相簿用)、PPM 與 JSON (留在手機的進階檔案)，各步驟各自防護並記錄
 - (void)writeDiagnosticFrame:(const efd::RawFrame&)frame
                   diagnostic:(const efd::FaceLandmarker::PresenceDiagnostic&)d
                        index:(int)index {
@@ -1273,30 +1310,15 @@ static NSString *EFDSafeString(const std::string& s) {
     const bool isBgr = frame.format == efd::PixelFormat::BGR888;
     [self appendExportLog:[NSString stringWithFormat:@"%@ 開始 %dx%d synthetic=%d", base, w, h, frame.isSynthetic ? 1 : 0]];
 
-    // 1. 偵測數值 JSON (數值先檢查，避免 NaN 讓 NSJSONSerialization 拋出例外)
-    @try {
-        NSDictionary *json = @{
-            @"frame": @{@"width": @(w), @"height": @(h), @"synthetic": @(frame.isSynthetic)},
-            @"result": @{@"personInFrame": @(d.rawPersonInFrame), @"facingCamera": @(d.rawFacingCamera),
-                         @"failStage": EFDSafeString(d.failStage), @"reason": EFDSafeString(d.unconfirmedReason)},
-            @"skinBox": @[@(d.skinBoxX), @(d.skinBoxY), @(d.skinBoxW), @(d.skinBoxH)],
-            @"faceBox": @[@(d.faceBoxX), @(d.faceBoxY), @(d.faceBoxW), @(d.faceBoxH)],
-            @"skinPixels": @(d.skinPixels), @"avgSkinLum": @(d.avgSkinLum),
-            @"aspectRatio": EFDFiniteNumber(d.aspectRatio), @"fillDensity": EFDFiniteNumber(d.fillDensity),
-            @"symmetry": EFDFiniteNumber(d.symmetryRatio),
-            @"eyes": @{@"centerY": @(d.eyeCenterY),
-                       @"left": @{@"x": @(d.eyeCenterX[0]), @"dark": EFDFiniteNumber(d.eyeDarkFraction[0]),
-                                  @"contrast": EFDFiniteNumber(d.eyeContrast[0]), @"gradient": EFDFiniteNumber(d.eyeGradient[0])},
-                       @"right": @{@"x": @(d.eyeCenterX[1]), @"dark": EFDFiniteNumber(d.eyeDarkFraction[1]),
-                                   @"contrast": EFDFiniteNumber(d.eyeContrast[1]), @"gradient": EFDFiniteNumber(d.eyeGradient[1])}}
-        };
-        NSData *jsonData = [NSJSONSerialization isValidJSONObject:json]
-            ? [NSJSONSerialization dataWithJSONObject:json options:NSJSONWritingPrettyPrinted error:nil] : nil;
-        BOOL ok = jsonData && [jsonData writeToURL:[dir URLByAppendingPathComponent:[base stringByAppendingString:@".json"]] atomically:YES];
-        [self appendExportLog:[NSString stringWithFormat:@"%@.json %@", base, ok ? @"OK" : @"失敗"]];
-    } @catch (NSException *e) {
-        [self appendExportLog:[NSString stringWithFormat:@"%@.json 例外: %@", base, e.reason]];
-    }
+    // 每張畫面一行數值摘要 (會一起複製成文字)
+    NSString *summary = [NSString stringWithFormat:
+        @"#%d %@%@ 卡在:%@ 膚色區 %d,%d %dx%d 臉框 %d,%d %dx%d 亮度%d 左眼 暗%.2f 反%.0f 緣%.1f 右眼 暗%.2f 反%.0f 緣%.1f 對稱%.2f",
+        index, (d.rawPersonInFrame && d.rawFacingCamera) ? @"有人臉" : @"沒有人臉", d.presenceByTracking ? @"(追蹤)" : @"",
+        d.failStage.empty() ? @"-" : EFDSafeString(d.failStage),
+        d.skinBoxX, d.skinBoxY, d.skinBoxW, d.skinBoxH, d.faceBoxX, d.faceBoxY, d.faceBoxW, d.faceBoxH, d.avgSkinLum,
+        EFDFiniteNumber(d.eyeDarkFraction[0]).doubleValue, EFDFiniteNumber(d.eyeContrast[0]).doubleValue, EFDFiniteNumber(d.eyeGradient[0]).doubleValue,
+        EFDFiniteNumber(d.eyeDarkFraction[1]).doubleValue, EFDFiniteNumber(d.eyeContrast[1]).doubleValue, EFDFiniteNumber(d.eyeGradient[1]).doubleValue,
+        EFDFiniteNumber(d.symmetryRatio).doubleValue];
 
     // 轉為 RGB 位元組 (BGR 來源時交換 R/B)
     std::vector<uint8_t> rgb(static_cast<size_t>(w) * h * 3, 0);
@@ -1306,7 +1328,8 @@ static NSString *EFDSafeString(const std::string& s) {
         rgb[i + 2] = isBgr ? frame.data[i] : frame.data[i + 2];
     }
 
-    // 2. 檢視用 PNG (32 位元 RGBX，iOS 最標準的影像格式)
+    // 1. 影像 (32 位元 RGBX)：存相簿用，也存一份 PNG 在手機
+    UIImage *image = nil;
     @try {
         std::vector<uint8_t> rgbx(static_cast<size_t>(w) * h * 4, 255);
         for (size_t p = 0, q = 0; p + 2 < rgb.size(); p += 3, q += 4) {
@@ -1318,17 +1341,20 @@ static NSString *EFDSafeString(const std::string& s) {
         CGContextRef ctx = CGBitmapContextCreate(rgbx.data(), w, h, 8, w * 4, space,
                                                  kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big);
         CGImageRef cgImage = ctx ? CGBitmapContextCreateImage(ctx) : NULL;
-        NSData *png = cgImage ? UIImagePNGRepresentation([UIImage imageWithCGImage:cgImage]) : nil;
-        BOOL ok = png && [png writeToURL:[dir URLByAppendingPathComponent:[base stringByAppendingString:@".png"]] atomically:YES];
-        if (cgImage) CGImageRelease(cgImage);
+        if (cgImage) {
+            image = [UIImage imageWithCGImage:cgImage];
+            CGImageRelease(cgImage);
+        }
         if (ctx) CGContextRelease(ctx);
         CGColorSpaceRelease(space);
+        NSData *png = image ? UIImagePNGRepresentation(image) : nil;
+        BOOL ok = png && [png writeToURL:[dir URLByAppendingPathComponent:[base stringByAppendingString:@".png"]] atomically:YES];
         [self appendExportLog:[NSString stringWithFormat:@"%@.png %@", base, ok ? @"OK" : @"失敗"]];
     } @catch (NSException *e) {
         [self appendExportLog:[NSString stringWithFormat:@"%@.png 例外: %@", base, e.reason]];
     }
 
-    // 3. 重播用 PPM (efd_diag_replay 直接讀取)
+    // 2. 重播用 PPM (進階：留在「檔案」App)
     @try {
         NSMutableData *ppm = [NSMutableData dataWithData:[[NSString stringWithFormat:@"P6\n%d %d\n255\n", w, h] dataUsingEncoding:NSASCIIStringEncoding]];
         [ppm appendBytes:rgb.data() length:rgb.size()];
@@ -1338,64 +1364,92 @@ static NSString *EFDSafeString(const std::string& s) {
         [self appendExportLog:[NSString stringWithFormat:@"%@.ppm 例外: %@", base, e.reason]];
     }
 
-    if (index == kDiagnosticExportFrames) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self finishDiagnosticExport];
-        });
+    // 3. 數值 JSON (進階：留在「檔案」App)
+    @try {
+        NSDictionary *json = @{
+            @"frame": @{@"width": @(w), @"height": @(h), @"synthetic": @(frame.isSynthetic)},
+            @"result": @{@"personInFrame": @(d.rawPersonInFrame), @"facingCamera": @(d.rawFacingCamera),
+                         @"presenceByTracking": @(d.presenceByTracking),
+                         @"failStage": EFDSafeString(d.failStage), @"reason": EFDSafeString(d.unconfirmedReason)},
+            @"skinBox": @[@(d.skinBoxX), @(d.skinBoxY), @(d.skinBoxW), @(d.skinBoxH)],
+            @"faceBox": @[@(d.faceBoxX), @(d.faceBoxY), @(d.faceBoxW), @(d.faceBoxH)],
+            @"skinPixels": @(d.skinPixels), @"avgSkinLum": @(d.avgSkinLum),
+            @"aspectRatio": EFDFiniteNumber(d.aspectRatio), @"fillDensity": EFDFiniteNumber(d.fillDensity),
+            @"symmetry": EFDFiniteNumber(d.symmetryRatio)
+        };
+        NSData *jsonData = [NSJSONSerialization isValidJSONObject:json]
+            ? [NSJSONSerialization dataWithJSONObject:json options:NSJSONWritingPrettyPrinted error:nil] : nil;
+        BOOL ok = jsonData && [jsonData writeToURL:[dir URLByAppendingPathComponent:[base stringByAppendingString:@".json"]] atomically:YES];
+        [self appendExportLog:[NSString stringWithFormat:@"%@.json %@", base, ok ? @"OK" : @"失敗"]];
+    } @catch (NSException *e) {
+        [self appendExportLog:[NSString stringWithFormat:@"%@.json 例外: %@", base, e.reason]];
     }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self.exportSummary appendFormat:@"%@\n", summary];
+        if (image) {
+            [self.exportImages addObject:image];
+        }
+        [self showExportStatus:[NSString stringWithFormat:@"擷取中 %d/5，請保持看著鏡頭...", index]];
+        if (index == kDiagnosticExportFrames) {
+            [self finishDiagnosticExport];
+        }
+    });
 }
 
-// 寫入錯誤回報文字，把整個資料夾打包成一個 zip，再開啟分享選單
-// (LINE、AirDrop 一次分享多個不同類型的檔案時常只收到其中一個，打包成單一 zip 才不會漏)
+// 完成：畫面存到「照片」、數值複製成文字 (LINE 一次分享多個檔案時常只傳出一個，因此不用檔案分享)
 - (void)finishDiagnosticExport {
     if (self.exportFinished) return;
     self.exportFinished = YES;
+    [self hideExportStatus];
+
     NSString *report = [self diagnosticReportText];
-    NSString *stamp = self.exportStamp ?: @"efd";
-
+    NSString *clipboardText = [NSString stringWithFormat:@"%@\n--- 擷取的 %lu 張畫面 (%@) ---\n%@",
+                               report, (unsigned long)self.exportImages.count, self.exportStamp ?: @"", self.exportSummary ?: @""];
+    [UIPasteboard generalPasteboard].string = clipboardText;
     dispatch_async(_exportQueue, ^{
-        NSURL *dir = [self exportBatchDirectory];
-        [report writeToURL:[dir URLByAppendingPathComponent:@"report.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
-        [self appendExportLog:@"report.txt 已寫入，開始打包 zip"];
-
-        __block NSURL *zipURL = nil;
-        NSError *coordError = nil;
-        NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] init];
-        [coordinator coordinateReadingItemAtURL:dir
-                                        options:NSFileCoordinatorReadingForUploading
-                                          error:&coordError
-                                     byAccessor:^(NSURL *tempZip) {
-            NSURL *dest = [[self diagnosticsDirectory] URLByAppendingPathComponent:[NSString stringWithFormat:@"EFD_diag_%@.zip", stamp]];
-            [[NSFileManager defaultManager] removeItemAtURL:dest error:nil];
-            if ([[NSFileManager defaultManager] copyItemAtURL:tempZip toURL:dest error:nil]) {
-                zipURL = dest;
-            }
-        }];
-
-        NSArray *items = nil;
-        if (zipURL) {
-            items = @[zipURL];
-        } else {
-            // 打包失敗時退回逐檔分享
-            NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:dir includingPropertiesForKeys:nil options:0 error:nil];
-            items = files ?: @[];
-        }
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (items.count == 0) {
-                UIAlertController *fail = [UIAlertController alertControllerWithTitle:@"匯出失敗"
-                                                                              message:@"沒有擷取到畫面。請確認相機正在運作後再試一次，或改用「複製錯誤資訊」。"
-                                                                       preferredStyle:UIAlertControllerStyleAlert];
-                [fail addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-                [self presentViewController:fail animated:YES completion:nil];
-                return;
-            }
-            UIActivityViewController *share = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
-            share.popoverPresentationController.sourceView = self.view;
-            share.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width / 2, self.view.bounds.size.height / 2, 1, 1);
-            [self presentViewController:share animated:YES completion:nil];
-        });
+        [clipboardText writeToURL:[[self exportBatchDirectory] URLByAppendingPathComponent:@"report.txt"]
+                       atomically:YES encoding:NSUTF8StringEncoding error:nil];
     });
+
+    if (self.exportImages.count == 0) {
+        UIAlertController *fail = [UIAlertController alertControllerWithTitle:@"沒有擷取到畫面"
+                                                                      message:@"請確認相機正在運作後再試一次。錯誤資訊文字已複製，可以先貼給研究人員。"
+                                                               preferredStyle:UIAlertControllerStyleAlert];
+        [fail addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:fail animated:YES completion:nil];
+        return;
+    }
+
+    self.exportSavedCount = 0;
+    self.exportSaveFailed = NO;
+    self.exportPendingSaves = static_cast<int>(self.exportImages.count);
+    for (UIImage *image in self.exportImages) {
+        UIImageWriteToSavedPhotosAlbum(image, self, @selector(image:didFinishSavingWithError:contextInfo:), NULL);
+    }
+}
+
+// 每張照片存入相簿後回呼 (主執行緒)；全部完成時告訴使用者下一步
+- (void)image:(UIImage *)image didFinishSavingWithError:(NSError *)error contextInfo:(void *)contextInfo {
+    if (error) {
+        self.exportSaveFailed = YES;
+    } else {
+        self.exportSavedCount++;
+    }
+    if (--self.exportPendingSaves > 0) return;
+
+    NSString *title = nil;
+    NSString *message = nil;
+    if (self.exportSavedCount > 0) {
+        title = [NSString stringWithFormat:@"已存 %d 張照片，數值已複製", self.exportSavedCount];
+        message = @"請到 LINE：\n1. 從相簿選最新的這幾張照片傳送（可選「原始畫質」）\n2. 在對話框長按「貼上」，送出數值文字";
+    } else {
+        title = @"無法存到照片";
+        message = @"請到「設定」> EFD 疲勞檢測 > 照片，允許「僅加入照片」後再試一次。\n數值文字已複製，可以先貼給研究人員。";
+    }
+    UIAlertController *done = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [done addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:done animated:YES completion:nil];
 }
 
 - (void)onReturnToDashboardClicked {
