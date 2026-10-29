@@ -3,8 +3,17 @@
 //
 // 用法：efd_diag_replay <目錄或 .ppm 檔> [...]
 //       目錄會讀取其中 (含子資料夾) 所有 .ppm 檔 (例如專案根目錄的 debug_frames/)
+//       efd_diag_replay --capture <輸出.ppm> [相機編號，預設 0]
+//       用這台電腦的實體相機拍一張 (經過與 App 相同的驅動與色彩轉換)，存檔後一併判斷；
+//       用來檢查不同電腦的鏡頭格式 (畫面黑白條紋、偏紅等問題)
 
 #include "vision/FaceLandmarker.hpp"
+#include "vision/CameraService.hpp"
+
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
 
 #include <algorithm>
 #include <cstdint>
@@ -64,6 +73,41 @@ bool readPpm(const fs::path& path, std::vector<uint8_t>& rgb, int& width, int& h
     return static_cast<size_t>(in.gcount()) == rgb.size();
 }
 
+// 以實體相機擷取一張 (跳過前 30 幀讓自動曝光穩定)，存成 PPM
+bool captureFromCamera(const fs::path& out, int deviceIndex) {
+    efd::CameraService camera(640, 480, 30.0f);
+    std::mutex mutex;
+    efd::RawFrame captured;
+    std::atomic<int> frames{0};
+    camera.setFrameCallback([&](const efd::RawFrame& frame) {
+        if (frame.isSynthetic || !frame.isValid()) return;
+        if (++frames == 30) {
+            std::lock_guard<std::mutex> lock(mutex);
+            captured = frame;
+        }
+    });
+    if (!camera.start(deviceIndex)) {
+        std::cerr << "無法開啟相機\n";
+        return false;
+    }
+    for (int i = 0; i < 100 && frames.load() < 31; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    camera.stop();
+
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!captured.isValid()) {
+        std::cerr << "10 秒內沒有收到實體相機畫面 (收到 " << frames.load() << " 幀)\n";
+        return false;
+    }
+    std::ofstream file(out, std::ios::binary);
+    file << "P6\n" << captured.width << " " << captured.height << "\n255\n";
+    file.write(reinterpret_cast<const char*>(captured.data.data()),
+               static_cast<std::streamsize>(static_cast<size_t>(captured.width) * captured.height * 3));
+    std::cout << "已擷取相機畫面 " << captured.width << "x" << captured.height << " -> " << out.string() << "\n";
+    return true;
+}
+
 void collect(const fs::path& arg, std::vector<fs::path>& files) {
     if (fs::is_directory(arg)) {
         // 包含子資料夾：解壓縮 iOS 匯出的 zip 後會是 <時間>/frame_01.ppm ...
@@ -86,13 +130,21 @@ int main(int argc, char** argv) {
     SetConsoleOutputCP(CP_UTF8);
 #endif
     if (argc < 2) {
-        std::cerr << "用法: efd_diag_replay <目錄或 .ppm 檔> [...]\n";
+        std::cerr << "用法: efd_diag_replay <目錄或 .ppm 檔> [...]\n"
+                  << "      efd_diag_replay --capture <輸出.ppm> [相機編號]   (用這台電腦的相機拍一張並判斷)\n";
         return 2;
     }
 
     std::vector<fs::path> files;
-    for (int i = 1; i < argc; ++i) {
-        collect(fs::u8path(argv[i]), files);
+    if (std::string(argv[1]) == "--capture") {
+        const fs::path out = fs::u8path(argc >= 3 ? argv[2] : "camera_capture.ppm");
+        const int deviceIndex = (argc >= 4) ? std::atoi(argv[3]) : 0;
+        if (!captureFromCamera(out, deviceIndex)) return 1;
+        files.push_back(out);
+    } else {
+        for (int i = 1; i < argc; ++i) {
+            collect(fs::u8path(argv[i]), files);
+        }
     }
     std::sort(files.begin(), files.end());
     if (files.empty()) {

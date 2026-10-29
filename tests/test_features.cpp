@@ -28,6 +28,7 @@
 #include "platform/windows/SystemTrayManager.hpp"
 #include "ui/FatigueFloatingIndicator.hpp"
 #include "engine/AsyncPipelineEngine.hpp"
+#include "vision/drivers/PixelConverters.hpp"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -657,6 +658,77 @@ void testClosedEyesStillPresentAfterLock() {
     std::cout << " [PASS]\n";
 }
 
+void testCameraPixelFormatConversion() {
+    std::cout << "[TEST] 27. 測試 Windows 相機原生格式轉換 (NV12 黑白條紋、UYVY 偏色、stride 補齊、由下而上)...";
+    using namespace efd::pixel;
+    const int w = 640, h = 480, stride = 704;   // 每行補齊到 704 位元組 (常見於筆電鏡頭)
+    auto within3 = [](int a, int b) { return std::abs(a - b) <= 3; };
+
+    // 1. NV12：膚色 Y=160 U=110 V=145 → 約 (184, 154, 128)
+    std::vector<uint8_t> nv12(static_cast<size_t>(stride) * h * 3 / 2, 0);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) nv12[static_cast<size_t>(y) * stride + x] = 160;
+    }
+    for (int y = 0; y < h / 2; ++y) {
+        uint8_t* uv = nv12.data() + static_cast<size_t>(stride) * h + static_cast<size_t>(y) * stride;
+        for (int x = 0; x < w; x += 2) { uv[x] = 110; uv[x + 1] = 145; }
+    }
+    assert(requiredBytes(RawFormat::NV12, stride, h) == nv12.size());
+    std::vector<uint8_t> rgb(static_cast<size_t>(w) * h * 3);
+    nv12ToRgb888(nv12.data(), stride, w, h, rgb.data());
+    for (size_t p : {size_t(0), size_t(w * 3 * 240 + 320 * 3), rgb.size() - 3}) {   // 左上、中央、右下皆一致 (無斜切條紋)
+        assert(within3(rgb[p], 184) && within3(rgb[p + 1], 154) && within3(rgb[p + 2], 128));
+    }
+    // 舊版行為：NV12 直接當 RGB 讀取 → R≈G≈B (灰階)，這就是黑白條紋的來源
+    assert(std::abs(int(nv12[0]) - int(nv12[1])) < 5 && std::abs(int(nv12[1]) - int(nv12[2])) < 5);
+
+    // 2. UYVY 與 YUY2：同一個膚色，兩種排列都要解出相同顏色
+    std::vector<uint8_t> uyvy(static_cast<size_t>(w) * 2 * h), yuy2(static_cast<size_t>(w) * 2 * h);
+    for (size_t i = 0; i < uyvy.size(); i += 4) {
+        uyvy[i] = 110; uyvy[i + 1] = 160; uyvy[i + 2] = 145; uyvy[i + 3] = 160;
+        yuy2[i] = 160; yuy2[i + 1] = 110; yuy2[i + 2] = 160; yuy2[i + 3] = 145;
+    }
+    std::vector<uint8_t> rgbU(rgb.size()), rgbY(rgb.size()), rgbWrong(rgb.size());
+    uyvyToRgb888(uyvy.data(), w * 2, w, h, rgbU.data());
+    yuy2ToRgb888(yuy2.data(), w * 2, w, h, rgbY.data());
+    assert(within3(rgbU[0], 184) && within3(rgbU[1], 154) && within3(rgbU[2], 128));
+    assert(rgbU == rgbY);
+    // 舊版行為：UYVY 誤用 YUY2 解碼，顏色嚴重偏移
+    yuy2ToRgb888(uyvy.data(), w * 2, w, h, rgbWrong.data());
+    assert(std::abs(int(rgbWrong[0]) - 184) + std::abs(int(rgbWrong[1]) - 154) + std::abs(int(rgbWrong[2]) - 128) > 60);
+
+    // 3. 由下而上的 RGB32 (負 stride)：記憶體第一行是畫面最下方
+    const int bw = 4, bh = 2;
+    std::vector<uint8_t> bgra(static_cast<size_t>(bw) * 4 * bh);
+    for (int x = 0; x < bw; ++x) {
+        uint8_t* bottom = bgra.data() + x * 4;            // 記憶體第 0 行 = 畫面下方：藍色
+        uint8_t* top = bgra.data() + bw * 4 + x * 4;      // 記憶體第 1 行 = 畫面上方：紅色
+        bottom[0] = 255; bottom[1] = 0; bottom[2] = 0;
+        top[0] = 0; top[1] = 0; top[2] = 255;
+    }
+    std::vector<uint8_t> rgbFlip(static_cast<size_t>(bw) * bh * 3);
+    bgraToRgb888(bgra.data() + bw * 4 * (bh - 1), -(bw * 4), bw, bh, rgbFlip.data());
+    assert(rgbFlip[0] == 255 && rgbFlip[2] == 0);                   // 輸出第一行為紅色 (畫面上方)
+    assert(rgbFlip[bw * 3] == 0 && rgbFlip[bw * 3 + 2] == 255);     // 輸出第二行為藍色
+
+    // 4. 長度不足時應被拒絕 (例如相機實際是 1280x720，卻當成 640x480)
+    assert(requiredBytes(RawFormat::YUY2, 1280 * 2, 720) > static_cast<size_t>(640 * 480 * 2));
+
+    // 5. 720p 整數倍縮小：1280x720 -> 640x360，維持長寬比，2x2 區塊取平均
+    std::vector<uint8_t> big(static_cast<size_t>(1280) * 720 * 3), halfImg(static_cast<size_t>(640) * 360 * 3);
+    for (size_t i = 0; i < big.size(); i += 3) {
+        const size_t px = i / 3;
+        const bool odd = ((px % 1280) % 2) == 1;
+        big[i] = odd ? 200 : 100; big[i + 1] = 50; big[i + 2] = 10;
+    }
+    downscaleRgb888(big.data(), 1280, 720, 2, halfImg.data());
+    assert(halfImg[0] == 150 && halfImg[1] == 50 && halfImg[2] == 10);
+    assert(halfImg[halfImg.size() - 3] == 150);
+
+    std::cout << " [PASS] (NV12 膚色 " << int(rgb[0]) << "," << int(rgb[1]) << "," << int(rgb[2])
+              << "；UYVY 誤用 YUY2 時為 " << int(rgbWrong[0]) << "," << int(rgbWrong[1]) << "," << int(rgbWrong[2]) << ")\n";
+}
+
 void testPlatformLifecycleAdapter() {
     std::cout << "[TEST] 6. 測試跨平台生命週期適配器 (PlatformLifecycleAdapter)...";
     efd::PlatformLifecycleAdapter adapter(efd::PlatformType::Windows);
@@ -1138,7 +1210,8 @@ int main() {
     testFaceSeparatedFromLargerSkinColoredShirt();
     testWarmLitWallIsNotSkin();
     testClosedEyesStillPresentAfterLock();
+    testCameraPixelFormatConversion();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 26 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 27 項測試順利通過！\n";
     return 0;
 }

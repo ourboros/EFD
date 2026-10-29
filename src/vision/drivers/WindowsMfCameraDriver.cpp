@@ -3,6 +3,7 @@
 #include <chrono>
 #include <vector>
 #include <algorithm>
+#include <cstdlib>
 
 #ifdef _WIN32
 #pragma comment(lib, "mf.lib")
@@ -15,52 +16,23 @@ namespace efd {
 
 namespace {
 
-// 快速 YUY2 轉 RGB888 色彩空間轉換器
-inline void yuy2ToRgb888(const uint8_t* yuy2, uint8_t* rgb, int numPixels) {
-    for (int i = 0; i < numPixels; i += 2) {
-        int y0 = yuy2[0];
-        int u  = yuy2[1] - 128;
-        int y1 = yuy2[2];
-        int v  = yuy2[3] - 128;
-        yuy2 += 4;
-
-        int r0 = std::clamp(y0 + ((359 * v) >> 8), 0, 255);
-        int g0 = std::clamp(y0 - ((88 * u + 183 * v) >> 8), 0, 255);
-        int b0 = std::clamp(y0 + ((454 * u) >> 8), 0, 255);
-
-        int r1 = std::clamp(y1 + ((359 * v) >> 8), 0, 255);
-        int g1 = std::clamp(y1 - ((88 * u + 183 * v) >> 8), 0, 255);
-        int b1 = std::clamp(y1 + ((454 * u) >> 8), 0, 255);
-
-        rgb[0] = static_cast<uint8_t>(r0);
-        rgb[1] = static_cast<uint8_t>(g0);
-        rgb[2] = static_cast<uint8_t>(b0);
-        rgb[3] = static_cast<uint8_t>(r1);
-        rgb[4] = static_cast<uint8_t>(g1);
-        rgb[5] = static_cast<uint8_t>(b1);
-        rgb += 6;
-    }
+pixel::RawFormat rawFormatFromSubtype(const GUID& subtype) {
+    if (subtype == MFVideoFormat_NV12)  return pixel::RawFormat::NV12;
+    if (subtype == MFVideoFormat_YUY2)  return pixel::RawFormat::YUY2;
+    if (subtype == MFVideoFormat_UYVY)  return pixel::RawFormat::UYVY;
+    if (subtype == MFVideoFormat_RGB24) return pixel::RawFormat::RGB24;
+    if (subtype == MFVideoFormat_RGB32) return pixel::RawFormat::RGB32;
+    return pixel::RawFormat::Unknown;
 }
 
-// 快速 BGR24 轉 RGB888 色彩空間轉換器 (Windows MF RGB24 記憶體排列為 BGR)
-inline void bgr24ToRgb888(const uint8_t* bgr, uint8_t* rgb, int numPixels) {
-    for (int i = 0; i < numPixels; ++i) {
-        rgb[0] = bgr[2]; // R
-        rgb[1] = bgr[1]; // G
-        rgb[2] = bgr[0]; // B
-        bgr += 3;
-        rgb += 3;
-    }
-}
-
-// 快速 BGRA/BGRX 轉 RGB888 色彩空間轉換器
-inline void bgraToRgb888(const uint8_t* bgra, uint8_t* rgb, int numPixels) {
-    for (int i = 0; i < numPixels; ++i) {
-        rgb[0] = bgra[2]; // R
-        rgb[1] = bgra[1]; // G
-        rgb[2] = bgra[0]; // B
-        bgra += 4;
-        rgb += 3;
+const char* rawFormatName(pixel::RawFormat format) {
+    switch (format) {
+    case pixel::RawFormat::NV12:  return "NV12";
+    case pixel::RawFormat::YUY2:  return "YUY2";
+    case pixel::RawFormat::UYVY:  return "UYVY";
+    case pixel::RawFormat::RGB24: return "RGB24";
+    case pixel::RawFormat::RGB32: return "RGB32";
+    default:                      return "未支援";
     }
 }
 
@@ -228,44 +200,145 @@ bool WindowsMfCameraDriver::open(const CameraConfig& config) {
         return false;
     }
 
-    // 4. 設定輸出格式：優先嘗試 RGB24，若失敗則嘗試 RGB32
-    bool formatConfigured = false;
-    
-    // 嘗試 RGB24
-    {
-        IMFMediaType* pMediaType = nullptr;
-        if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
-            pMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-            pMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB24);
-            MFSetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, config.width, config.height);
+    // 4. 設定輸出格式：
+    //    (1) 從相機原生格式中挑最接近目標解析度者 (相機不一定支援 640x480，硬要求會失敗)
+    //    (2) 請 SourceReader 只做色彩轉換成 RGB32 / RGB24 (同解析度；MJPG 等壓縮格式也會自動解碼)
+    //    (3) 轉換失敗時保留原生 NV12 / YUY2 / UYVY 等格式，由本驅動自行解碼
+    //    最後一律查詢實際生效的格式、解析度與 stride，不再假設 640x480 RGB
+    const int targetW = config.width > 0 ? config.width : 640;
+    const int targetH = config.height > 0 ? config.height : 480;
+    selectNativeMediaType(targetW, targetH);
 
-            if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
-                formatConfigured = true;
-            }
-            pMediaType->Release();
+    UINT32 nativeW = 0, nativeH = 0;
+    {
+        IMFMediaType* current = nullptr;
+        if (SUCCEEDED(m_pSourceReader->GetCurrentMediaType(
+                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), &current)) && current) {
+            MFGetAttributeSize(current, MF_MT_FRAME_SIZE, &nativeW, &nativeH);
+            current->Release();
         }
     }
-
-    // 若 RGB24 失敗，嘗試 RGB32
-    if (!formatConfigured) {
-        IMFMediaType* pMediaType = nullptr;
-        if (SUCCEEDED(MFCreateMediaType(&pMediaType))) {
-            pMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-            pMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
-            MFSetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, config.width, config.height);
-
-            if (SUCCEEDED(m_pSourceReader->SetCurrentMediaType(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), NULL, pMediaType))) {
-                formatConfigured = true;
-            }
-            pMediaType->Release();
-        }
+    // 原生解析度大於目標寬度時，請系統依原比例縮小 (例如 1280x720 -> 640x360，不把 16:9 壓成 4:3)；
+    // 不支援縮放的電腦則改用原生解析度
+    UINT32 scaledW = nativeW, scaledH = nativeH;
+    if (nativeW > static_cast<UINT32>(targetW) && nativeH > 0) {
+        scaledW = static_cast<UINT32>(targetW);
+        scaledH = static_cast<UINT32>((static_cast<unsigned long long>(nativeH) * targetW / nativeW) & ~1ULL);
+    }
+    const bool converted =
+        requestOutputSubtype(MFVideoFormat_RGB32, scaledW, scaledH) ||
+        requestOutputSubtype(MFVideoFormat_RGB24, scaledW, scaledH) ||
+        requestOutputSubtype(MFVideoFormat_RGB32, nativeW, nativeH) ||
+        requestOutputSubtype(MFVideoFormat_RGB24, nativeW, nativeH);
+    if (!converted) {
+        std::cout << "[WindowsMfCameraDriver] 系統無法轉成 RGB，改由驅動直接解碼原生格式\n";
+    }
+    if (!refreshCurrentMediaType() || m_actualFormat == pixel::RawFormat::Unknown) {
+        std::cout << "[WindowsMfCameraDriver] 相機輸出格式無法解碼，放棄使用此鏡頭\n";
+        m_pSourceReader->Release();
+        m_pSourceReader = nullptr;
+        m_pMediaSource->Shutdown();
+        m_pMediaSource->Release();
+        m_pMediaSource = nullptr;
+        return false;
     }
 
     m_isRunning.store(true);
     m_workerThread = std::thread(&WindowsMfCameraDriver::captureLoop, this);
     return true;
+}
+
+void WindowsMfCameraDriver::selectNativeMediaType(int targetWidth, int targetHeight) {
+    const DWORD stream = static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM);
+    IMFMediaType* best = nullptr;
+    long long bestScore = -1;
+    UINT32 bestW = 0, bestH = 0;
+    double bestFps = 0.0;
+    DWORD nativeCount = 0;
+
+    for (DWORD i = 0; ; ++i) {
+        IMFMediaType* type = nullptr;
+        if (FAILED(m_pSourceReader->GetNativeMediaType(stream, i, &type)) || !type) break;
+
+        UINT32 w = 0, h = 0, num = 0, den = 0;
+        MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &w, &h);
+        MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &num, &den);
+        const double fps = (den > 0) ? static_cast<double>(num) / den : 30.0;
+
+        // 解析度越接近目標越好；低於 15 fps 的模式不適合眨眼偵測
+        long long score = std::llabs(static_cast<long long>(w) - targetWidth) +
+                          std::llabs(static_cast<long long>(h) - targetHeight);
+        if (fps < 15.0) score += 100000;
+        if (w == 0 || h == 0) score += 1000000;
+
+        ++nativeCount;
+        if (bestScore < 0 || score < bestScore) {
+            if (best) best->Release();
+            best = type;
+            bestScore = score;
+            bestW = w;
+            bestH = h;
+            bestFps = fps;
+        } else {
+            type->Release();
+        }
+    }
+
+    if (best) {
+        const HRESULT hr = m_pSourceReader->SetCurrentMediaType(stream, NULL, best);
+        std::cout << "[WindowsMfCameraDriver] 相機原生格式 " << nativeCount << " 種，選用 " << bestW << "x" << bestH
+                  << " @" << static_cast<int>(bestFps + 0.5) << "fps" << (SUCCEEDED(hr) ? "" : " (設定失敗，沿用預設)") << "\n";
+        best->Release();
+    }
+}
+
+bool WindowsMfCameraDriver::requestOutputSubtype(const GUID& subtype, UINT32 w, UINT32 h) {
+    const DWORD stream = static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM);
+    IMFMediaType* type = nullptr;
+    if (FAILED(MFCreateMediaType(&type))) return false;
+    type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+    type->SetGUID(MF_MT_SUBTYPE, subtype);
+    if (w > 0 && h > 0) {
+        MFSetAttributeSize(type, MF_MT_FRAME_SIZE, w, h);
+    }
+    const bool ok = SUCCEEDED(m_pSourceReader->SetCurrentMediaType(stream, NULL, type));
+    type->Release();
+    return ok;
+}
+
+bool WindowsMfCameraDriver::refreshCurrentMediaType() {
+    IMFMediaType* current = nullptr;
+    if (FAILED(m_pSourceReader->GetCurrentMediaType(
+            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), &current)) || !current) {
+        return false;
+    }
+
+    UINT32 w = 0, h = 0;
+    MFGetAttributeSize(current, MF_MT_FRAME_SIZE, &w, &h);
+    GUID subtype = GUID_NULL;
+    current->GetGUID(MF_MT_SUBTYPE, &subtype);
+
+    m_actualWidth = static_cast<int>(w);
+    m_actualHeight = static_cast<int>(h);
+    m_actualFormat = rawFormatFromSubtype(subtype);
+
+    // stride：優先使用 MF_MT_DEFAULT_STRIDE (負數代表由下而上)，否則依格式計算
+    UINT32 strideAttr = 0;
+    if (SUCCEEDED(current->GetUINT32(MF_MT_DEFAULT_STRIDE, &strideAttr))) {
+        m_actualStride = static_cast<int>(static_cast<INT32>(strideAttr));
+    } else {
+        LONG stride = 0;
+        if (SUCCEEDED(MFGetStrideForBitmapInfoHeader(subtype.Data1, w, &stride)) && stride != 0) {
+            m_actualStride = static_cast<int>(stride);
+        } else {
+            m_actualStride = pixel::minimumStride(m_actualFormat, m_actualWidth);
+        }
+    }
+    current->Release();
+
+    std::cout << "[WindowsMfCameraDriver] 相機實際輸出格式: " << rawFormatName(m_actualFormat) << " "
+              << m_actualWidth << "x" << m_actualHeight << " stride=" << m_actualStride << "\n";
+    return m_actualWidth > 0 && m_actualHeight > 0;
 }
 
 void WindowsMfCameraDriver::close() {
@@ -303,11 +376,8 @@ void WindowsMfCameraDriver::captureLoop() {
     float fps = (m_config.fps > 0.0f) ? m_config.fps : 30.0f;
     const auto minFrameInterval = std::chrono::microseconds(static_cast<int64_t>(1000000.0f / (fps * 1.2f)));
 
-    int targetW = m_config.width > 0 ? m_config.width : 640;
-    int targetH = m_config.height > 0 ? m_config.height : 480;
-    int numPixels = targetW * targetH;
-
-    std::vector<uint8_t> rgbBuffer(numPixels * 3, 0);
+    std::vector<uint8_t> rgbBuffer;
+    const int targetWidth = m_config.width > 0 ? m_config.width : 640;
 
     while (m_isRunning.load()) {
         auto loopStart = std::chrono::steady_clock::now();
@@ -328,48 +398,89 @@ void WindowsMfCameraDriver::captureLoop() {
             &pSample
         );
 
+        // 相機中途切換格式 (例如插拔、驅動調整) 時重新查詢
+        if (SUCCEEDED(hr) && (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)) {
+            refreshCurrentMediaType();
+        }
+
         if (SUCCEEDED(hr) && pSample) {
             IMFMediaBuffer* pBuffer = nullptr;
             hr = pSample->ConvertToContiguousBuffer(&pBuffer);
 
             if (SUCCEEDED(hr) && pBuffer) {
-                BYTE* pData = nullptr;
-                DWORD currentLength = 0;
-                hr = pBuffer->Lock(&pData, NULL, &currentLength);
+                const int w = m_actualWidth;
+                const int h = m_actualHeight;
+                const pixel::RawFormat format = m_actualFormat;
 
-                if (SUCCEEDED(hr) && pData && currentLength > 0) {
+                // 優先用 IMF2DBuffer 取得實際的行首與 pitch (含行尾補齊、由下而上的負 pitch)
+                IMF2DBuffer* p2D = nullptr;
+                BYTE* pTopRow = nullptr;
+                LONG pitch = 0;
+                DWORD bufferLength = 0;
+                bool locked2D = false;
+                BYTE* pData = nullptr;
+                pBuffer->GetCurrentLength(&bufferLength);
+                if (SUCCEEDED(pBuffer->QueryInterface(IID_PPV_ARGS(&p2D))) && p2D) {
+                    if (SUCCEEDED(p2D->Lock2D(&pTopRow, &pitch))) {
+                        locked2D = true;
+                    }
+                }
+                if (!locked2D) {
+                    // 一般緩衝區：stride 取自媒體類型；負 stride 時第一行 (畫面最上方) 在緩衝區尾端
+                    if (SUCCEEDED(pBuffer->Lock(&pData, NULL, &bufferLength)) && pData) {
+                        pitch = (m_actualStride != 0) ? m_actualStride : pixel::minimumStride(format, w);
+                        pTopRow = (pitch < 0) ? pData + static_cast<ptrdiff_t>(-pitch) * (h - 1) : pData;
+                    }
+                }
+
+                const int absPitch = (pitch < 0) ? -pitch : pitch;
+                const size_t needed = pixel::requiredBytes(format, absPitch, h);
+                const bool sizeOk = pTopRow && w > 0 && h > 0 &&
+                                    absPitch >= pixel::minimumStride(format, w) &&
+                                    needed > 0 && needed <= bufferLength;
+
+                if (sizeOk) {
+                    rgbBuffer.resize(static_cast<size_t>(w) * h * 3);
+                    switch (format) {
+                    case pixel::RawFormat::NV12:  pixel::nv12ToRgb888(pTopRow, pitch, w, h, rgbBuffer.data()); break;
+                    case pixel::RawFormat::YUY2:  pixel::yuy2ToRgb888(pTopRow, pitch, w, h, rgbBuffer.data()); break;
+                    case pixel::RawFormat::UYVY:  pixel::uyvyToRgb888(pTopRow, pitch, w, h, rgbBuffer.data()); break;
+                    case pixel::RawFormat::RGB24: pixel::bgr24ToRgb888(pTopRow, pitch, w, h, rgbBuffer.data()); break;
+                    case pixel::RawFormat::RGB32: pixel::bgraToRgb888(pTopRow, pitch, w, h, rgbBuffer.data()); break;
+                    default: break;
+                    }
+
                     RawFrame frame;
-                    frame.width = targetW;
-                    frame.height = targetH;
                     frame.channels = 3;
                     frame.format = PixelFormat::RGB888;
                     frame.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
 
-                    // 依據緩衝區大小自動適配格式
-                    if (currentLength == static_cast<DWORD>(numPixels * 3)) {
-                        // BGR24 轉 RGB888
-                        bgr24ToRgb888(pData, rgbBuffer.data(), numPixels);
-                        frame.data = rgbBuffer;
-                    } else if (currentLength == static_cast<DWORD>(numPixels * 4)) {
-                        // BGRA32 轉 RGB888
-                        bgraToRgb888(pData, rgbBuffer.data(), numPixels);
-                        frame.data = rgbBuffer;
-                    } else if (currentLength == static_cast<DWORD>(numPixels * 2)) {
-                        // YUY2 轉 RGB888
-                        yuy2ToRgb888(pData, rgbBuffer.data(), numPixels);
-                        frame.data = rgbBuffer;
+                    // 720p / 1080p 鏡頭：整數倍縮小到寬約 640 (偵測參數以此尺寸調校，與 iPhone 480x640 相近)
+                    const int factor = std::max(1, w / std::max(1, targetWidth));
+                    if (factor >= 2) {
+                        frame.width = w / factor;
+                        frame.height = h / factor;
+                        frame.data.resize(static_cast<size_t>(frame.width) * frame.height * 3);
+                        pixel::downscaleRgb888(rgbBuffer.data(), w, h, factor, frame.data.data());
                     } else {
-                        // 其他尺寸直接複製
-                        frame.data.assign(pData, pData + currentLength);
+                        frame.width = w;
+                        frame.height = h;
+                        frame.data = rgbBuffer;
                     }
 
                     if (m_frameCallback) {
                         m_frameCallback(frame);
                     }
+                }
+                // 緩衝區長度不符合格式時略過該幀 (避免越界讀取或把原始資料當成 RGB)
 
+                if (locked2D) {
+                    p2D->Unlock2D();
+                } else if (pData) {
                     pBuffer->Unlock();
                 }
+                if (p2D) p2D->Release();
                 pBuffer->Release();
             }
             pSample->Release();

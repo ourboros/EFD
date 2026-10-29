@@ -190,7 +190,7 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 
 | 平台        | 常駐機制 (Background Mode)                                            | 視訊擷取 (Camera Input)                   | 資料目錄 / 每日同步                               |
 | :---------- | :-------------------------------------------------------------------- | :---------------------------------------- | :------------------------------------------------ |
-| **Windows** | 最小化至系統托盤 (System Tray)，背景持續偵測                          | Media Foundation                          | 執行檔工作目錄；C++ 引擎 21:00 同步 + 補傳 (PowerShell) |
+| **Windows** | 最小化至系統托盤 (System Tray)，背景持續偵測                          | Media Foundation：選最接近 640x480 的原生格式，請系統轉 RGB32/RGB24，失敗時自行解碼 NV12 / YUY2 / UYVY；依實際解析度、stride (含行尾補齊、由下而上) 讀取，720p 以上整數倍縮到寬約 640 (第 27 項測試) | 執行檔工作目錄；C++ 引擎 21:00 同步 + 補傳 (PowerShell) |
 | **macOS**   | 頂部選單列狀態圖示 (Status Bar Item)，背景持續偵測                    | AVFoundation                              | `~/Library/Application Support/EFD`；C++ 引擎同步 + 補傳 (NSURLSession) |
 | **Android** | **前景服務 (camera 類型)** 擁有偵測引擎，App 介面被劃掉後仍持續偵測與提醒；首次進入監控頁引導加入電池最佳化白名單。Android 14+ 不允許開機自動開相機，改發「點此開始今日偵測」通知 | CameraX (ImageAnalysis) → JNI | `filesDir`；Java `EfdSyncManager` 21:00 鬧鐘 + 補傳 + 失敗 10 分鐘重試 (C++ 端同步關閉) |
 | **iOS**     | **iOS 不允許背景使用相機**：只在前景偵測；進入背景時暫停並保存冷卻狀態，排定一次休息提醒 (冷卻中延到冷卻結束) | AVFoundation / AVCaptureSession           | `Application Support/EFD`；開啟/回前景時補傳 + BGAppRefreshTask (執行時間由 iOS 決定) |
