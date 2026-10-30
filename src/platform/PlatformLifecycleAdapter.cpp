@@ -6,18 +6,6 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-#elif defined(__APPLE__)
-#include <TargetConditionals.h>
-#if TARGET_OS_OSX
-#define EFD_MACOS_DESKTOP 1
-#include <cerrno>
-#include <climits>
-#include <cstdlib>
-#include <fstream>
-#include <mach-o/dyld.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 #endif
 
 namespace efd {
@@ -37,9 +25,7 @@ PlatformType PlatformLifecycleAdapter::getPlatformType() const {
 std::string PlatformLifecycleAdapter::getPlatformName() const {
     switch (m_platform) {
         case PlatformType::Windows: return "Windows (x64/ARM64)";
-        case PlatformType::macOS:   return "macOS (Apple Silicon/Intel)";
         case PlatformType::Android: return "Android (NDK/Java)";
-        case PlatformType::iOS:     return "iOS (Obj-C++/Metal)";
         default:                    return "Generic C++ Platform";
     }
 }
@@ -95,11 +81,11 @@ bool PlatformLifecycleAdapter::supportsForegroundService() const {
 }
 
 bool PlatformLifecycleAdapter::supportsSystemTray() const {
-    return (m_platform == PlatformType::Windows || m_platform == PlatformType::macOS);
+    return (m_platform == PlatformType::Windows);
 }
 
 bool PlatformLifecycleAdapter::supportsHotResume() const {
-    return (m_platform == PlatformType::iOS || m_platform == PlatformType::Android);
+    return (m_platform == PlatformType::Android);
 }
 
 namespace {
@@ -115,28 +101,6 @@ std::wstring legacyStartupShortcutPath() {
     }
     return L"";
 }
-#elif defined(EFD_MACOS_DESKTOP)
-const char* kLaunchAgentLabel = "com.efd.EyeFatigueDetection";
-
-std::string launchAgentPlistPath() {
-    const char* home = std::getenv("HOME");
-    if (!home || !*home) return "";
-    return std::string(home) + "/Library/LaunchAgents/" + kLaunchAgentLabel + ".plist";
-}
-
-std::string xmlEscape(const std::string& s) {
-    std::string out;
-    for (char c : s) {
-        switch (c) {
-            case '&': out += "&amp;"; break;
-            case '<': out += "&lt;"; break;
-            case '>': out += "&gt;"; break;
-            case '"': out += "&quot;"; break;
-            default:  out += c; break;
-        }
-    }
-    return out;
-}
 #endif
 } // anonymous namespace
 
@@ -150,12 +114,8 @@ bool PlatformLifecycleAdapter::isAutoStartEnabled() const {
     LONG result = RegQueryValueExW(hKey, kRunValueName, nullptr, &type, nullptr, nullptr);
     RegCloseKey(hKey);
     return (result == ERROR_SUCCESS);
-#elif defined(EFD_MACOS_DESKTOP)
-    std::string path = launchAgentPlistPath();
-    struct stat st{};
-    return !path.empty() && ::stat(path.c_str(), &st) == 0;
 #else
-    // iOS / Android 不支援由 App 設定開機自動啟動
+    // Android 不支援由 App 設定開機自動啟動 (改由開機通知提醒)
     return false;
 #endif
 }
@@ -190,38 +150,6 @@ bool PlatformLifecycleAdapter::setAutoStartEnabled(bool enable) {
     }
     RegCloseKey(hKey);
     return result == ERROR_SUCCESS;
-#elif defined(EFD_MACOS_DESKTOP)
-    std::string plistPath = launchAgentPlistPath();
-    if (plistPath.empty()) return false;
-
-    if (!enable) {
-        return ::unlink(plistPath.c_str()) == 0 || errno == ENOENT;
-    }
-
-    char exeBuf[PATH_MAX];
-    uint32_t size = sizeof(exeBuf);
-    if (_NSGetExecutablePath(exeBuf, &size) != 0) return false;
-    char resolved[PATH_MAX];
-    std::string exePath = ::realpath(exeBuf, resolved) ? resolved : exeBuf;
-
-    // 確保 ~/Library/LaunchAgents 存在
-    std::string dir = plistPath.substr(0, plistPath.find_last_of('/'));
-    ::mkdir(dir.c_str(), 0755);
-
-    std::ofstream out(plistPath, std::ios::trunc);
-    if (!out.is_open()) return false;
-    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        << "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-        << "<plist version=\"1.0\">\n<dict>\n"
-        << "    <key>Label</key>\n    <string>" << kLaunchAgentLabel << "</string>\n"
-        << "    <key>ProgramArguments</key>\n    <array>\n"
-        << "        <string>" << xmlEscape(exePath) << "</string>\n"
-        << "        <string>--background</string>\n"
-        << "    </array>\n"
-        << "    <key>RunAtLoad</key>\n    <true/>\n"
-        << "    <key>ProcessType</key>\n    <string>Interactive</string>\n"
-        << "</dict>\n</plist>\n";
-    return out.good();
 #else
     (void)enable;
     return false;

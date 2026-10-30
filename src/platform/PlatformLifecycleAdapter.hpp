@@ -11,15 +11,13 @@ namespace efd {
 
 enum class PlatformType : uint8_t {
     Windows,
-    macOS,
     Android,
-    iOS,
     Generic
 };
 
 enum class AppLifecycleState : uint8_t {
     Active,      // 前景活躍運行中
-    Background,  // 切換至背景 (Android 後台服務 / iOS 背景狀態)
+    Background,  // 切換至背景 (Android 後台服務)
     Suspended,   // 系統休眠或鎖屏掛起
     Resumed,     // 從休眠或背景中喚醒
     Terminating  // 應用程式關閉前夕
@@ -49,7 +47,7 @@ public:
     // 註冊生命週期變更回呼
     void setLifecycleCallback(LifecycleCallback callback);
 
-    // 觸發生命週期轉換 (由各平台原生系統事件呼叫，如 Android Activity / iOS AppDelegate / Windows WndProc)
+    // 觸發生命週期轉換 (由各平台原生系統事件呼叫，如 Android Activity / Windows WndProc)
     void transitionTo(AppLifecycleState newState, const std::string& details = "");
 
     // 模擬或通知系統睡眠 / 進入背景
@@ -63,7 +61,7 @@ public:
     bool supportsSystemTray() const;
     bool supportsHotResume() const;
 
-    // 開機自動啟動 (支援 Windows 登錄檔 / macOS LaunchAgents)
+    // 開機自動啟動 (Windows 登錄檔；Android 不支援)
     bool isAutoStartEnabled() const;
     bool setAutoStartEnabled(bool enable);
 

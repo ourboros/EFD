@@ -18,9 +18,7 @@
 graph TD
     subgraph Layer1 [1. 表現與互動層 Presentation & UI Layer]
         WIN_UI[Windows: Win32/GDI+ 歡迎導引視窗 / 懸浮 HUD / 系統托盤]
-        IOS_UI[iOS: UIKit/ObjC++ 全響應式 RWD 視圖 / 4:3 原生預覽 / 本地通知]
         AND_UI[Android: CameraX / 前景常駐服務 / 懸浮窗 HUD]
-        MAC_UI[macOS: Cocoa / Status Item 狀態列]
     end
 
     subgraph Layer2 [2. 狀態決策與科研管線層 State & Workflow Layer]
@@ -31,7 +29,7 @@ graph TD
 
     subgraph Layer3 [3. 感知計算與訊號分析層 Perception & Signal Engine]
         APE[AsyncPipelineEngine: 5 執行緒高並行無鎖/條件變數管線]
-        CHAL[Camera HAL: WMF / Camera2 / AVFoundation / Synthetic]
+        CHAL[Camera HAL: WMF / CameraX (JNI) / Synthetic]
         FL[FaceLandmarker: 468點人臉網格 / 真人膚色AOI對比定位]
         FE[FeatureExtractor: 雙眼 6 點 EAR / PERCLOS / 生理學眨眼計數]
         AB[AdaptiveBaseline: 動態雙門檻滑動窗口自適應]
@@ -55,12 +53,12 @@ graph TD
 | 功能模組 | 技術實現 | 功能說明 |
 | :--- | :--- | :--- |
 | **五執行緒異步管線** | `AsyncPipelineEngine` | 包含相機採集線程、視覺特徵推論線程、訊號與狀態分析線程、本地資料庫落盤線程與雲端同步線程，保證 UI 永遠維持 60 FPS 流暢無卡頓。 |
-| **多硬體相機抽象層 (HAL)** | `CameraService` | 統一封裝 Windows Media Foundation、Android Camera2/CameraX、Apple AVFoundation 與 Synthetic 虛擬測試相機，支援實體鏡頭斷線無縫自動熱回退。 |
+| **多硬體相機抽象層 (HAL)** | `CameraService` | 統一封裝 Windows Media Foundation、Android CameraX 與 Synthetic 虛擬測試相機，支援實體鏡頭斷線無縫自動熱回退。 |
 | **動態基線自我校準** | `AdaptiveBaseline` | 具備「抗微睡眠污染」機制，僅採集清醒睜眼區間；裝置喚醒時啟動 1 秒「熱重啟快速再校準」，消除坐姿與環境光照漂移。 |
 | **非線性動態複雜度分析** | `EmdCalculator` + `MseCalculator` | 對 EAR 時序訊號進行經驗模態分解（EMD）過濾高頻眼顫雜訊，再透過多尺度熵（MSE, 尺度 1~5）計算複雜度指數（CI），辨識大腦中樞神經調節疲勞度。 |
 | **20/5/5 智能防打擾干預** | `FatigueStateMachine` | 60 秒平滑分數 ≥ 65 持續 10 秒才提醒，之後 20 分鐘不再提醒；冷卻期滿每 5 分鐘以平均分數快篩一次；離座滿 5 分鐘視為已休息並清除冷卻。完整規格見 `System design.md` 第 5.2 節。 |
 | **14 天科研週期管理** | `StudyWorkflowTracker` | 自動累計受試天數；每晚 21:00 定時觸發完整性簽章上傳；第 14 天強制跳轉後測問卷（Google 表單），並回傳防偽解鎖憑證（`EFD-14D-XXXX-XXXX`）。 |
-| **跨平台原生資料同步** | `NetworkSyncWorker` | Windows 端採用 PowerShell，Apple 端（iOS/macOS）採用原生 `NSURLSession` HTTPS，自動封裝時序資料並寫入 Google 試算表。 |
+| **跨平台原生資料同步** | `NetworkSyncWorker` | Windows 端採用 PowerShell，Android 端由 Java 層 HTTPS 上傳，自動封裝時序資料並寫入 Google 試算表。 |
 
 ---
 
@@ -74,7 +72,7 @@ graph TD
 * **深墨黑（Text Dark, `#25291C`）**：卡片文字與數據數值專用色，防強烈刺眼。
 * **警戒珊瑚紅（Alert Coral, `#EB5757`）**：背景運行與緊急疲勞告警專用色。
 
-系統在各平台（Windows / iOS / Android）上具備對應的原生導引流程，包含 6 大標準介面：
+系統在各平台（Windows / Android）上具備對應的原生導引流程，包含 6 大標準介面：
 
 ```mermaid
 flowchart TD
@@ -91,7 +89,6 @@ flowchart TD
 * **功能清單**：
   * **官方徽章標誌**：頂部圓形徽章內嵌官方「資產 10」高解析度 Logo，具備琥珀金外框。
   * **主標題與副標題**：「感謝協助測試 EFD」結合「AI 驅動眼睛特徵提取與即時疲勞監控研究系統」。
-  * **全螢幕 RWD 與安全區域（Safe Area）防護**：完美適配 iPhone 13 瀏海/動態島與 Home 橫條，消除上下黑邊。
   * **進入測試說明按鈕**：大型白底圓角按鈕（22pt 圓角），引導受試者進入下一階段。
 
 ### 3.2 階段 2：測驗指引說明介面 (Instruction Screen)
@@ -115,7 +112,7 @@ flowchart TD
 * **設計目的**：本系統核心操作儀表板。提供前置鏡頭影像驗證、核心生理特徵數據展示，並支援多種運行模式切換。
 * **功能清單**：
   * **4:3 實體相機即時串流視窗**：
-    * 嚴格鎖定 4:3 比例，嵌入原生相機串流圖層（Apple AVFoundation `AVCaptureVideoPreviewLayer`）。
+    * 嚴格鎖定 4:3 比例，嵌入原生相機串流圖層（Android CameraX `PreviewView`；Windows GDI+ 繪製）。
     * 當鏡頭成功捕捉時，即時回顯真人影像；當使用者離席時，狀態即時提示「無人臉離座」，數據自動歸零保護。
   * **4 大核心監控指標卡片（2x2 響應式佈局）**：
     1. *雙眼 EAR*：即時眼寬高比（精確至小數點後三位，常態約 0.280 ~ 0.350）。
@@ -132,7 +129,6 @@ flowchart TD
 * **功能清單**：
   * **高靈敏度提醒開關**：開啟後平滑分數 ≥58 持續 5 秒即提醒（標準為 ≥65 持續 10 秒）；20/5/5 冷卻規則不變，設定會保存。
   * **疲勞警報提示音開關**：控制疲勞超標時是否觸發音效與震動（Taptic Engine 觸覺回饋）。
-  * iOS 系統不允許 App 開機自動啟動，因此不提供此設定（Windows / macOS 版有提供）。
   * **自動科研同步開關**：受試者防呆設計，恆定開啟並鎖定：每晚 21:00 後上傳；錯過時於下次開啟自動補傳，上傳成功才標記完成。
   * **獨立底部返回按鈕**：「返回監控中心」白底綠字按鈕，貼齊底部安全區域。
 
@@ -229,7 +225,7 @@ sequenceDiagram
     actor User as 使用者 / 受試者
     participant UI as 原生介面 (ViewController)
     participant Engine as AsyncPipelineEngine (5 執行緒管線)
-    participant Cam as CameraService / AVFoundation
+    participant Cam as CameraService / CameraX
     participant Landmarker as FaceLandmarker
     participant State as FatigueStateMachine & Tracker
     participant DB as DatabaseService (SQLite WAL)
@@ -262,12 +258,15 @@ sequenceDiagram
         end
     end
 
-    Note over UI, Engine: iOS 背景：系統不允許背景使用相機
-    User->>UI: 切換至其他 App 或鎖定螢幕
-    UI->>Engine: pause() 暫停管線並保存冷卻狀態
-    UI->>UI: 排定一次休息提醒 (20 分鐘後；冷卻中則延到冷卻結束)
-    User->>UI: 回到 EFD
-    UI->>Engine: resume() (背景時間比照離座) + 補傳錯過的每日資料
+    Note over UI, Engine: Android 背景：前景服務持續偵測 (App 被劃掉仍運作)
+    User->>UI: 切換至其他 App 或從最近使用清單劃掉 EFD
+    Note over Engine: 前景服務保有引擎與相機，持續分析
+    opt 平滑分數達門檻並持續數秒 (且不在冷卻中)
+        Engine-->>User: 發送「EFD 疲勞提醒」通知
+    end
+    opt 服務被廠商系統關閉
+        Engine-->>User: 看門狗發送「EFD 疲勞偵測已停止」，點擊後重新開始
+    end
 
     Note over Engine, GAS: 夜間 21:00 定時科研同步
     Engine->>Engine: checkAndTriggerNightlySync() 跨日檢查
@@ -296,10 +295,8 @@ sequenceDiagram
 
 ```text
 EFD/
-├── CMakeLists.txt                # 跨平台 CMake 構建檔 (Windows / iOS / macOS 統一編譯)
+├── CMakeLists.txt                # CMake 構建檔 (Windows 桌面程式、單元測試；Android 原生庫由 android/ 的 NDK 建置)
 ├── README.md                     # 系統核心架構、介面功能與演算法設計白皮書
-├── .github/workflows/
-│   └── build_ios.yml             # GitHub Actions 自動化 CI/CD 打包產出 EFD_iOS.ipa
 ├── include/efd/
 │   ├── types.hpp                 # 全域結構體定義 (Point3D, EyeMetrics, FatigueRecord)
 │   └── version.hpp               # 版本資訊 (v2.0.0)
@@ -311,70 +308,57 @@ EFD/
 │   │   └── MseCalculator.cpp     # 多尺度熵 (MSE) 與複雜度指數 (CI)
 │   ├── engine/
 │   │   └── AsyncPipelineEngine.cpp # 五執行緒非同步管線排程與跨模組協調中心
-│   ├── network/                  # 雲端同步與數據安全通訊
-│   │   ├── NetworkSyncWorker.cpp # 異步工作佇列、SHA-256 完整性校驗與憑證生成
-│   │   ├── NetworkSyncWorkerApple.h
-│   │   └── NetworkSyncWorkerApple.mm # iOS / macOS 原生 NSURLSession HTTPS POST 實作
+│   ├── network/
+│   │   └── NetworkSyncWorker.cpp # 上傳 JSON 產生、完整性校驗與 Windows 上傳 (Android 由 Java 層上傳)
 │   ├── state/
 │   │   └── FatigueStateMachine.cpp  # 20/5/5 防打擾、快篩與升級有限狀態機
 │   ├── storage/
-│   │   └── DatabaseService.cpp   # SQLite3 / WAL 高併發交易日誌落盤
+│   │   └── DatabaseService.cpp   # WAL 交易日誌落盤
 │   ├── study/
 │   │   └── StudyWorkflowTracker.cpp # 14 天實驗天數計算、夜間排程與門禁事務鎖
 │   ├── vision/                   # 視覺感知與相機硬體抽象層
 │   │   ├── CameraService.cpp     # 相機服務中心、看門狗監控與驅動切換
-│   │   ├── FaceLandmarker.cpp    # 468 點特徵定位與真人膚色 AOI 對比追蹤
+│   │   ├── FaceLandmarker.cpp    # 膚色聚類定位、頭部裁切、眼部特徵與在座追蹤
 │   │   └── drivers/              # 各平台原生相機驅動
-│   │       ├── AppleAvFoundationCameraDriver.mm # iOS 前置相機即時串流驅動
-│   │       ├── WindowsMfCameraDriver.cpp        # Windows Media Foundation 驅動
+│   │       ├── WindowsMfCameraDriver.cpp        # Windows Media Foundation 驅動 (依實際格式解碼)
+│   │       ├── PixelConverters.hpp              # NV12 / YUY2 / UYVY / RGB 轉換 (含 stride)
 │   │       └── SyntheticCameraDriver.cpp        # 離線虛擬測試相機驅動
-│   └── ui/                       # 使用者介面層
+│   └── ui/                       # Windows 使用者介面層
 │       ├── NativeWelcomeWindow.cpp # Windows 原生 GDI+ 歡迎與監控視窗
 │       └── FatigueFloatingIndicator.cpp # Windows 桌面置頂透明 HUD 懸浮球
-└── ios/                          # iOS 原生應用程式封裝
-    ├── Info.plist                # iOS 權限、全螢幕原生 UILaunchScreen 與背景模式
-    ├── AppDelegate.mm            # iOS 生命週期調度
-    ├── ViewController.mm         # iOS 全 RWD 響應式介面 (6 大分頁、AVFoundation 預覽、本地通知)
-    ├── logo.png                  # EFD 官方資產 10 Logo
-    └── 資產 10.png               # EFD 官方資產 10 原始圖檔
+├── android/                      # Android App (CameraX + 前景服務 + JNI 呼叫 C++ 核心)
+│   └── app/src/main/
+│       ├── cpp/native-lib.cpp    # JNI 橋接 (NV21 轉 RGB、遙測、診斷擷取)
+│       └── java/.../             # MainActivity、EfdForegroundService、通知、同步、看門狗
+└── tests/
+    ├── test_features.cpp         # 單元測試 (27 項)
+    ├── diag_replay.cpp           # 診斷重播工具 efd_diag_replay (含 --capture 相機擷取)
+    └── convert_to_ppm.ps1        # 把手機傳回的 JPG/PNG 轉成 PPM 供重播
 ```
 
 ---
 
 ## 7. 構建與部署指南
 
-### 7.1 Windows 環境 (Visual Studio 2022)
+支援平台為 **Windows (x64)** 與 **Android (AArch64)**。iOS / macOS 因系統不允許背景使用相機，無法滿足背景守護需求，已自專案移除。
+
+### 7.1 Windows 環境 (Visual Studio)
 ```powershell
 # 1. 產生 Visual Studio 專案
-cmake -B build/vs-x64 -G "Visual Studio 17 2022" -A x64
+cmake -B build/vs-x64 -A x64
 
 # 2. 編譯測試與主程式
 cmake --build build/vs-x64 --config Release
 
-# 3. 執行單元整合測試 (12/12 PASS)
+# 3. 執行單元整合測試 (27/27 PASS)
 .\build\vs-x64\tests\Release\efd_tests.exe
 ```
 
-### 7.2 iOS 環境 (.ipa 封裝與 iPhone 13 側載指南)
-
-#### 1. 透過 GitHub Actions 自動構建
-儲存庫已配置 `.github/workflows/build_ios.yml`，每次推送至 `main` 分支時，macOS-14 Runner 會自動執行：
-1. `cmake -B build/ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0` 產生原生專案。
-2. 呼叫 `xcodebuild archive` 封裝 `EFD_iOS.xcarchive`。
-3. 自動拷貝「資產 10」官方 Logo 與資源檔案，打包生成 `EFD_iOS.ipa` 並發布於 Actions Artifacts（保留 14 天）。
-
-#### 2. iPhone 13 實機安裝步驟 (透過 PC + Sideloadly)
-1. **下載 IPA**：進入 GitHub Actions 最新成功的 Run，至底部 Artifacts 下載 `EFD_iOS_ipa.zip` 並解壓縮取得 `EFD_iOS.ipa`。
-2. **連接手機**：使用 Lightning 傳輸線將 iPhone 13 連接至 PC，螢幕解鎖並點擊「信任這部電腦」。
-3. **Sideloadly 簽名安裝**：
-   - 開啟 Sideloadly，將 `EFD_iOS.ipa` 拖曳至 IPA 框中。
-   - 輸入個人 Apple ID，點擊 **Start** 並輸入雙重認證驗證碼。
-   - 看到進度條顯示 `Done.` 即安裝完畢。
-4. **信任開發者憑證**：
-   - 前往 iPhone **「設定」➔「一般」➔「VPN 與裝置管理」**。
-   - 點擊個人 Apple ID 並選擇 **「信任」**。
-5. **開啟開發者模式 (iOS 16+)**：
-   - 前往 iPhone **「設定」➔「隱私權與安全性」➔「開發者模式」** 切換為開啟，依提示重新啟動手機後確認啟用。
-6. **啟動使用**：
-   - 點擊桌面 `EFD_iOS`，首次進入允許相機權限，系統即啟動前鏡頭 4:3 即時監控與 14 天研究時序排程。
-
+### 7.2 Android 環境 (Gradle + NDK)
+```powershell
+# 於 android/ 目錄建置 Debug APK (需 Android Studio 的 JDK 與 Android SDK / NDK)
+cd android
+gradle assembleDebug
+# 產出：android/app/build/outputs/apk/debug/app-debug.apk
+```
+安裝後首次開啟請允許相機與通知權限，並依「設定 > 通知與背景執行設定」的廠牌說明開啟自動啟動與電池不受限制，App 被劃掉後才能持續偵測與提醒。

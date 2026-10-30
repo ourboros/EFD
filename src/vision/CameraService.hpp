@@ -61,9 +61,6 @@ public:
     // 接收驅動或 JNI 影格
     void onDriverFrame(const RawFrame& frame);
 
-    // 取得平台原生相機底層物件指標 (例如 Apple AVCaptureSession)
-    void* getNativeCameraHandle() const;
-
 private:
     CameraConfig m_config;
     std::unique_ptr<ICameraDriver> m_driver;

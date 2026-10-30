@@ -1,4 +1,4 @@
-// 診斷重播工具：把 iOS 診斷模式匯出的畫面 (PPM, RGB) 逐張送進 FaceLandmarker，
+// 診斷重播工具：把手機診斷模式匯出的畫面 (PPM, RGB) 逐張送進 FaceLandmarker，
 // 印出每張卡在哪一關與各項數值，用來在電腦上重現手機上的偵測失敗。
 //
 // 用法：efd_diag_replay <目錄或 .ppm 檔> [...]
@@ -110,7 +110,7 @@ bool captureFromCamera(const fs::path& out, int deviceIndex) {
 
 void collect(const fs::path& arg, std::vector<fs::path>& files) {
     if (fs::is_directory(arg)) {
-        // 包含子資料夾：解壓縮 iOS 匯出的 zip 後會是 <時間>/frame_01.ppm ...
+        // 包含子資料夾：整個資料夾 (例如 debug_frames/ 下依日期分類的子資料夾)
         for (const auto& entry : fs::recursive_directory_iterator(arg)) {
             if (entry.is_regular_file() && entry.path().extension() == ".ppm") {
                 files.push_back(entry.path());

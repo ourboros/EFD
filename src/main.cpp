@@ -35,7 +35,7 @@ int runCliSimulation() {
     std::cout << "====================================================\n";
     std::cout << "  Eye Fatigue Detection (EFD) Engine v" << EFD_VERSION_STRING << "\n";
     std::cout << "  Phase 4: Multi-Platform Polish, Floating HUD & Cloud Sync\n";
-    std::cout << "  Platform: Cross-Platform (Windows/macOS/Android/iOS)\n";
+    std::cout << "  Platform: Windows / Android\n";
     std::cout << "====================================================\n\n";
 
     efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);

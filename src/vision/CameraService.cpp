@@ -5,8 +5,6 @@
 #include "drivers/WindowsMfCameraDriver.hpp"
 #elif defined(__ANDROID__)
 #include "drivers/AndroidCamera2Driver.hpp"
-#elif defined(__APPLE__)
-#include "drivers/AppleAvFoundationCameraDriver.hpp"
 #endif
 
 #include <iostream>
@@ -31,8 +29,6 @@ std::unique_ptr<ICameraDriver> CameraService::createPlatformDriver() {
     return std::make_unique<WindowsMfCameraDriver>();
 #elif defined(__ANDROID__)
     return std::make_unique<AndroidCamera2Driver>();
-#elif defined(__APPLE__)
-    return std::make_unique<AppleAvFoundationCameraDriver>();
 #else
     return std::make_unique<SyntheticCameraDriver>();
 #endif
@@ -205,18 +201,6 @@ void CameraService::setSimulatedEyeState(float openness) {
     if (m_driver) {
         m_driver->setSimulatedEyeState(openness);
     }
-}
-
-void* CameraService::getNativeCameraHandle() const {
-#if defined(__APPLE__)
-    if (m_driver && !m_isSyntheticFallback) {
-        auto appleDriver = dynamic_cast<AppleAvFoundationCameraDriver*>(m_driver.get());
-        if (appleDriver) {
-            return appleDriver->getCaptureSessionPtr();
-        }
-    }
-#endif
-    return nullptr;
 }
 
 } // namespace efd
