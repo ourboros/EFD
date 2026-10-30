@@ -66,11 +66,15 @@ public class EfdForegroundService extends LifecycleService {
 
         mHudManager = new EfdNotificationHudManager(this);
         if (!enterForeground()) {
-            // 沒有相機權限時無法以 camera 類型前景服務執行 (Android 14+ 會拋 SecurityException)
+            // 沒有相機權限，或服務被系統關閉後在背景自動重啟 (Android 14+ 不允許從背景啟動相機類型前景服務)：
+            // 無法繼續偵測，必須讓使用者知道，否則之後完全不會再有任何疲勞提醒
+            mHudManager.showMonitoringStoppedReminder();
             stopSelf();
             return;
         }
         sInstance = this;
+        mHudManager.cancelStartReminder();
+        EfdWatchdogReceiver.schedule(this);
 
         ensureEngineRunning();
 
@@ -152,6 +156,15 @@ public class EfdForegroundService extends LifecycleService {
             ensureEngineRunning();
         }
         return START_STICKY;
+    }
+
+    /**
+     * 測試通知：延遲後由 C++ 引擎發出一個測試警報，走與真實疲勞提醒相同的路徑
+     * (Activity 在前景時顯示對話框；App 被劃掉或在背景時發送通知)。
+     */
+    public void scheduleTestAlert(long delayMs) {
+        if (mHandler == null) return;
+        mHandler.postDelayed(EfdNativeBridge::triggerTestAlert, delayMs);
     }
 
     private void startTelemetryLoop() {

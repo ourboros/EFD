@@ -10,6 +10,7 @@ import android.os.Build;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 public class EfdNotificationHudManager {
     public static final String SERVICE_CHANNEL_ID = "efd_service_channel";
@@ -70,8 +71,40 @@ public class EfdNotificationHudManager {
                 .build();
     }
 
+    /**
+     * 疲勞提醒能否實際顯示：Android 13+ 的通知權限被拒絕、或使用者在系統設定關閉了
+     * 「EFD 眼睛疲勞警告提醒」類別時，notify() 會無聲無息地被丟棄。
+     */
+    public static boolean canPostFatigueAlerts(@NonNull Context context) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            NotificationChannel channel = (nm != null) ? nm.getNotificationChannel(ALERT_CHANNEL_ID) : null;
+            return channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
+        }
+        return true;
+    }
+
+    /**
+     * 背景偵測沒有在執行時提醒使用者 (例如廠商系統在 App 被劃掉時一併關閉服務，
+     * 而 Android 14+ 不允許從背景重新啟動相機類型的前景服務)。
+     */
+    public void showMonitoringStoppedReminder() {
+        postStartReminder("EFD 疲勞偵測已停止", "背景偵測被系統關閉了，點此重新開始偵測");
+    }
+
+    public void cancelStartReminder() {
+        if (mNotificationManager != null) {
+            mNotificationManager.cancel(START_REMINDER_NOTIFICATION_ID);
+        }
+    }
+
     /** 開機後 (Android 14+ 不允許自動開相機) 提醒使用者點一下以開始今日偵測。 */
     public void showStartMonitoringReminder() {
+        postStartReminder("EFD 尚未開始今日偵測", "點此開啟 EFD，背景疲勞偵測才會啟動");
+    }
+
+    private void postStartReminder(String title, String text) {
         if (mNotificationManager == null) return;
 
         Intent launchIntent = new Intent(mContext, MainActivity.class);
@@ -83,9 +116,10 @@ public class EfdNotificationHudManager {
 
         Notification notification = new NotificationCompat.Builder(mContext, ALERT_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("EFD 尚未開始今日偵測")
-                .setContentText("點此開啟 EFD，背景疲勞偵測才會啟動")
+                .setContentTitle(title)
+                .setContentText(text)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
                 .build();
@@ -117,6 +151,10 @@ public class EfdNotificationHudManager {
                 .setContentIntent(pendingIntent)
                 .build();
 
-        mNotificationManager.notify(ALERT_NOTIFICATION_ID, alertNotification);
+        try {
+            mNotificationManager.notify(ALERT_NOTIFICATION_ID, alertNotification);
+        } catch (SecurityException e) {
+            // Android 13+ 未授權通知權限：由 MainActivity 引導使用者開啟
+        }
     }
 }

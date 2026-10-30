@@ -38,6 +38,12 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- 背景偵測看門狗：服務被廠商系統關閉時提醒使用者重新開始 -->
+        <receiver
+            android:name=".EfdWatchdogReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <service
             android:name=".EfdForegroundService"
             android:enabled="true"

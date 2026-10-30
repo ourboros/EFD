@@ -199,6 +199,11 @@ public class MainActivity extends AppCompatActivity {
                 Log.w(TAG, "相機權限遭拒絕，無法開啟前置鏡頭");
                 Toast.makeText(this, "請給予相機權限以進行疲勞檢測", Toast.LENGTH_LONG).show();
             }
+            // 通知權限被拒絕時，背景疲勞提醒會被系統丟棄，立即說明
+            if (!EfdNotificationHudManager.canPostFatigueAlerts(this)) {
+                mNotificationCheckShown = true;
+                showNotificationsDisabledDialog();
+            }
         }
     }
 
@@ -254,6 +259,7 @@ public class MainActivity extends AppCompatActivity {
         renderCurrentStage();
         if (stage == UIStage.MainDashboard) {
             requestIgnoreBatteryOptimizationsOnce();
+            checkNotificationsEnabledOnce();
         }
     }
 
@@ -842,6 +848,28 @@ public class MainActivity extends AppCompatActivity {
         recalibBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
         layout.addView(recalibBtn);
 
+        // 項目 3: 測試背景通知 (與真實疲勞提醒同一路徑：C++ 引擎發出警報 → 前景服務 → 通知)
+        Button testAlertBtn = new Button(this);
+        testAlertBtn.setText("測試背景通知（10 秒後發送）");
+        styleButton(testAlertBtn, "#343A26", "#F7E3AF");
+        LinearLayout.LayoutParams testLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        testLp.setMargins(0, 12, 0, 0);
+        testAlertBtn.setLayoutParams(testLp);
+        testAlertBtn.setOnClickListener(v -> onTestBackgroundAlertClicked());
+        layout.addView(testAlertBtn);
+
+        // 項目 4: 通知與背景執行設定 (依手機廠牌說明)
+        Button bgSettingsBtn = new Button(this);
+        bgSettingsBtn.setText("通知與背景執行設定");
+        styleButton(bgSettingsBtn, "#343A26", "#F7E3AF");
+        LinearLayout.LayoutParams bgLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bgLp.setMargins(0, 12, 0, 0);
+        bgSettingsBtn.setLayoutParams(bgLp);
+        bgSettingsBtn.setOnClickListener(v -> showBackgroundSettingsGuide());
+        layout.addView(bgSettingsBtn);
+
         // 返回按鈕
         Button returnBtn = new Button(this);
         returnBtn.setText("返回監控中心");
@@ -1103,10 +1131,108 @@ public class MainActivity extends AppCompatActivity {
         mHandler.post(mTelemetryRunnable);
     }
 
+    // -------------------------------------------------------------------------
+    // 背景通知：測試、權限檢查與廠牌背景執行說明
+    // -------------------------------------------------------------------------
+    private boolean mNotificationCheckShown = false;
+
+    private void onTestBackgroundAlertClicked() {
+        if (!EfdNotificationHudManager.canPostFatigueAlerts(this)) {
+            showNotificationsDisabledDialog();
+            return;
+        }
+        EfdForegroundService service = EfdForegroundService.getInstance();
+        if (service == null) {
+            Toast.makeText(this, "背景偵測尚未啟動，請先回到監控中心", Toast.LENGTH_LONG).show();
+            return;
+        }
+        service.scheduleTestAlert(10_000L);
+        new AlertDialog.Builder(this)
+                .setTitle("10 秒後發送測試通知")
+                .setMessage("請現在把 EFD 從最近使用的 App 清單劃掉，或回到桌面。\n\n"
+                        + "10 秒後應會收到「EFD 疲勞提醒」通知；若沒有收到，請按「通知與背景執行設定」依說明調整。")
+                .setPositiveButton("好", null)
+                .show();
+    }
+
+    /** 進入監控中心時檢查一次：通知被關閉時疲勞提醒會被系統直接丟棄。 */
+    private void checkNotificationsEnabledOnce() {
+        if (mNotificationCheckShown) return;
+        mNotificationCheckShown = true;
+        if (!EfdNotificationHudManager.canPostFatigueAlerts(this)) {
+            showNotificationsDisabledDialog();
+        }
+    }
+
+    private void showNotificationsDisabledDialog() {
+        if (isActivityDestroyed()) return;
+        new AlertDialog.Builder(this)
+                .setTitle("疲勞提醒通知已關閉")
+                .setMessage("EFD 的通知目前被關閉，App 不在畫面上時將無法提醒你休息。\n請在設定中開啟 EFD 的通知（包含「EFD 眼睛疲勞警告提醒」）。")
+                .setPositiveButton("前往設定", (d, w) -> openAppNotificationSettings())
+                .setNegativeButton("稍後", null)
+                .show();
+    }
+
+    private void openAppNotificationSettings() {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName());
+            startActivity(intent);
+        } catch (Throwable t) {
+            openAppDetailsSettings();
+        }
+    }
+
+    private void openAppDetailsSettings() {
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Throwable t) {
+            Log.w(TAG, "無法開啟 App 設定頁: " + t.getMessage());
+        }
+    }
+
+    /** 不同廠牌關閉背景服務的設定位置不同，依 Build.MANUFACTURER 顯示對應說明。 */
+    private void showBackgroundSettingsGuide() {
+        String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT);
+        String brandTip;
+        if (maker.contains("xiaomi") || maker.contains("redmi") || maker.contains("poco")) {
+            brandTip = "小米：設定 > 應用程式 > EFD > 自動啟動 開啟；省電策略 選「無限制」。\n最近使用清單中長按 EFD 選「鎖定」。";
+        } else if (maker.contains("oppo") || maker.contains("realme") || maker.contains("oneplus")) {
+            brandTip = "OPPO / realme / 一加：設定 > 電池 > EFD > 允許背景活動、允許自動啟動。\n最近使用清單中將 EFD 往下拉「鎖定」。";
+        } else if (maker.contains("vivo") || maker.contains("iqoo")) {
+            brandTip = "vivo：設定 > 電池 > 背景耗電管理 > EFD 允許背景高耗電；i管家 > 應用程式管理 > 自動啟動 開啟。";
+        } else if (maker.contains("huawei") || maker.contains("honor")) {
+            brandTip = "華為 / 榮耀：設定 > 電池 > 啟動管理 > EFD 改為手動管理，三項全部開啟。";
+        } else if (maker.contains("samsung")) {
+            brandTip = "三星：設定 > 電池 > 背景使用限制 > 確認 EFD 不在「休眠」或「深度休眠」清單；EFD 的電池設定選「不受限制」。";
+        } else {
+            brandTip = "設定 > 應用程式 > EFD > 電池：選「不受限制」或「不最佳化」。";
+        }
+        String status = EfdNotificationHudManager.canPostFatigueAlerts(this) ? "目前：通知已開啟" : "目前：通知已關閉（請先開啟）";
+        new AlertDialog.Builder(this)
+                .setTitle("通知與背景執行設定")
+                .setMessage(status + "\n\n"
+                        + "1. 通知：開啟 EFD 通知，以及「EFD 眼睛疲勞警告提醒」類別。\n"
+                        + "2. 背景執行：" + brandTip + "\n\n"
+                        + "疲勞提醒只在偵測到疲勞時發送（平滑分數達門檻並持續數秒），平常沒有通知是正常的；可用「測試背景通知」確認設定是否正確。")
+                .setPositiveButton("通知設定", (d, w) -> openAppNotificationSettings())
+                .setNeutralButton("App 設定", (d, w) -> openAppDetailsSettings())
+                .setNegativeButton("關閉", null)
+                .show();
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         mIsResumed = true;
+        // 服務被系統關閉後，使用者點通知回到 App：Activity 在前景時可重新啟動相機類型前景服務
+        if (EfdForegroundService.getInstance() == null &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            startForegroundMonitoringService();
+        }
         // 前景時由對話框呈現警報；背景時服務改發通知
         EfdForegroundService.setAlertListener(message -> mHandler.post(() -> {
             if (mIsResumed && !isActivityDestroyed()) {
