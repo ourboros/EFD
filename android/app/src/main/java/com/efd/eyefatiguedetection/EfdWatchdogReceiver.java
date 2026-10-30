@@ -48,6 +48,9 @@ public class EfdWatchdogReceiver extends BroadcastReceiver {
         if (EfdForegroundService.getInstance() != null) {
             return; // 服務仍在執行
         }
+        if (EfdForegroundService.isStoppedByUser(context)) {
+            return; // 使用者從通知主動停止偵測，不再提醒
+        }
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             // Android 11 以下允許從背景啟動前景服務：直接恢復偵測

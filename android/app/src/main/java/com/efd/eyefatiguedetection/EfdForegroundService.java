@@ -25,6 +25,19 @@ public class EfdForegroundService extends LifecycleService {
     private static final String TAG = "EFD_ForegroundService";
     private static final long SYNC_CHECK_INTERVAL_MS = 30_000L;
 
+    /** 常駐通知的「停止偵測」按鈕。 */
+    public static final String ACTION_STOP_MONITORING = "com.efd.eyefatiguedetection.action.STOP_MONITORING";
+    /** 使用者主動停止偵測：看門狗與開機提醒不再要求重新開始，直到使用者再次開啟 App。 */
+    public static final String PREF_STOPPED_BY_USER = "monitoring_stopped_by_user";
+
+    public static boolean isStoppedByUser(android.content.Context context) {
+        return context.getSharedPreferences("efd_prefs", MODE_PRIVATE).getBoolean(PREF_STOPPED_BY_USER, false);
+    }
+
+    public static void setStoppedByUser(android.content.Context context, boolean stopped) {
+        context.getSharedPreferences("efd_prefs", MODE_PRIVATE).edit().putBoolean(PREF_STOPPED_BY_USER, stopped).apply();
+    }
+
     /** 前景 Activity 顯示中時接收疲勞警報 (改以對話框呈現，不重複發通知)。 */
     public interface AlertListener {
         void onFatigueAlert(String message);
@@ -152,6 +165,17 @@ public class EfdForegroundService extends LifecycleService {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
+        if (intent != null && ACTION_STOP_MONITORING.equals(intent.getAction())) {
+            Log.i(TAG, "使用者從通知停止偵測");
+            setStoppedByUser(this, true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (sInstance == this) {
             ensureEngineRunning();
         }

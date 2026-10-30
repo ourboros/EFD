@@ -11,8 +11,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- 引導使用者將 EFD 加入電池最佳化白名單，降低背景服務被廠商系統強制關閉的機率 -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 不申請 REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (Google 政策列為敏感權限，會觸發 Play Protect 警告)；
+         改為說明後開啟系統的電池最佳化清單，由使用者自行設定 -->
+
 
     <application
         android:allowBackup="true"
@@ -28,7 +29,6 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>

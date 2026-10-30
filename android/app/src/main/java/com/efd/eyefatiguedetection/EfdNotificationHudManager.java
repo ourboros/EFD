@@ -61,13 +61,25 @@ public class EfdNotificationHudManager {
                 PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
         );
 
+        // 「停止偵測」：使用者隨時可關閉相機偵測 (清楚揭露相機用途並提供停止方式)
+        Intent stopIntent = new Intent(mContext, EfdForegroundService.class);
+        stopIntent.setAction(EfdForegroundService.ACTION_STOP_MONITORING);
+        PendingIntent stopPendingIntent = PendingIntent.getService(
+                mContext, 1, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
+        );
+
         return new NotificationCompat.Builder(mContext, SERVICE_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("EFD 眼睛疲勞背景監控中")
-                .setContentText("系統即時防護持續運作中，僅於過度疲勞時跳出提醒")
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
+                .setContentTitle("EFD 正在使用前鏡頭偵測眼睛疲勞")
+                .setContentText("影像只在手機上分析、不會上傳；疲勞時才會提醒")
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(
+                        "EFD 正在使用前鏡頭偵測眼睛疲勞。影像只在這支手機上即時分析，不會儲存或上傳；"
+                        + "每日只上傳疲勞數值統計。疲勞時才會提醒你休息。"))
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .setContentIntent(pendingIntent)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止偵測", stopPendingIntent)
                 .build();
     }
 

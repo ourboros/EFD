@@ -19,8 +19,16 @@ public class EfdBootReceiver extends BroadcastReceiver {
 
         String action = intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(action) ||
-            "android.intent.action.QUICKBOOT_POWERON".equals(action) ||
             Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+
+            // 開機時檢查是否有未上傳的資料 (統一經由 EfdSyncManager，避免重複上傳)
+            EfdSyncManager.checkAndPerformDailySync(context, "EfdBootReceiver");
+
+            // 使用者從通知主動停止偵測：開機後不自動恢復，等使用者自行開啟 App
+            if (EfdForegroundService.isStoppedByUser(context)) {
+                Log.i(TAG, "使用者已停止偵測，開機後不自動恢復");
+                return;
+            }
 
             Log.i(TAG, "手機開機/App 更新，恢復 EFD 背景監控與資料同步...");
             boolean hasCamera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
@@ -42,9 +50,6 @@ public class EfdBootReceiver extends BroadcastReceiver {
                     new EfdNotificationHudManager(context).showStartMonitoringReminder();
                 }
             }
-
-            // 開機時檢查是否有未上傳的資料 (統一經由 EfdSyncManager，避免重複上傳)
-            EfdSyncManager.checkAndPerformDailySync(context, "EfdBootReceiver");
         }
     }
 }

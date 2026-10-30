@@ -176,6 +176,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void startForegroundMonitoringService() {
         try {
+            // 使用者自行開啟 App：恢復偵測 (清除先前從通知「停止偵測」的狀態)
+            EfdForegroundService.setStoppedByUser(this, false);
             Intent serviceIntent = new Intent(this, EfdForegroundService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
@@ -265,9 +267,9 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * 小米、OPPO、vivo、華為等廠牌會在 App 被劃掉後強制關閉背景服務；
-     * 引導使用者將 EFD 加入電池最佳化白名單 (只詢問一次)。
+     * 說明後開啟系統的電池最佳化清單，由使用者自行將 EFD 設為不受限制 (只詢問一次)。
+     * 不使用 ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS：它需要敏感權限，會讓 Play Protect 視為可疑。
      */
-    @android.annotation.SuppressLint("BatteryLife")
     private void requestIgnoreBatteryOptimizationsOnce() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
         SharedPreferences prefs = getSharedPreferences("efd_prefs", MODE_PRIVATE);
@@ -275,13 +277,24 @@ public class MainActivity extends AppCompatActivity {
         prefs.edit().putBoolean("asked_battery_optimization", true).apply();
         try {
             android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
-                Intent intent = new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                intent.setData(android.net.Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            }
+            if (pm == null || pm.isIgnoringBatteryOptimizations(getPackageName())) return;
         } catch (Throwable t) {
-            Log.w(TAG, "Battery optimization request failed: " + t.getMessage());
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("讓背景偵測不被系統中斷")
+                .setMessage("部分手機會為了省電關閉背景執行的 App，導致把 EFD 劃掉後就不再提醒。\n\n"
+                        + "接下來會開啟「電池最佳化」清單，請找到「EFD 疲勞檢測」並設為「不最佳化」或「不受限制」。")
+                .setPositiveButton("前往設定", (d, w) -> openBatteryOptimizationSettings())
+                .setNegativeButton("稍後", null)
+                .show();
+    }
+
+    private void openBatteryOptimizationSettings() {
+        try {
+            startActivity(new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        } catch (Throwable t) {
+            openAppDetailsSettings();
         }
     }
 

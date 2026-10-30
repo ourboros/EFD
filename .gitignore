@@ -64,6 +64,10 @@ EFD-v2.0.0-Windows/
 android/wrapper/
 .LCK*~
 
+# Android 正式簽章金鑰與密碼 (只存在本機，遺失將無法以同一簽章更新 App，請另外備份)
+android/keystore/
+android/keystore.properties
+
 # 行動版安裝檔 (由建置流程產生)
 *.ipa
 
