@@ -1,5 +1,7 @@
 #include <jni.h>
 #include <algorithm>
+#include <atomic>
+#include <vector>
 #include <chrono>
 #include <ctime>
 #include <string>
@@ -31,6 +33,37 @@ static std::mutex g_alertMutex;
 // 最新遙測 (不含影像像素，避免每幀複製整張影格)
 static efd::EngineTelemetry g_lastTelemetry;
 static std::mutex g_telemetryMutex;
+
+// 診斷擷取：使用者按下「匯出診斷畫面」時，下一幀 C++ 實際分析的 RGB 影像與偵測數值
+static std::atomic<bool> g_debugCaptureRequested{false};
+static std::vector<uint8_t> g_debugRgb;
+static std::string g_debugInfoJson;
+static std::mutex g_debugMutex;
+
+static std::string jsonEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == '"' || c == '\\') out += '\\';
+        if (c == '\n') { out += "\\n"; continue; }
+        out += c;
+    }
+    return out;
+}
+
+// 偵測診斷的 JSON 欄位 (遙測與診斷擷取共用)
+static void appendDiagnosticJson(std::ostringstream& oss, const efd::FaceLandmarker::PresenceDiagnostic& d) {
+    oss << "\"failStage\":\"" << jsonEscape(d.failStage) << "\","
+        << "\"reason\":\"" << jsonEscape(d.unconfirmedReason) << "\","
+        << "\"tracking\":" << (d.presenceByTracking ? "true" : "false") << ","
+        << "\"skinBox\":[" << d.skinBoxX << "," << d.skinBoxY << "," << d.skinBoxW << "," << d.skinBoxH << "],"
+        << "\"faceBox\":[" << d.faceBoxX << "," << d.faceBoxY << "," << d.faceBoxW << "," << d.faceBoxH << "],"
+        << "\"avgSkinLum\":" << d.avgSkinLum << ","
+        << "\"eyeDark\":[" << d.eyeDarkFraction[0] << "," << d.eyeDarkFraction[1] << "],"
+        << "\"eyeContrast\":[" << d.eyeContrast[0] << "," << d.eyeContrast[1] << "],"
+        << "\"eyeGradient\":[" << d.eyeGradient[0] << "," << d.eyeGradient[1] << "],"
+        << "\"symmetry\":" << d.symmetryRatio;
+}
 
 static std::shared_ptr<efd::AsyncPipelineEngine> currentEngine() {
     std::lock_guard<std::mutex> lock(g_engineMutex);
@@ -82,8 +115,30 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
         });
 
         engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
+            // 診斷擷取：複製 C++ 實際分析的這一幀 (RGB888) 與偵測數值
+            if (g_debugCaptureRequested.exchange(false) && telemetry.latestFrame.isValid()) {
+                std::ostringstream info;
+                info << std::fixed << std::setprecision(3)
+                     << "{\"width\":" << telemetry.latestFrame.width
+                     << ",\"height\":" << telemetry.latestFrame.height
+                     << ",\"synthetic\":" << (telemetry.latestFrame.isSynthetic ? "true" : "false")
+                     << ",\"hasFace\":" << (telemetry.detection.hasFace ? "true" : "false")
+                     << ",\"rawFace\":" << (telemetry.presenceDiagnostic.rawPersonInFrame && telemetry.presenceDiagnostic.rawFacingCamera ? "true" : "false")
+                     << ",\"fps\":" << telemetry.measuredFps << ",";
+                appendDiagnosticJson(info, telemetry.presenceDiagnostic);
+                info << "}";
+                std::lock_guard<std::mutex> debugLock(g_debugMutex);
+                const size_t bytes = static_cast<size_t>(telemetry.latestFrame.width) * telemetry.latestFrame.height * 3;
+                g_debugRgb.assign(telemetry.latestFrame.data.begin(), telemetry.latestFrame.data.begin() + bytes);
+                g_debugInfoJson = info.str();
+            }
+
             efd::EngineTelemetry slim;
             slim.latestFrame.timestampMs = telemetry.latestFrame.timestampMs;
+            slim.latestFrame.width = telemetry.latestFrame.width;
+            slim.latestFrame.height = telemetry.latestFrame.height;
+            slim.latestFrame.isSynthetic = telemetry.latestFrame.isSynthetic;
+            slim.presenceDiagnostic = telemetry.presenceDiagnostic;
             slim.detection.hasFace = telemetry.detection.hasFace;
             slim.eyeMetrics = telemetry.eyeMetrics;
             slim.complexityMetrics = telemetry.complexityMetrics;
@@ -261,8 +316,13 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* 
         << "\"complexityCI\":" << telemetry.complexityMetrics.complexityIndex << ","
         << "\"measuredFps\":" << telemetry.measuredFps << ","
         << "\"studyDay\":" << state.studyDay << ","
-        << "\"isStudyLocked\":" << (state.isStudyLocked ? "true" : "false")
-        << "}";
+        << "\"isStudyLocked\":" << (state.isStudyLocked ? "true" : "false") << ","
+        << "\"stale\":" << (isStale ? "true" : "false") << ","
+        << "\"synthetic\":" << (telemetry.latestFrame.isSynthetic ? "true" : "false") << ","
+        << "\"frameW\":" << telemetry.latestFrame.width << ","
+        << "\"frameH\":" << telemetry.latestFrame.height << ",";
+    appendDiagnosticJson(oss, telemetry.presenceDiagnostic);
+    oss << "}";
 
     return env->NewStringUTF(oss.str().c_str());
 }
@@ -374,8 +434,41 @@ JNIEXPORT void JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeTriggerTestAlert(JNIEnv* /*env*/, jobject /*thiz*/) {
     std::lock_guard<std::mutex> lock(g_alertMutex);
     g_lastAlertLevel = 2; // SevereWarning
-    g_lastAlertScore = 88.5f;
-    g_lastAlertMessage = "你的眼睛處於疲勞狀態，請適當休息";
+    g_lastAlertScore = 0.0f;
+    // 與真實疲勞提醒文字區隔，避免使用者誤以為未就坐時仍跳出疲勞警報
+    g_lastAlertMessage = "【測試通知】背景通知運作正常，這不是疲勞警報";
+}
+
+JNIEXPORT void JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeRequestDebugCapture(JNIEnv* /*env*/, jclass /*clazz*/) {
+    {
+        std::lock_guard<std::mutex> lock(g_debugMutex);
+        g_debugRgb.clear();
+        g_debugInfoJson.clear();
+    }
+    g_debugCaptureRequested.store(true);
+}
+
+// 取出診斷擷取的偵測數值 (JSON)；尚未擷取到時回傳空字串
+JNIEXPORT jstring JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeTakeDebugCaptureInfo(JNIEnv* env, jclass /*clazz*/) {
+    std::lock_guard<std::mutex> lock(g_debugMutex);
+    return env->NewStringUTF(g_debugInfoJson.c_str());
+}
+
+// 取出診斷擷取的 RGB888 影像並清除；尚未擷取到時回傳 null
+JNIEXPORT jbyteArray JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeTakeDebugCaptureRgb(JNIEnv* env, jclass /*clazz*/) {
+    std::lock_guard<std::mutex> lock(g_debugMutex);
+    if (g_debugRgb.empty()) return nullptr;
+    jbyteArray array = env->NewByteArray(static_cast<jsize>(g_debugRgb.size()));
+    if (array) {
+        env->SetByteArrayRegion(array, 0, static_cast<jsize>(g_debugRgb.size()),
+                                reinterpret_cast<const jbyte*>(g_debugRgb.data()));
+    }
+    g_debugRgb.clear();
+    g_debugInfoJson.clear();
+    return array;
 }
 
 JNIEXPORT void JNICALL
