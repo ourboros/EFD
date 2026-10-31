@@ -921,97 +921,128 @@ public class MainActivity extends AppCompatActivity {
     // -------------------------------------------------------------------------
     private int mSensitivityLevel = 1; // 0: 低, 1: 標準, 2: 高 (實際值保存在 C++ 設定檔)
 
+    /** 設定白卡片：左側標題 (薄荷綠粗體) 與說明 (灰黑)，右側狀態文字與箭頭；回傳右側 TextView。 */
+    private TextView addSettingsCard(LinearLayout parent, String title, String subtitle, String rightText,
+                                     boolean enabled, View.OnClickListener onClick) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(roundedBg(C_WHITE, 14));
+        card.setPadding(dp(16), dp(12), dp(14), dp(12));
+        card.setAlpha(enabled ? 1f : 0.6f);
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardLp.setMargins(0, dp(10), 0, 0);
+        card.setLayoutParams(cardLp);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextSize(15);
+        t.setTypeface(null, android.graphics.Typeface.BOLD);
+        t.setTextColor(Color.parseColor(C_MINT));
+        texts.addView(t);
+
+        TextView s = new TextView(this);
+        s.setText(subtitle);
+        s.setTextSize(11);
+        s.setTextColor(Color.parseColor("#BF25291C"));
+        s.setPadding(0, dp(2), 0, 0);
+        texts.addView(s);
+        card.addView(texts);
+
+        TextView right = new TextView(this);
+        right.setText(rightText);
+        right.setTextSize(13);
+        right.setTypeface(null, android.graphics.Typeface.BOLD);
+        right.setTextColor(Color.parseColor(C_INK));
+        right.setPadding(dp(8), 0, 0, 0);
+        card.addView(right);
+
+        if (enabled && onClick != null) {
+            card.setClickable(true);
+            card.setOnClickListener(onClick);
+        }
+        parent.addView(card);
+        return right;
+    }
+
     private void renderSettingsScreen() {
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.parseColor("#25291C"));
+        scroll.setBackgroundColor(Color.parseColor(C_MINT));
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(24, 20, 24, 32);
+        layout.setPadding(dp(20), dp(12), dp(20), dp(24));
 
         TextView title = new TextView(this);
-        title.setText("系統設定");
-        title.setTextSize(20);
+        title.setText("系統參數與偏好設定");
+        title.setTextSize(21);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setTextColor(Color.WHITE);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 20);
+        title.setPadding(0, 0, 0, dp(4));
         layout.addView(title);
 
-        // 項目 1: 提示靈敏度
-        // 只調整提醒門檻與持續秒數，20/5/5 冷卻規則不變
-        final String[] sensNames = {
-                "低靈敏度 (≥70 分持續 15 秒)", "標準靈敏度 (≥65 分持續 10 秒，推薦)", "高靈敏度 (≥58 分持續 5 秒)" };
-        Button sensBtn = new Button(this);
+        // 1. 提示靈敏度：只調整提醒門檻與持續秒數，20/5/5 冷卻規則不變 (點擊循環切換)
+        final String[] sensLabels = { "低", "標準", "高" };
+        final String[] sensDescs = {
+                "疲勞分數 ≥70 持續 15 秒才提醒（較少打擾）",
+                "疲勞分數 ≥65 持續 10 秒才提醒（推薦）",
+                "疲勞分數 ≥58 持續 5 秒即提醒（較敏感）" };
         int savedLevel = EfdNativeBridge.getSensitivity();
         final boolean engineReady = savedLevel >= 0;
-        if (engineReady) {
-            mSensitivityLevel = savedLevel;
-            sensBtn.setText("提示靈敏度: " + sensNames[mSensitivityLevel] + " (點擊切換)");
-        } else {
-            sensBtn.setText("提示靈敏度: 請先開始監測後再調整");
-        }
-        styleButton(sensBtn, "#343A26", "#F7E3AF");
-        sensBtn.setEnabled(engineReady);
-        sensBtn.setOnClickListener(v -> {
-            mSensitivityLevel = (mSensitivityLevel + 1) % 3;
-            EfdNativeBridge.setSensitivity(mSensitivityLevel);
-            sensBtn.setText("提示靈敏度: " + sensNames[mSensitivityLevel] + " (點擊切換)");
-        });
-        layout.addView(sensBtn);
+        if (engineReady) mSensitivityLevel = savedLevel;
+        final TextView[] sensRight = new TextView[1];
+        final TextView[] sensSub = new TextView[1];
+        sensRight[0] = addSettingsCard(layout, "提示靈敏度",
+                engineReady ? sensDescs[mSensitivityLevel] : "請先回到監控中心開始偵測後再調整",
+                engineReady ? sensLabels[mSensitivityLevel] + "  ›" : "--", engineReady, v -> {
+                    mSensitivityLevel = (mSensitivityLevel + 1) % 3;
+                    EfdNativeBridge.setSensitivity(mSensitivityLevel);
+                    sensRight[0].setText(sensLabels[mSensitivityLevel] + "  ›");
+                    if (sensSub[0] != null) sensSub[0].setText(sensDescs[mSensitivityLevel]);
+                });
+        // 取得同一張卡片的說明文字，切換時一併更新
+        LinearLayout sensCard = (LinearLayout) sensRight[0].getParent();
+        sensSub[0] = (TextView) ((LinearLayout) sensCard.getChildAt(0)).getChildAt(1);
 
-        // 項目 2: 重設眼動監測
-        Button recalibBtn = new Button(this);
-        recalibBtn.setText("重設眼動監測");
-        styleButton(recalibBtn, "#1EB18A", "#FFFFFF");
-        LinearLayout.LayoutParams recalibLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        recalibLp.setMargins(0, 12, 0, 0);
-        recalibBtn.setLayoutParams(recalibLp);
-        recalibBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
-        layout.addView(recalibBtn);
+        // 2. 通知狀態與背景執行設定
+        boolean notifyOn = EfdNotificationHudManager.canPostFatigueAlerts(this);
+        addSettingsCard(layout, "通知與背景執行設定",
+                "依手機廠牌設定自動啟動與電池不受限制，劃掉 App 後仍會提醒",
+                notifyOn ? "通知開啟  ›" : "通知關閉  ›", true, v -> showBackgroundSettingsGuide());
 
-        // 項目 3: 測試背景通知 (與真實疲勞提醒同一路徑：C++ 引擎發出警報 → 前景服務 → 通知)
-        Button testAlertBtn = new Button(this);
-        testAlertBtn.setText("測試背景通知（10 秒後發送）");
-        styleButton(testAlertBtn, "#343A26", "#F7E3AF");
-        LinearLayout.LayoutParams testLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        testLp.setMargins(0, 12, 0, 0);
-        testAlertBtn.setLayoutParams(testLp);
-        testAlertBtn.setOnClickListener(v -> onTestBackgroundAlertClicked());
-        layout.addView(testAlertBtn);
+        // 3. 測試背景通知
+        addSettingsCard(layout, "測試背景通知",
+                "10 秒後送出測試通知，可在這段時間把 EFD 劃掉確認背景運作",
+                "›", true, v -> onTestBackgroundAlertClicked());
 
-        // 項目 4: 通知與背景執行設定 (依手機廠牌說明)
-        Button bgSettingsBtn = new Button(this);
-        bgSettingsBtn.setText("通知與背景執行設定");
-        styleButton(bgSettingsBtn, "#343A26", "#F7E3AF");
-        LinearLayout.LayoutParams bgLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        bgLp.setMargins(0, 12, 0, 0);
-        bgSettingsBtn.setLayoutParams(bgLp);
-        bgSettingsBtn.setOnClickListener(v -> showBackgroundSettingsGuide());
-        layout.addView(bgSettingsBtn);
+        // 4. 重設眼動監測
+        addSettingsCard(layout, "重新校準眼動基準",
+                "換了使用環境、光線或配戴眼鏡時，重新校準可提升準確度",
+                "›", true, v -> setStage(UIStage.CalibrationInstruction));
 
-        // 項目 5: 匯出診斷畫面 (抓不到臉時，回傳 C++ 實際分析的畫面與數值)
-        Button diagBtn = new Button(this);
-        diagBtn.setText("匯出診斷畫面（存到相簿＋複製數值）");
-        styleButton(diagBtn, "#343A26", "#F7E3AF");
-        LinearLayout.LayoutParams diagLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        diagLp.setMargins(0, 12, 0, 0);
-        diagBtn.setLayoutParams(diagLp);
-        diagBtn.setOnClickListener(v -> onExportDiagnosticClicked());
-        layout.addView(diagBtn);
+        // 5. 錯誤回報
+        addSettingsCard(layout, "複製錯誤資訊",
+                "把目前偵測狀態與手機資訊複製成文字（不含影像），貼給研究人員",
+                "›", true, v -> copyDiagnosticReport());
+        addSettingsCard(layout, "匯出診斷畫面",
+                "擷取 5 張偵測畫面存到相簿「EFD」，並複製數值（含臉部影像）",
+                "›", true, v -> onExportDiagnosticClicked());
 
-        // 返回按鈕
-        Button returnBtn = new Button(this);
-        returnBtn.setText("返回監控中心");
-        styleButton(returnBtn, "#96C5F7", "#25291C");
-        LinearLayout.LayoutParams retLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        retLp.setMargins(0, 24, 0, 0);
-        returnBtn.setLayoutParams(retLp);
+        // 6. 自動科研同步 (恆定開啟)
+        addSettingsCard(layout, "自動科研同步",
+                "每晚 21:00 後上傳當日數值；錯過時會自動補傳",
+                "已開啟", false, null).setTextColor(Color.parseColor(C_MINT));
+
+        // 底部返回按鈕
+        Button returnBtn = dashButton("返回監控中心", C_WHITE, C_MINT, 20);
+        returnBtn.getLayoutParams().height = dp(48);
+        returnBtn.setTextSize(16);
         returnBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
         layout.addView(returnBtn);
 

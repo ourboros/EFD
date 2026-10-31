@@ -40,6 +40,76 @@ static std::vector<uint8_t> g_debugRgb;
 static std::string g_debugInfoJson;
 static std::mutex g_debugMutex;
 
+// -----------------------------------------------------------------------------
+// 自動畫面方向：部分手機 (例如三星 A71) 由背景服務開相機時，CameraX 回報的旋轉角與實際不符，
+// 送進偵測程式的臉會橫躺 90°。尚未鎖定方向時，連續一段時間找不到臉就輪流額外旋轉
+// 0° / 90° / 270°；在某個方向第一次偵測到臉 (需通過眼睛檢查) 即鎖定並存檔，之後不再嘗試。
+// -----------------------------------------------------------------------------
+static std::atomic<int> g_orientationOffset{0};      // 額外旋轉角 (0 / 90 / 270)
+static std::atomic<bool> g_orientationLocked{false};
+static std::atomic<int> g_lastReportedRotation{0};   // CameraX 回報的旋轉角 (診斷用)
+static std::atomic<int> g_lastSensorWidth{0};
+static std::atomic<int> g_lastSensorHeight{0};
+static std::atomic<int64_t> g_orientationTrialStartMs{0};
+static std::string g_orientationFilePath;
+static constexpr int kOrientationCandidates[3] = {0, 90, 270};
+static constexpr int64_t kOrientationTrialMs = 1500;  // 每個方向嘗試 1.5 秒
+
+static int64_t steadyNowMsJni() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+static void loadOrientationLock(const std::string& dir) {
+    g_orientationFilePath = dir.empty() ? std::string() : dir + "/efd_orientation.txt";
+    g_orientationOffset.store(0);
+    g_orientationLocked.store(false);
+    if (g_orientationFilePath.empty()) return;
+    FILE* f = std::fopen(g_orientationFilePath.c_str(), "r");
+    if (!f) return;
+    int offset = -1;
+    if (std::fscanf(f, "%d", &offset) == 1 && (offset == 0 || offset == 90 || offset == 270)) {
+        g_orientationOffset.store(offset);
+        g_orientationLocked.store(true);
+        LOGI("沿用已鎖定的畫面方向：額外旋轉 %d 度", offset);
+    }
+    std::fclose(f);
+}
+
+// 每幀偵測結果 (遙測回呼，於分析執行緒)：推進或鎖定方向
+static void updateOrientationSearch(bool rawFaceFound) {
+    if (g_orientationLocked.load()) return;
+    // 剛切換方向的 400 ms 內，管線中可能仍是舊方向的畫面，結果不採用，避免鎖錯方向
+    const int64_t trialStart = g_orientationTrialStartMs.load();
+    if (rawFaceFound && trialStart != 0 && steadyNowMsJni() - trialStart < 400) return;
+    if (rawFaceFound) {
+        g_orientationLocked.store(true);
+        const int offset = g_orientationOffset.load();
+        LOGI("偵測到臉部，鎖定畫面方向：額外旋轉 %d 度 (CameraX 回報 %d 度)", offset, g_lastReportedRotation.load());
+        if (!g_orientationFilePath.empty()) {
+            if (FILE* f = std::fopen(g_orientationFilePath.c_str(), "w")) {
+                std::fprintf(f, "%d\n", offset);
+                std::fclose(f);
+            }
+        }
+        return;
+    }
+    const int64_t now = steadyNowMsJni();
+    int64_t start = g_orientationTrialStartMs.load();
+    if (start == 0) {
+        g_orientationTrialStartMs.store(now);
+        return;
+    }
+    if (now - start >= kOrientationTrialMs) {
+        int idx = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (kOrientationCandidates[i] == g_orientationOffset.load()) idx = i;
+        }
+        g_orientationOffset.store(kOrientationCandidates[(idx + 1) % 3]);
+        g_orientationTrialStartMs.store(now);
+    }
+}
+
 static std::string jsonEscape(const std::string& s) {
     std::string out;
     out.reserve(s.size());
@@ -62,7 +132,11 @@ static void appendDiagnosticJson(std::ostringstream& oss, const efd::FaceLandmar
         << "\"eyeDark\":[" << d.eyeDarkFraction[0] << "," << d.eyeDarkFraction[1] << "],"
         << "\"eyeContrast\":[" << d.eyeContrast[0] << "," << d.eyeContrast[1] << "],"
         << "\"eyeGradient\":[" << d.eyeGradient[0] << "," << d.eyeGradient[1] << "],"
-        << "\"symmetry\":" << d.symmetryRatio;
+        << "\"symmetry\":" << d.symmetryRatio << ","
+        << "\"cameraRotation\":" << g_lastReportedRotation.load() << ","
+        << "\"extraRotation\":" << g_orientationOffset.load() << ","
+        << "\"orientationLocked\":" << (g_orientationLocked.load() ? "true" : "false") << ","
+        << "\"sensorSize\":[" << g_lastSensorWidth.load() << "," << g_lastSensorHeight.load() << "]";
 }
 
 static std::shared_ptr<efd::AsyncPipelineEngine> currentEngine() {
@@ -103,6 +177,7 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
             engine->setDataDirectory(pathStr, "test_study_config.json");
             LOGI("配置 C++ NDK 內部持久化儲存路徑: %s", pathStr.c_str());
         }
+        loadOrientationLock(pathStr);
         // Android 的每日上傳由 Java EfdSyncManager 統一負責，關閉 C++ 端避免重複上傳
         engine->setAutoNightlySyncEnabled(false);
 
@@ -115,6 +190,11 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
         });
 
         engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
+            if (!telemetry.latestFrame.isSynthetic) {
+                updateOrientationSearch(telemetry.presenceDiagnostic.rawPersonInFrame &&
+                                        telemetry.presenceDiagnostic.rawFacingCamera);
+            }
+
             // 診斷擷取：複製 C++ 實際分析的這一幀 (RGB888) 與偵測數值
             if (g_debugCaptureRequested.exchange(false) && telemetry.latestFrame.isValid()) {
                 std::ostringstream info;
@@ -210,7 +290,12 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     // 接收實體相機影格，關閉背景 Synthetic 虛擬驅動
     engine->getCameraService().stopSyntheticIfRunning();
 
-    int rot = (rotation % 360 + 360) % 360;
+    const int reported = (rotation % 360 + 360) % 360;
+    g_lastReportedRotation.store(reported);
+    g_lastSensorWidth.store(width);
+    g_lastSensorHeight.store(height);
+    // 實際旋轉 = CameraX 回報角度 + 自動方向搜尋的額外角度
+    int rot = (reported + g_orientationOffset.load()) % 360;
     // 轉正後的完整尺寸
     const int fullW = (rot == 90 || rot == 270) ? height : width;
     const int fullH = (rot == 90 || rot == 270) ? width : height;

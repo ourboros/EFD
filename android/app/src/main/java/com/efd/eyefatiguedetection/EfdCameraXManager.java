@@ -86,15 +86,37 @@ public class EfdCameraXManager {
         });
 
         try {
+            androidx.camera.core.Camera camera;
             if (previewView != null) {
                 androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder().build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
-                mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, preview, imageAnalysis);
+                camera = mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, preview, imageAnalysis);
             } else {
-                mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, imageAnalysis);
+                camera = mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, imageAnalysis);
             }
+            meterOnFaceArea(camera);
         } catch (Throwable t) {
             Log.e(TAG, "Bind CameraX to lifecycle failed: " + t.getMessage(), t);
+        }
+    }
+
+    /**
+     * 以畫面中央 (臉部通常所在) 為曝光測光區域，取代整張畫面平均測光：
+     * 手機由下往上拍時天花板燈常在畫面中，整體測光會把臉壓暗到失去膚色 (三星 A71 實測臉部亮度僅 55~77)。
+     */
+    private void meterOnFaceArea(androidx.camera.core.Camera camera) {
+        if (camera == null) return;
+        try {
+            androidx.camera.core.MeteringPointFactory factory =
+                    new androidx.camera.core.SurfaceOrientedMeteringPointFactory(1f, 1f);
+            androidx.camera.core.MeteringPoint center = factory.createPoint(0.5f, 0.5f, 0.45f);
+            androidx.camera.core.FocusMeteringAction action = new androidx.camera.core.FocusMeteringAction.Builder(
+                    center, androidx.camera.core.FocusMeteringAction.FLAG_AE)
+                    .disableAutoCancel()
+                    .build();
+            camera.getCameraControl().startFocusAndMetering(action);
+        } catch (Throwable t) {
+            Log.w(TAG, "設定中央測光失敗 (沿用系統自動曝光): " + t.getMessage());
         }
     }
 
