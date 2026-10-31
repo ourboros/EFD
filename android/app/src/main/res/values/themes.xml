@@ -5,5 +5,24 @@
         <item name="colorAccent">@color/accent</item>
         <item name="android:windowBackground">@color/background_dark</item>
         <item name="android:textColor">#FFFFFF</item>
+        <!-- 全域白色文字會讓白底對話框的按鈕與內文「白底白字」隱形，對話框改用專屬主題 -->
+        <item name="alertDialogTheme">@style/EfdAlertDialog</item>
+        <item name="android:alertDialogTheme">@style/EfdAlertDialog</item>
+    </style>
+
+    <style name="EfdAlertDialog" parent="Theme.AppCompat.Light.Dialog.Alert">
+        <item name="android:textColor">@color/text_dark</item>
+        <item name="android:textColorPrimary">@color/text_dark</item>
+        <item name="android:textColorSecondary">@color/text_dark</item>
+        <item name="colorAccent">@color/primary</item>
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="buttonBarPositiveButtonStyle">@style/EfdDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/EfdDialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/EfdDialogButton</item>
+    </style>
+
+    <style name="EfdDialogButton" parent="Widget.AppCompat.Button.ButtonBar.AlertDialog">
+        <item name="android:textColor">@color/primary</item>
+        <item name="android:textStyle">bold</item>
     </style>
 </resources>

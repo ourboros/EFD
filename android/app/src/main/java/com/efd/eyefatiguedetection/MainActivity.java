@@ -678,43 +678,122 @@ public class MainActivity extends AppCompatActivity {
     private TextView mDashMetricsText;
     private boolean mPreviewBoundToService = false;
 
+    // 與原 iOS 版相同的設計系統：薄荷綠底、白色圓角卡片、墨黑文字、珊瑚紅警示
+    private static final String C_MINT = "#1EB18A";
+    private static final String C_WHITE = "#FFFFFF";
+    private static final String C_AMBER = "#F7E3AF";
+    private static final String C_INK = "#25291C";
+    private static final String C_CORAL = "#EB5757";
+
+    private TextView mDashEarValue;
+    private TextView mDashPerclosValue;
+    private TextView mDashCiValue;
+    private TextView mDashScoreValue;
+    private String mLastTelemetryJson = "";
+
+    private int dp(float value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private android.graphics.drawable.GradientDrawable roundedBg(String color, float radiusDp) {
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Color.parseColor(color));
+        bg.setCornerRadius(dp(radiusDp));
+        return bg;
+    }
+
+    /** 2x2 指標白卡片：標題 + 大字數值，回傳數值 TextView。 */
+    private TextView addMetricCard(LinearLayout row, String title, String initial, boolean leftCell) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(roundedBg(C_WHITE, 12));
+        card.setPadding(dp(12), dp(8), dp(12), dp(10));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(leftCell ? 0 : dp(4), 0, leftCell ? dp(4) : 0, 0);
+        card.setLayoutParams(lp);
+
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextSize(12);
+        t.setTypeface(null, android.graphics.Typeface.BOLD);
+        t.setTextColor(Color.parseColor("#B325291C"));
+        card.addView(t);
+
+        TextView v = new TextView(this);
+        v.setText(initial);
+        v.setTextSize(20);
+        v.setTypeface(null, android.graphics.Typeface.BOLD);
+        v.setTextColor(Color.parseColor(C_INK));
+        card.addView(v);
+
+        row.addView(card);
+        return v;
+    }
+
+    private Button dashButton(String text, String bg, String fg, float topMarginDp) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setAllCaps(false);
+        btn.setTextSize(15);
+        btn.setTypeface(null, android.graphics.Typeface.BOLD);
+        btn.setTextColor(Color.parseColor(fg));
+        btn.setBackground(roundedBg(bg, 16));
+        btn.setStateListAnimator(null);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
+        lp.setMargins(0, dp(topMarginDp), 0, 0);
+        btn.setLayoutParams(lp);
+        return btn;
+    }
+
     private void renderMainDashboardScreen() {
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.parseColor("#25291C"));
+        scroll.setBackgroundColor(Color.parseColor(C_MINT));
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(24, 20, 24, 32);
+        layout.setPadding(dp(20), dp(12), dp(20), dp(24));
 
         TextView header = new TextView(this);
-        header.setText("即時眼動與疲勞監控中心");
-        header.setTextSize(20);
+        header.setText("EFD 即時眼睛疲勞監控中心");
+        header.setTextSize(21);
         header.setTypeface(null, android.graphics.Typeface.BOLD);
         header.setTextColor(Color.WHITE);
         header.setGravity(Gravity.CENTER);
-        header.setPadding(0, 0, 0, 16);
+        header.setPadding(0, 0, 0, dp(10));
         layout.addView(header);
 
-        // 置中固定比例相機預覽視窗 (280dp 正方形圓角卡片，FILL_CENTER 滿版無黑邊)
+        // 1. 4:3 相機預覽卡片 (圓角、白色細邊框，右上角「回報問題」)
         try {
-            int boxSize = (int) (280 * getResources().getDisplayMetrics().density);
+            int screenW = getResources().getDisplayMetrics().widthPixels;
+            int camW = screenW - dp(40);
+            int camH = camW * 3 / 4;
             FrameLayout cardView = new FrameLayout(this);
-            android.graphics.drawable.GradientDrawable cardBg = new android.graphics.drawable.GradientDrawable();
-            cardBg.setCornerRadius(24f);
-            cardBg.setColor(Color.parseColor("#181C12"));
+            android.graphics.drawable.GradientDrawable cardBg = roundedBg("#EBF5F0", 14);
+            cardBg.setStroke(dp(2), Color.WHITE);
             cardView.setBackground(cardBg);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                cardView.setClipToOutline(true);
-            }
-            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(boxSize, boxSize);
+            cardView.setClipToOutline(true);
+            cardView.setPadding(dp(2), dp(2), dp(2), dp(2));
+            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(camW, camH);
             cardLp.gravity = Gravity.CENTER_HORIZONTAL;
-            cardLp.setMargins(0, 0, 0, 20);
             cardView.setLayoutParams(cardLp);
 
             androidx.camera.view.PreviewView previewView = new androidx.camera.view.PreviewView(this);
             previewView.setScaleType(androidx.camera.view.PreviewView.ScaleType.FILL_CENTER);
             cardView.addView(previewView, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+            TextView reportBtn = new TextView(this);
+            reportBtn.setText("回報問題");
+            reportBtn.setTextSize(12);
+            reportBtn.setTypeface(null, android.graphics.Typeface.BOLD);
+            reportBtn.setTextColor(Color.WHITE);
+            reportBtn.setBackground(roundedBg(C_CORAL, 12));
+            reportBtn.setPadding(dp(12), dp(4), dp(12), dp(4));
+            FrameLayout.LayoutParams reportLp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+            reportLp.setMargins(0, dp(8), dp(8), 0);
+            reportBtn.setOnClickListener(v -> copyDiagnosticReport());
+            cardView.addView(reportBtn, reportLp);
 
             layout.addView(cardView);
 
@@ -729,11 +808,15 @@ public class MainActivity extends AppCompatActivity {
             Log.w(TAG, "Failed to embed camera preview: " + t.getMessage());
         }
 
-        // 核心狀態卡片
+        // 2. 狀態白卡片：受試者、生理狀態、疲勞評分、偵測細節
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
-        statusCard.setBackgroundColor(Color.parseColor("#343A26"));
-        statusCard.setPadding(24, 24, 24, 24);
+        statusCard.setBackground(roundedBg(C_WHITE, 12));
+        statusCard.setPadding(dp(14), dp(10), dp(14), dp(12));
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusLp.setMargins(0, dp(10), 0, 0);
+        statusCard.setLayoutParams(statusLp);
 
         TextView subjText = new TextView(this);
         String uuid = EfdNativeBridge.getSubjectUuid();
@@ -743,67 +826,94 @@ public class MainActivity extends AppCompatActivity {
         } else {
             subjText.setText(String.format(java.util.Locale.getDefault(), "受試者代碼：%s (實驗第 %d / 14 天)", uuid, day));
         }
-        subjText.setTextSize(13);
-        subjText.setTypeface(null, android.graphics.Typeface.BOLD);
-        subjText.setTextColor(Color.parseColor("#F7E3AF"));
-        subjText.setPadding(0, 0, 0, 8);
+        subjText.setTextSize(12);
+        subjText.setTextColor(Color.parseColor("#9925291C"));
         statusCard.addView(subjText);
 
         mDashStatusText = new TextView(this);
-        mDashStatusText.setText("生理狀態：清醒專注 (Normal)");
-        mDashStatusText.setTextSize(16);
+        mDashStatusText.setText("生理狀態：偵測中…");
+        mDashStatusText.setTextSize(15);
         mDashStatusText.setTypeface(null, android.graphics.Typeface.BOLD);
-        mDashStatusText.setTextColor(Color.parseColor("#1EB18A"));
+        mDashStatusText.setTextColor(Color.parseColor(C_MINT));
+        mDashStatusText.setPadding(0, dp(4), 0, 0);
         statusCard.addView(mDashStatusText);
 
         mDashScoreText = new TextView(this);
-        mDashScoreText.setText("疲勞評分：12.5 / 100");
-        mDashScoreText.setTextSize(24);
-        mDashScoreText.setTypeface(null, android.graphics.Typeface.BOLD);
-        mDashScoreText.setTextColor(Color.WHITE);
-        mDashScoreText.setPadding(0, 8, 0, 8);
+        mDashScoreText.setText("疲勞評分：--");
+        mDashScoreText.setTextSize(13);
+        mDashScoreText.setTextColor(Color.parseColor(C_INK));
         statusCard.addView(mDashScoreText);
 
         mDashMetricsText = new TextView(this);
-        mDashMetricsText.setText("EAR 即時: 0.312 | 閾值: 0.265\nPERCLOS: 4.2% | 閃爍: 16 次/分 | CI: 4.50");
-        mDashMetricsText.setTextSize(13);
-        mDashMetricsText.setTypeface(null, android.graphics.Typeface.BOLD);
-        mDashMetricsText.setTextColor(Color.parseColor("#E0E0E0"));
+        mDashMetricsText.setText("");
+        mDashMetricsText.setTextSize(11);
+        mDashMetricsText.setTextColor(Color.parseColor("#9925291C"));
         statusCard.addView(mDashMetricsText);
 
         layout.addView(statusCard);
 
-        // 控制按鈕群 (僅保留：進入設定介面 與 關閉系統介面)
-        LinearLayout btns = new LinearLayout(this);
-        btns.setOrientation(LinearLayout.VERTICAL);
-        btns.setPadding(0, 20, 0, 0);
-
-        Button settingsBtn = new Button(this);
-        settingsBtn.setText("進入設定介面");
-        settingsBtn.setPadding(16, 14, 16, 14);
-        styleButton(settingsBtn, "#1EB18A", "#FFFFFF");
-        settingsBtn.setOnClickListener(v -> setStage(UIStage.SettingsPanel));
-        btns.addView(settingsBtn);
-
-        Button closeBgBtn = new Button(this);
-        closeBgBtn.setText("關閉系統介面");
-        closeBgBtn.setPadding(16, 14, 16, 14);
-        styleButton(closeBgBtn, "#F7E3AF", "#25291C");
-        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
+        // 3. 2x2 指標白卡片
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams row1Lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        closeLp.setMargins(0, 12, 0, 0);
-        closeBgBtn.setLayoutParams(closeLp);
-        closeBgBtn.setOnClickListener(v -> {
+        row1Lp.setMargins(0, dp(10), 0, 0);
+        row1.setLayoutParams(row1Lp);
+        mDashEarValue = addMetricCard(row1, "雙眼 EAR", "--", true);
+        mDashPerclosValue = addMetricCard(row1, "閉眼比 (PERCLOS)", "--", false);
+        layout.addView(row1);
+
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams row2Lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        row2Lp.setMargins(0, dp(8), 0, 0);
+        row2.setLayoutParams(row2Lp);
+        mDashCiValue = addMetricCard(row2, "複雜度 (MSE / CI)", "--", true);
+        mDashScoreValue = addMetricCard(row2, "綜合疲勞分數", "--", false);
+        layout.addView(row2);
+
+        // 4. 控制按鈕
+        Button recalibBtn = dashButton("重新偵測疲勞數據", C_WHITE, C_MINT, 14);
+        recalibBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
+        layout.addView(recalibBtn);
+
+        LinearLayout subRow = new LinearLayout(this);
+        subRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button settingsBtn = dashButton("系統參數設定", C_WHITE, C_MINT, 8);
+        settingsBtn.setOnClickListener(v -> setStage(UIStage.SettingsPanel));
+        Button bgBtn = dashButton("背景運行模式", C_CORAL, C_WHITE, 8);
+        bgBtn.setOnClickListener(v -> {
             Toast.makeText(this, "EFD 已轉入背景監控，僅於疲勞超標時跳出提醒", Toast.LENGTH_LONG).show();
             moveTaskToBack(true);
         });
-        btns.addView(closeBgBtn);
+        LinearLayout.LayoutParams half1 = (LinearLayout.LayoutParams) settingsBtn.getLayoutParams();
+        half1.width = 0; half1.weight = 1f; half1.setMarginEnd(dp(4));
+        LinearLayout.LayoutParams half2 = (LinearLayout.LayoutParams) bgBtn.getLayoutParams();
+        half2.width = 0; half2.weight = 1f; half2.setMarginStart(dp(4));
+        subRow.addView(settingsBtn);
+        subRow.addView(bgBtn);
+        layout.addView(subRow);
 
-        layout.addView(btns);
         scroll.addView(layout);
-
         mStageContentContainer.addView(scroll, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    /** 監控中心「回報問題」：把目前偵測狀態與裝置資訊複製成文字 (不含影像)。 */
+    private void copyDiagnosticReport() {
+        String text = "[EFD Android 錯誤回報]\n"
+                + "裝置: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android " + Build.VERSION.RELEASE
+                + " (SDK " + Build.VERSION.SDK_INT + ")\n"
+                + "通知: " + (EfdNotificationHudManager.canPostFatigueAlerts(this) ? "開啟" : "關閉")
+                + " / 背景偵測: " + (EfdForegroundService.getInstance() != null ? "執行中" : "未執行") + "\n"
+                + "目前偵測: " + mLastTelemetryJson;
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("EFD 錯誤回報", text));
+        }
+        Toast.makeText(this, "已複製錯誤資訊，請貼到 LINE 傳給研究人員", Toast.LENGTH_LONG).show();
     }
 
     // -------------------------------------------------------------------------
@@ -1108,42 +1218,50 @@ public class MainActivity extends AppCompatActivity {
                         int blinkRate = obj.optInt("blinkRate", 0);
                         float complexityCI = (float) obj.optDouble("complexityCI", 0.0);
 
+                        mLastTelemetryJson = obj.toString();
                         if (mCurrentStage == UIStage.MainDashboard && mDashScoreText != null) {
                             if (!hasFace) {
-                                // 顯示未偵測到臉的原因與相機畫面資訊，方便使用者調整或回報
+                                // 顯示未偵測到臉的原因、相機畫面與臉框尺寸，只看截圖也能判斷是太大、太小或其他原因
                                 mDashStatusText.setText("未偵測到臉：" + presenceReasonText(obj));
-                                mDashStatusText.setTextColor(Color.parseColor("#F7E3AF"));
+                                mDashStatusText.setTextColor(Color.parseColor(C_CORAL));
                                 mDashScoreText.setText("疲勞評分：未就座 (暫停計算)");
-                                if (mDashMetricsText != null) {
-                                    mDashMetricsText.setText(String.format(java.util.Locale.getDefault(),
-                                            "相機畫面: %dx%d %.0f fps | 卡在: %s\nEAR 閾值: %.3f | PERCLOS: -- | CI: --",
-                                            obj.optInt("frameW", 0), obj.optInt("frameH", 0), obj.optDouble("measuredFps", 0.0),
-                                            obj.optString("failStage", "-").isEmpty() ? "-" : obj.optString("failStage", "-"),
-                                            threshold));
-                                }
+                                org.json.JSONArray face = obj.optJSONArray("faceBox");
+                                org.json.JSONArray skin = obj.optJSONArray("skinBox");
+                                String stage = obj.optString("failStage", "");
+                                mDashMetricsText.setText(String.format(java.util.Locale.getDefault(),
+                                        "相機畫面 %dx%d %.0f fps | 卡在 %s | 膚色區 %dx%d | 臉框 %dx%d",
+                                        obj.optInt("frameW", 0), obj.optInt("frameH", 0), obj.optDouble("measuredFps", 0.0),
+                                        stage.isEmpty() ? "-" : stage,
+                                        skin != null ? skin.optInt(2) : 0, skin != null ? skin.optInt(3) : 0,
+                                        face != null ? face.optInt(2) : 0, face != null ? face.optInt(3) : 0));
+                                mDashEarValue.setText("--");
+                                mDashPerclosValue.setText("離座暫停");
+                                mDashCiValue.setText("--");
+                                mDashScoreValue.setText("暫停中");
                             } else {
-                                mDashScoreText.setText(String.format(java.util.Locale.getDefault(), "疲勞評分：%.1f / 100", mCurrentScore));
+                                mDashScoreText.setText(String.format(java.util.Locale.getDefault(),
+                                        "閾值 %.3f ｜ 眨眼 %d 次/分", threshold, blinkRate));
                                 if (cooldownState == 1 && cooldownRemaining > 0) {
                                     int mins = cooldownRemaining / 60;
                                     int secs = cooldownRemaining % 60;
                                     mDashStatusText.setText(String.format(java.util.Locale.getDefault(),
                                             "生理狀態：重度疲勞【防打擾冷卻中 剩餘 %d分%d秒】", mins, secs));
-                                    mDashStatusText.setTextColor(Color.parseColor("#EB5757"));
+                                    mDashStatusText.setTextColor(Color.parseColor(C_CORAL));
                                 } else if (mCurrentLevel == 2) {
                                     mDashStatusText.setText("生理狀態：你的眼睛處於疲勞狀態，請適當休息");
-                                    mDashStatusText.setTextColor(Color.parseColor("#EB5757"));
+                                    mDashStatusText.setTextColor(Color.parseColor(C_CORAL));
                                 } else if (mCurrentLevel == 1) {
                                     mDashStatusText.setText("生理狀態：用眼注意 (Attention)");
-                                    mDashStatusText.setTextColor(Color.parseColor("#F7E3AF"));
+                                    mDashStatusText.setTextColor(Color.parseColor("#C98A12"));
                                 } else {
                                     mDashStatusText.setText("生理狀態：清醒專注 (Normal)");
-                                    mDashStatusText.setTextColor(Color.parseColor("#1EB18A"));
+                                    mDashStatusText.setTextColor(Color.parseColor(C_MINT));
                                 }
-                                if (mDashMetricsText != null) {
-                                    mDashMetricsText.setText(String.format(java.util.Locale.getDefault(),
-                                            "EAR 即時: %.3f | 閾值: %.3f\nPERCLOS: %.1f%% | 閃爍: %d 次/分 | CI: %.2f",
-                                            currentEar, threshold, perclos, blinkRate, complexityCI));
-                                }
+                                mDashMetricsText.setText(obj.optBoolean("tracking", false) ? "臉部追蹤中 (閉眼或低頭仍算在座)" : "");
+                                mDashEarValue.setText(String.format(java.util.Locale.getDefault(), "%.3f", currentEar));
+                                mDashPerclosValue.setText(String.format(java.util.Locale.getDefault(), "%.1f%%", perclos));
+                                mDashCiValue.setText(String.format(java.util.Locale.getDefault(), "%.2f", complexityCI));
+                                mDashScoreValue.setText(String.format(java.util.Locale.getDefault(), "%.1f", mCurrentScore));
                             }
                         }
 

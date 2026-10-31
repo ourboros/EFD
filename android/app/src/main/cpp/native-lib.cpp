@@ -211,8 +211,14 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     engine->getCameraService().stopSyntheticIfRunning();
 
     int rot = (rotation % 360 + 360) % 360;
-    int outW = (rot == 90 || rot == 270) ? height : width;
-    int outH = (rot == 90 || rot == 270) ? width : height;
+    // 轉正後的完整尺寸
+    const int fullW = (rot == 90 || rot == 270) ? height : width;
+    const int fullH = (rot == 90 || rot == 270) ? width : height;
+    // 偵測參數以約 480 寬 (iPhone 480x640、Windows 640) 調校；部分手機 (例如三星) 會給 1088x1088 等
+    // 高解析畫面，等比例縮到寬 480 以內，避免臉部尺寸、步進與膚色網格的比例失準
+    constexpr int kTargetWidth = 480;
+    const int outW = (fullW > kTargetWidth) ? kTargetWidth : fullW;
+    const int outH = (fullW > kTargetWidth) ? std::max(1, fullH * kTargetWidth / fullW) : fullH;
 
     efd::RawFrame frame;
     frame.width = outW;
@@ -233,41 +239,37 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
         const uint8_t* yPlane = nv21;
         const uint8_t* vuPlane = nv21 + frameSize;
 
-        for (int y = 0; y < height; ++y) {
-            int yIndex = y * width;
-            int uvIndex = (y / 2) * width;
+        // 逐一計算輸出像素：先換算到轉正後的完整座標 (縮放)，再反推回感測器座標 (旋轉)
+        for (int oy = 0; oy < outH; ++oy) {
+            const int ry = static_cast<int>(static_cast<long long>(oy) * fullH / outH);
+            for (int ox = 0; ox < outW; ++ox) {
+                const int rx = static_cast<int>(static_cast<long long>(ox) * fullW / outW);
+                int x = rx, y = ry;
+                if (rot == 90) {
+                    x = ry;
+                    y = height - 1 - rx;
+                } else if (rot == 180) {
+                    x = width - 1 - rx;
+                    y = height - 1 - ry;
+                } else if (rot == 270) {
+                    x = width - 1 - ry;
+                    y = rx;
+                }
+                if (x < 0 || x >= width || y < 0 || y >= height) continue;
 
-            for (int x = 0; x < width; ++x) {
-                int yVal = yPlane[yIndex + x] & 0xFF;
-                int vVal = (vuPlane[uvIndex + (x & ~1)] & 0xFF) - 128;
-                int uVal = (vuPlane[uvIndex + (x & ~1) + 1] & 0xFF) - 128;
+                int yVal = yPlane[y * width + x] & 0xFF;
+                const int uvIndex = (y / 2) * width + (x & ~1);
+                int vVal = (vuPlane[uvIndex] & 0xFF) - 128;
+                int uVal = (vuPlane[uvIndex + 1] & 0xFF) - 128;
 
                 int r = static_cast<int>(static_cast<float>(yVal) + 1.402f * static_cast<float>(vVal));
                 int g = static_cast<int>(static_cast<float>(yVal) - 0.344136f * static_cast<float>(uVal) - 0.714136f * static_cast<float>(vVal));
                 int b = static_cast<int>(static_cast<float>(yVal) + 1.772f * static_cast<float>(uVal));
 
-                uint8_t rClamped = static_cast<uint8_t>(std::clamp(r, 0, 255));
-                uint8_t gClamped = static_cast<uint8_t>(std::clamp(g, 0, 255));
-                uint8_t bClamped = static_cast<uint8_t>(std::clamp(b, 0, 255));
-
-                int rx = x, ry = y;
-                if (rot == 90) {
-                    rx = height - 1 - y;
-                    ry = x;
-                } else if (rot == 180) {
-                    rx = width - 1 - x;
-                    ry = height - 1 - y;
-                } else if (rot == 270) {
-                    rx = y;
-                    ry = width - 1 - x;
-                }
-
-                size_t outIdx = (ry * outW + rx) * 3;
-                if (outIdx + 2 < requiredSize) {
-                    frame.data[outIdx + 0] = rClamped;
-                    frame.data[outIdx + 1] = gClamped;
-                    frame.data[outIdx + 2] = bClamped;
-                }
+                size_t outIdx = (static_cast<size_t>(oy) * outW + ox) * 3;
+                frame.data[outIdx + 0] = static_cast<uint8_t>(std::clamp(r, 0, 255));
+                frame.data[outIdx + 1] = static_cast<uint8_t>(std::clamp(g, 0, 255));
+                frame.data[outIdx + 2] = static_cast<uint8_t>(std::clamp(b, 0, 255));
             }
         }
     }
