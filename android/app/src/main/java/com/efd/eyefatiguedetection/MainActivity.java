@@ -547,10 +547,10 @@ public class MainActivity extends AppCompatActivity {
         TextView sub = addPageSubtitle(layout, "請將手機拿到與眼睛同高，正對前鏡頭");
 
         // 偵測到臉才倒數：第一次使用時手機還在判斷畫面方向，提早開始校準會浪費掉大部分校準時間
-        Button skipBtn = dashButton("略過，先使用預設基準", "#33FFFFFF", C_WHITE, 24);
-        skipBtn.setVisibility(View.GONE);
-        skipBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
-        layout.addView(skipBtn);
+        Button retryWaitBtn = dashButton("返回說明重新準備", "#33FFFFFF", C_WHITE, 24);
+        retryWaitBtn.setVisibility(View.GONE);
+        retryWaitBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
+        layout.addView(retryWaitBtn);
 
         mCountdownSec = 3;
         final long startTime = System.currentTimeMillis();
@@ -573,7 +573,7 @@ public class MainActivity extends AppCompatActivity {
                     hint.setText("正在尋找你的臉部…");
                     if (System.currentTimeMillis() - startTime > 10000) {
                         sub.setText("還沒偵測到臉部：請面向窗戶或燈光（不要背對光源），讓整張臉出現在鏡頭前");
-                        skipBtn.setVisibility(View.VISIBLE);
+                        retryWaitBtn.setVisibility(View.VISIBLE);
                     }
                 }
                 mHandler.postDelayed(this, 1000);
@@ -741,20 +741,26 @@ public class MainActivity extends AppCompatActivity {
             Button exportBtn = dashButton("匯出診斷畫面 (回報問題用)", "#33FFFFFF", C_WHITE, 10);
             exportBtn.setOnClickListener(v -> onExportDiagnosticClicked());
             layout.addView(exportBtn);
+
+            new AlertDialog.Builder(this)
+                    .setTitle("未檢測到清晰人臉")
+                    .setMessage("校準期間未能穩定偵測到有效人臉特徵（可能距離鏡頭太近或光線不足）。\n\n為避免後續產生假疲勞警報，請調整距離與光線後重新校準。")
+                    .setCancelable(false)
+                    .setPositiveButton("重新校準", (d, w) -> setStage(UIStage.CalibrationInstruction))
+                    .show();
+        } else {
+            Button proceedBtn = dashButton("進入即時眼動監控中心", C_WHITE, C_MINT, 24);
+            proceedBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
+            layout.addView(proceedBtn);
+
+            // 數據提取後轉入背景持續監控
+            Button closeBgBtn = dashButton("背景運行模式", C_CORAL, C_WHITE, 10);
+            closeBgBtn.setOnClickListener(v -> {
+                Toast.makeText(this, "EFD 已轉入背景監控，僅於疲勞超標時跳出提醒", Toast.LENGTH_LONG).show();
+                moveTaskToBack(true);
+            });
+            layout.addView(closeBgBtn);
         }
-
-        Button proceedBtn = dashButton(mLastCalibrationOk ? "進入即時眼動監控中心" : "略過，先使用預設基準",
-                C_WHITE, C_MINT, mLastCalibrationOk ? 24 : 10);
-        proceedBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
-        layout.addView(proceedBtn);
-
-        // 數據提取後轉入背景持續監控
-        Button closeBgBtn = dashButton("背景運行模式", C_CORAL, C_WHITE, 10);
-        closeBgBtn.setOnClickListener(v -> {
-            Toast.makeText(this, "EFD 已轉入背景監控，僅於疲勞超標時跳出提醒", Toast.LENGTH_LONG).show();
-            moveTaskToBack(true);
-        });
-        layout.addView(closeBgBtn);
     }
 
     // -------------------------------------------------------------------------
@@ -1014,10 +1020,9 @@ public class MainActivity extends AppCompatActivity {
     /** 舊的校準結果無法沿用 (未量到眼睛開合) 時，提醒使用者重新校準。 */
     private void showRecalibrationNeededDialog() {
         new AlertDialog.Builder(this)
-                .setTitle("需要重新校準")
-                .setMessage("先前的校準沒有量到眼睛開合（可能當時畫面方向尚未調整好），閉眼率會無法正確計算。\n\n"
-                        + "請正對鏡頭重新校準一次，約 10 秒即可完成。")
-                .setNegativeButton("稍後", null)
+                .setTitle("未檢測到清晰人臉，需要校準")
+                .setMessage("尚未完成有效的人臉與眼動特徵校準。\n若未校準直接監控，可能因無法正確判定眼睛開合而頻繁誤報。\n\n請正對鏡頭重新校準，約 10 秒即可完成。")
+                .setCancelable(false)
                 .setPositiveButton("現在校準", (d, w) -> setStage(UIStage.CalibrationInstruction))
                 .show();
     }
