@@ -420,7 +420,10 @@ void testNightlySyncMarksOnlyOnSuccess() {
         engine.getDatabaseService().logRecord(r);
         assert(engine.getStudyTracker().getLastSyncedDate() == 0);
 
-        assert(engine.checkAndTriggerNightlySync());
+        // 不可把有副作用的呼叫寫在 assert 內：Release (NDEBUG) 會整行移除，上傳不會被觸發
+        const bool triggered = engine.checkAndTriggerNightlySync();
+        assert(triggered);
+        (void)triggered;
         for (int i = 0; i < 300 && engine.getSyncWorker().isSyncing(); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }

@@ -526,48 +526,96 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 // 瞳孔/虹膜/睫毛的亮度明顯低於膚色；牆面、木頭等均勻物體幾乎沒有這類暗點
                 const int darkLumLimit = static_cast<int>(avgSkinLum * 0.60f);
 
-                for (int e = 0; e < 2; ++e) {
-                    int ecx = eyeCentersX[e];
-                    int ecy = eyeCenterY;
-                    int minLum = 255;
-                    int maxLum = 0;
-                    float totalGrad = 0.0f;
-                    int gradSamples = 0;
-                    int darkCount = 0;
+                // 單一列暗點比例的最大值：瞳孔/睫毛只佔眼框寬度的一部分，整列都暗代表框到了物體邊緣外的背景
+                float eyeRowDarkMax[2] = { 0.0f, 0.0f };
+                auto measureEyes = [&](int ecy, int darkLumLimit) {
+                    for (int e = 0; e < 2; ++e) {
+                        int ecx = eyeCentersX[e];
+                        int minLum = 255;
+                        int maxLum = 0;
+                        float totalGrad = 0.0f;
+                        int gradSamples = 0;
+                        int darkCount = 0;
+                        eyeRowDarkMax[e] = 0.0f;
 
-                    for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
-                        int py = ecy + dy;
-                        if (py <= 1 || py >= height - 2) continue;
-                        for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
-                            int px = ecx + dx;
-                            if (px <= 0 || px >= width) continue;
+                        for (int dy = -eyeBoxRadius; dy <= eyeBoxRadius - 2; dy += 2) {
+                            int py = ecy + dy;
+                            if (py <= 1 || py >= height - 2) continue;
+                            int rowDark = 0;
+                            int rowSamples = 0;
+                            for (int dx = -eyeBoxRadius; dx <= eyeBoxRadius; dx += 2) {
+                                int px = ecx + dx;
+                                if (px <= 0 || px >= width) continue;
 
-                            int idx = (py * width + px) * 3;
-                            int lum = lumaAt(pixelData, idx, format);
-                            if (lum < minLum) minLum = lum;
-                            if (lum > maxLum) maxLum = lum;
-                            if (lum < darkLumLimit) darkCount++;
+                                int idx = (py * width + px) * 3;
+                                int lum = lumaAt(pixelData, idx, format);
+                                if (lum < minLum) minLum = lum;
+                                if (lum > maxLum) maxLum = lum;
+                                rowSamples++;
+                                if (lum < darkLumLimit) {
+                                    darkCount++;
+                                    rowDark++;
+                                }
 
-                            int idxTop = ((py - 1) * width + px) * 3;
-                            int idxBot = ((py + 1) * width + px) * 3;
-                            int lumTop = lumaAt(pixelData, idxTop, format);
-                            int lumBot = lumaAt(pixelData, idxBot, format);
-                            totalGrad += std::abs(lumBot - lumTop);
-                            gradSamples++;
+                                int idxTop = ((py - 1) * width + px) * 3;
+                                int idxBot = ((py + 1) * width + px) * 3;
+                                int lumTop = lumaAt(pixelData, idxTop, format);
+                                int lumBot = lumaAt(pixelData, idxBot, format);
+                                totalGrad += std::abs(lumBot - lumTop);
+                                gradSamples++;
+                            }
+                            if (rowSamples > 0) {
+                                eyeRowDarkMax[e] = std::max(eyeRowDarkMax[e], static_cast<float>(rowDark) / rowSamples);
+                            }
                         }
+                        eyeContrast[e] = static_cast<float>(std::max(0, maxLum - minLum));
+                        eyeGrad[e] = (gradSamples > 0) ? (totalGrad / gradSamples) : 0.0f;
+                        eyeDarkFraction[e] = (gradSamples > 0) ? (static_cast<float>(darkCount) / gradSamples) : 0.0f;
                     }
-                    eyeContrast[e] = static_cast<float>(std::max(0, maxLum - minLum));
-                    eyeGrad[e] = (gradSamples > 0) ? (totalGrad / gradSamples) : 0.0f;
-                    eyeDarkFraction[e] = (gradSamples > 0) ? (static_cast<float>(darkCount) / gradSamples) : 0.0f;
-                }
+                };
 
                 // 單眼驗證需同時具備：明顯暗點 (瞳孔/睫毛)、足夠反差與垂直梯度 (眼瞼邊緣)
                 // 耳機/帽沿可能遮擋一側，因此任一眼成立即可
                 auto eyeLooksReal = [&](int e) {
                     return eyeDarkFraction[e] >= 0.04f && eyeContrast[e] >= 20.0f && eyeGrad[e] >= 3.0f;
                 };
+                measureEyes(eyeCenterY, darkLumLimit);
                 bool leftEyeOk  = eyeLooksReal(0);
                 bool rightEyeOk = eyeLooksReal(1);
+
+                // 瀏海遮住額頭、頂燈讓眼周偏灰時，膚色區域會從眼睛下方 (臉頰) 才開始，
+                // 以比例推算的眼睛位置會落在鼻子。此時在膚色頂端略上方到推算位置之間逐列尋找；
+                // 偏離推算位置時要求雙眼在同一列都成立，避免膚色物體上的零星暗點被當成眼睛。
+                // 距離較遠、頂燈逆光時眼睛只有約 20 像素寬，瞳孔最暗處約為膚色的 55%，
+                // 因此雙眼成對時暗點門檻放寬到膚色的 65%，但反差與眼瞼邊緣梯度要求提高
+                const int pairDarkLumLimit = static_cast<int>(avgSkinLum * 0.65f);
+                auto eyePairLooksReal = [&](int e) {
+                    return eyeDarkFraction[e] >= 0.025f && eyeRowDarkMax[e] <= 0.60f
+                        && eyeContrast[e] >= 30.0f && eyeGrad[e] >= 4.0f;
+                };
+                if (!leftEyeOk && !rightEyeOk) {
+                    const int searchTop = std::max(eyeBoxRadius + 2, comp.minY - static_cast<int>(boxW * 0.10f));
+                    const int searchBottom = eyeCenterY;
+                    const int rowStep = std::max(2, eyeBoxRadius / 3);
+                    int bestRow = -1;
+                    float bestScore = 0.0f;
+                    for (int row = searchTop; row <= searchBottom; row += rowStep) {
+                        measureEyes(row, pairDarkLumLimit);
+                        if (!eyePairLooksReal(0) || !eyePairLooksReal(1)) continue;
+                        const float score = eyeGrad[0] + eyeGrad[1];
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestRow = row;
+                        }
+                    }
+                    if (bestRow >= 0) {
+                        // 臉部中心與尺度依找到的眼睛高度重新定位，後續追蹤與開闔度量測才會對準眼睛
+                        detectedFaceCy += static_cast<float>(bestRow - eyeCenterY);
+                        eyeCenterY = bestRow;
+                        leftEyeOk = rightEyeOk = true;
+                    }
+                    measureEyes(eyeCenterY, bestRow >= 0 ? pairDarkLumLimit : darkLumLimit);
+                }
                 diag.avgSkinLum = avgSkinLum;
                 diag.eyeCenterY = eyeCenterY;
                 for (int e = 0; e < 2; ++e) {
