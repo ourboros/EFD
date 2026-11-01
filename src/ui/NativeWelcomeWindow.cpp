@@ -206,6 +206,25 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
     static int s_telemetryLogCount = 0;
     m_engine.setTelemetryCallback([this](const EngineTelemetry& t) {
         this->m_latestTelemetry = t;
+
+        // 監控畫面的離座提示需連續 3 秒未偵測到臉才顯示：引擎丟失臉部 1 秒即暫停計算，
+        // 但轉頭、低頭、光線瞬間變化造成的短暫丟失不必讓使用者看到離座提示
+        {
+            const bool rawPresent = t.detection.hasFace && t.systemState.userPresent;
+            const auto now = std::chrono::steady_clock::now();
+            if (rawPresent) {
+                this->m_noFaceTiming = false;
+                this->m_displayPresent.store(true);
+            } else {
+                if (!this->m_noFaceTiming) {
+                    this->m_noFaceTiming = true;
+                    this->m_noFaceSince = now;
+                }
+                if (now - this->m_noFaceSince >= std::chrono::seconds(3)) {
+                    this->m_displayPresent.store(false);
+                }
+            }
+        }
         // 即時同步至懸浮指標 HUD
         this->m_floatingIndicator.updateMetrics(
             t.eyeMetrics.earAvg,
@@ -384,6 +403,10 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
     
     // 無條件立即啟動核心引擎，確保背景追蹤與離座判定立刻生效
     m_engine.start();
+
+    // 舊版可能存下眼睛開合未被量到的校準 (閉眼門檻低於全閉眼的 EAR)，引擎不會沿用；
+    // 系統匣建立後跳出提醒 (見 run())，監控畫面狀態列也會持續提示
+    m_recalibrationNoticePending = hasTested && !m_engine.hasSavedCalibration();
 }
 
 NativeWelcomeWindow::~NativeWelcomeWindow() {
@@ -427,8 +450,10 @@ void NativeWelcomeWindow::setStage(UIStage stage) {
     m_currentStage = stage;
     m_stageTimeSec = 0.0f;
     m_animTimeSec = 0.0f;
+    m_countdownFaceSec = 0.0f;
     if (stage == UIStage::ActiveCalibration) {
         m_calibrationProgress = 0.0f;
+        m_calibrationExtended = false;
         // 進入實際校準階段才開始收集樣本 (只收有偵測到人臉的幀)
         m_engine.beginCalibration();
     }
@@ -477,10 +502,16 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
         } else if (PtInRect(&m_backWelcomeBtnRect, pt)) {
             setStage(UIStage::Welcome);
         }
+    } else if (m_currentStage == UIStage::CountdownWait) {
+        if (PtInRect(&m_skipCountdownBtnRect, pt)) {
+            m_engine.getStudyTracker().setInitialSetupCompleted(true);
+            setStage(UIStage::MainDashboard);
+        }
     } else if (m_currentStage == UIStage::ActiveCalibration) {
         if (PtInRect(&m_skipCalibBtnRect, pt)) {
             // 略過：以已收集的樣本嘗試校準，不足時保留原基準
             m_lastCalibrationOk = m_engine.finishCalibration();
+            if (m_lastCalibrationOk) m_recalibrationNoticePending = false;
             m_engine.getStudyTracker().setInitialSetupCompleted(true);
             setStage(UIStage::CalibrationResult);
         }
@@ -565,13 +596,18 @@ void NativeWelcomeWindow::onTimerTick() {
         m_demoDotY = 0.28f * std::sin(angle * 2.0f) + 0.5f;
         if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
     } else if (m_currentStage == UIStage::CountdownWait) {
-        // 階段 3: 3 秒倒數計時等待 (3 -> 2 -> 1)
-        if (m_stageTimeSec >= 3.0f) {
+        // 階段 3: 偵測到臉才倒數 3 -> 2 -> 1；臉離開就重新從 3 開始，避免校準期間大多沒有臉而失敗
+        if (m_latestTelemetry.detection.hasFace) {
+            m_countdownFaceSec += dt;
+        } else {
+            m_countdownFaceSec = 0.0f;
+        }
+        if (m_countdownFaceSec >= 3.0f) {
             setStage(UIStage::ActiveCalibration);
         }
         if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
     } else if (m_currentStage == UIStage::ActiveCalibration) {
-        // 階段 4: 實際多點眼動採樣 (5 點巡迴移動，共 5 秒)
+        // 階段 4: 實際多點眼動採樣 (5 點巡迴移動，一輪 5 秒；有效畫面不足時繼續巡迴，最多 15 秒)
         struct TargetPoint { float x, y; };
         const TargetPoint points[] = {
             { 0.50f, 0.50f }, // 0. 中心
@@ -582,12 +618,22 @@ void NativeWelcomeWindow::onTimerTick() {
             { 0.50f, 0.50f }  // 5. 回歸中心
         };
 
-        float totalDuration = 5.0f;
-        float segDuration = 1.0f;
-        int seg = static_cast<int>(m_stageTimeSec / segDuration);
+        constexpr float kLapDuration = 5.0f;
+        constexpr float kMaxDuration = 15.0f;
+        bool keepGoing = m_stageTimeSec < kLapDuration;
+        if (!keepGoing && m_stageTimeSec < kMaxDuration) {
+            size_t validSamples = 0;
+            size_t totalFrames = 0;
+            m_engine.getCalibrationProgress(validSamples, totalFrames);
+            keepGoing = validSamples < AsyncPipelineEngine::kMinCalibrationSamples ||
+                        static_cast<float>(validSamples) < static_cast<float>(totalFrames) * AsyncPipelineEngine::kMinCalibrationValidRatio;
+            m_calibrationExtended = m_calibrationExtended || keepGoing;
+        }
 
-        if (seg < 5) {
-            float segT = (m_stageTimeSec - static_cast<float>(seg) * segDuration) / segDuration;
+        if (keepGoing) {
+            float lapT = std::fmod(m_stageTimeSec, kLapDuration);
+            int seg = std::min(4, static_cast<int>(lapT));
+            float segT = lapT - static_cast<float>(seg);
             float smoothT = 0.5f * (1.0f - std::cos(segT * 3.14159265f));
 
             TargetPoint p0 = points[seg];
@@ -595,7 +641,7 @@ void NativeWelcomeWindow::onTimerTick() {
 
             m_targetDotX = p0.x + (p1.x - p0.x) * smoothT;
             m_targetDotY = p0.y + (p1.y - p0.y) * smoothT;
-            m_calibrationProgress = std::clamp(m_stageTimeSec / totalDuration, 0.0f, 1.0f);
+            m_calibrationProgress = std::clamp(m_stageTimeSec / (m_calibrationExtended ? kMaxDuration : kLapDuration), 0.0f, 1.0f);
         } else {
             // 採樣完成，鎖定學習使用者視野自然偏向位置，校準基準並進入階段 5 (測驗完成提示)
             if (m_latestTelemetry.detection.hasFace && m_latestTelemetry.presenceDiagnostic.trackedCx > 0.0f) {
@@ -608,6 +654,7 @@ void NativeWelcomeWindow::onTimerTick() {
                           << m_calibratedUserBiasY << ")\n";
             }
             m_lastCalibrationOk = m_engine.finishCalibration();
+            if (m_lastCalibrationOk) m_recalibrationNoticePending = false;
             setStage(UIStage::CalibrationResult);
         }
 
@@ -1250,12 +1297,13 @@ void NativeWelcomeWindow::drawCountdownWait(Gdiplus::Graphics& g, int w, int h) 
     centerFormat.SetAlignment(Gdiplus::StringAlignmentCenter);
     centerFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
 
-    // 計算當前倒數數字 (3 -> 2 -> 1)
-    int remainingSec = 3 - static_cast<int>(m_stageTimeSec);
+    // 計算當前倒數數字 (3 -> 2 -> 1)：只在偵測到臉時倒數
+    const bool faceFound = m_latestTelemetry.detection.hasFace;
+    int remainingSec = 3 - static_cast<int>(m_countdownFaceSec);
     if (remainingSec < 1) remainingSec = 1;
 
     std::wstring countStr = std::to_wstring(remainingSec);
-    float pulse = 1.0f + 0.15f * std::sin((m_stageTimeSec - std::floor(m_stageTimeSec)) * 3.14159f);
+    float pulse = faceFound ? 1.0f + 0.15f * std::sin((m_countdownFaceSec - std::floor(m_countdownFaceSec)) * 3.14159f) : 1.0f;
 
     // 倒數大圓圈
     int circleRadius = static_cast<int>(std::clamp(std::min(w, h) / 7, 45, 75) * pulse);
@@ -1275,7 +1323,27 @@ void NativeWelcomeWindow::drawCountdownWait(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::Font hintFont(&fontFamily, static_cast<Gdiplus::REAL>(hintFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush whiteBrush(Gdiplus::Color(255, 255, 255, 255));
     Gdiplus::RectF hintRect(0.0f, static_cast<float>(centerY + circleRadius + 18), static_cast<float>(w), 38.0f);
-    g.DrawString(L"請做好準備，即將開始眼動追蹤校準...", -1, &hintFont, hintRect, &centerFormat, &whiteBrush);
+    g.DrawString(faceFound ? L"已偵測到臉部，請保持不動..." : L"正在尋找你的臉部...", -1, &hintFont, hintRect, &centerFormat, &whiteBrush);
+
+    // 等待超過 10 秒仍找不到臉：提示光線與位置，並提供略過按鈕 (沿用預設基準進入監控中心)
+    m_skipCountdownBtnRect = { 0, 0, 0, 0 };
+    if (!faceFound && m_stageTimeSec > 10.0f) {
+        Gdiplus::Font tipFont(&fontFamily, static_cast<Gdiplus::REAL>(std::max(13, hintFontSize - 5)), Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush tipBrush(Gdiplus::Color(255, 247, 227, 175));
+        Gdiplus::RectF tipRect(20.0f, static_cast<float>(centerY + circleRadius + 60), static_cast<float>(w - 40), 48.0f);
+        g.DrawString(L"請面向窗戶或燈光（不要背對光源），讓整張臉出現在攝影機前", -1, &tipFont, tipRect, &centerFormat, &tipBrush);
+
+        const int btnW = 200, btnH = 36;
+        const int btnX = (w - btnW) / 2;
+        const int btnY = centerY + circleRadius + 116;
+        m_skipCountdownBtnRect = { btnX, btnY, btnX + btnW, btnY + btnH };
+        Gdiplus::SolidBrush btnBg(Gdiplus::Color(255, 255, 255, 255));
+        drawRoundedButton(g, btnX, btnY, btnW, btnH, 20, &btnBg);
+        Gdiplus::Font btnFont(&fontFamily, 14, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+        Gdiplus::SolidBrush btnText(Gdiplus::Color(255, 30, 177, 138));
+        Gdiplus::RectF btnRect(static_cast<float>(btnX), static_cast<float>(btnY), static_cast<float>(btnW), static_cast<float>(btnH));
+        g.DrawString(L"略過，先使用預設基準", -1, &btnFont, btnRect, &centerFormat, &btnText);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -1321,7 +1389,9 @@ void NativeWelcomeWindow::drawActiveCalibration(Gdiplus::Graphics& g, int w, int
     Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
 
     int pct = static_cast<int>(m_calibrationProgress * 100.0f);
-    std::wstring pStr = L"眼動特徵多角度提取中... (" + std::to_wstring(pct) + L"%)";
+    std::wstring pStr = m_calibrationExtended
+        ? L"偵測中斷，請正對攝影機並保持不動，校準自動延長中... (" + std::to_wstring(pct) + L"%)"
+        : L"眼動特徵多角度提取中... (" + std::to_wstring(pct) + L"%)";
     Gdiplus::RectF progressRect(0.0f, static_cast<float>(h - 68), static_cast<float>(w), 26.0f);
     g.DrawString(pStr.c_str(), -1, &progressFont, progressRect, &centerFormat, &textBrush);
 
@@ -1500,8 +1570,8 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF camStatusRect(0.0f, headerY + 28.0f, static_cast<float>(w), 16.0f);
     g.DrawString(wCamStatus.c_str(), -1, &camStatusFont, camStatusRect, &centerFormat, &camStatusBrush);
 
-    // 判斷在場、冷卻與疲勞狀態
-    bool isPresent = (m_latestTelemetry.detection.hasFace && m_latestTelemetry.systemState.userPresent);
+    // 判斷在場、冷卻與疲勞狀態 (在場狀態已去除 3 秒內的短暫丟失)
+    bool isPresent = m_displayPresent.load();
     FatigueLevel level = m_latestTelemetry.systemState.fatigueLevel;
     float fatigueScore = m_latestTelemetry.systemState.smoothedFatigueScore;
     bool inCooldown = (m_latestTelemetry.systemState.cooldownState == CooldownState::InCooldown || m_latestTelemetry.systemState.cooldownState == CooldownState::FastScreening);
@@ -1551,6 +1621,9 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     } else if (level == FatigueLevel::SevereWarning || fatigueScore >= 65.0f) {
         statusColor = Gdiplus::Color(255, 200, 60, 60); // 警告紅
         statusText = L"生理狀態：你的眼睛處於疲勞狀態，請適當休息";
+    } else if (m_recalibrationNoticePending) {
+        statusColor = Gdiplus::Color(255, 190, 150, 60); // 注意黃
+        statusText = L"需要重新校準：先前的校準未量到眼睛開合\n請按「重新校準」完成一次校準";
     }
 
     // 白色邊框筆 (純白邊框線條 0xFFFFFF)
@@ -2241,6 +2314,14 @@ int NativeWelcomeWindow::run() {
     // 初始化系統托盤常駐與置頂懸浮指標 HUD
     m_trayManager.initialize(m_hwnd, L"EFD 眼睛疲勞即時監測系統");
     m_floatingIndicator.create(m_hwnd);
+
+    if (m_recalibrationNoticePending) {
+        m_trayManager.showBalloonNotification(
+            L"EFD 需要重新校準",
+            L"先前的校準未量到眼睛開合，閉眼率無法正確計算。請開啟 EFD 並按「重新校準」。",
+            FatigueLevel::Relaxed
+        );
+    }
 
     // 啟動 60 FPS 畫面更新計時器
     SetTimer(m_hwnd, 1, 16, NULL);

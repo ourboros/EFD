@@ -58,6 +58,10 @@ public:
         float eyeGradient[2] = {0.0f, 0.0f};
         int eyeCenterX[2] = {0, 0};
         int eyeCenterY = 0;
+        // 追蹤階段的眼睛開合量測：雙眼暗點比例、睜眼基準 (中位數)、換算後的開合度 (0 閉 ~ 1 開)
+        float eyeOpenDarkRatio = 0.0f;
+        float eyeOpenBaseline = 0.0f;
+        float eyeOpenness = 0.0f;
     };
 
     PresenceDiagnostic getLatestPresenceDiagnostic() const;
@@ -72,7 +76,7 @@ public:
 
     // 連續多久未偵測到人臉才判定離開 (以時間計，與幀率無關)
     static constexpr int64_t kFaceLostTimeoutMs = 1000;
-    // 睜眼暗部基準取最近 60 秒暗部比例的第 90 百分位
+    // 睜眼暗部基準取最近 60 秒暗部比例的中位數
     static constexpr int64_t kEyeBaselineWindowMs = 60000;
 
 private:
@@ -102,6 +106,7 @@ private:
     };
     std::deque<DarkRatioSample> m_darkRatioHistory;
     float m_openEyeDarkBaseline = 0.18f;
+    std::deque<float> m_recentOpenness;   // 最近 3 幀的開合度 (中位數濾波)
 
     float updateOpenEyeBaseline(float darkRatio, int64_t nowMs);
 

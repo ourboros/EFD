@@ -1,4 +1,5 @@
 #include "vision/FaceLandmarker.hpp"
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <algorithm>
@@ -477,12 +478,13 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             diag.fillDensity = fillDensity;
             diag.aspectRatio = aspectRatio;
 
+            // 手機拿得近時臉 (連同脖子、手) 會佔滿整個畫面；不直接判定失敗，改為要求雙眼都成立
+            // (比一般的「任一眼成立」嚴格)，避免整面暖色牆面或膚色物體被當成近距離的臉
+            const bool faceFillsFrame = boxW > static_cast<int>(width * 0.95f) || boxH > static_cast<int>(height * 0.98f);
+
             // 幾何約束：寬容覆蓋不同距離、耳機、帽子等各類使用情境
             if (boxW < static_cast<int>(width * 0.07f) || boxH < static_cast<int>(height * 0.07f)) {
                 diag.unconfirmedReason = "目標特徵區域過小，非在座人體 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
-                diag.failStage = "size";
-            } else if (boxW > static_cast<int>(width * 0.95f) || boxH > static_cast<int>(height * 0.98f)) {
-                diag.unconfirmedReason = "目標特徵佔滿全視野，非正常人臉距鏡距離 (區域: " + std::to_string(boxW) + "x" + std::to_string(boxH) + ")";
                 diag.failStage = "size";
             } else if (aspectRatio < 0.35f || aspectRatio > 3.50f) {
                 diag.unconfirmedReason = "長寬比例不符合人臉頭部輪廓 (比例: " + std::to_string(aspectRatio) + ")";
@@ -625,9 +627,12 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                     diag.eyeCenterX[e] = eyeCentersX[e];
                 }
 
-                // 至少一側眼部特徵成立即通過 (防止耳機遮擋單側導致誤判離座)
+                // 至少一側眼部特徵成立即通過 (防止耳機遮擋單側導致誤判離座)；臉佔滿畫面時需雙眼成立
                 if (!leftEyeOk && !rightEyeOk) {
                     diag.unconfirmedReason = "雙眼區域均缺乏人臉眼部生理特徵 (判定為背景物品非真人)";
+                    diag.failStage = "eyes";
+                } else if (faceFillsFrame && !(leftEyeOk && rightEyeOk)) {
+                    diag.unconfirmedReason = "臉部佔滿畫面且只找到單眼特徵 (請把手機拿遠一些)";
                     diag.failStage = "eyes";
                 } else {
                     personInFrame = true;
@@ -901,23 +906,33 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             }
 
             float avgDarkRatio = totalDarkRatio / 2.0f;
-            // 睜眼時暗部比例通常較高（例如 0.15~0.30），閉眼時只剩膚色（例如 < 0.05）
-            // 將 darkRatio 映射到 0.0 ~ 1.0 的 effectiveOpenness
-            // [修正 C] 自適應動態映射：追蹤個人「睜眼基準暗度」解決不同光源差異
             // 睜眼時瞳孔/睫毛形成暗色區域（darkRatio 較高），閉眼時膚色覆蓋（darkRatio 下降）
-            // 睜眼基準 = 最近 60 秒暗部比例的第 90 百分位 (可隨光線上下調整，不會只降不升)
+            // 自適應映射：以個人「睜眼基準暗度」換算 0.0 ~ 1.0 的開合度，解決不同光源差異
             float openEyeDarkBaseline = updateOpenEyeBaseline(avgDarkRatio, nowMs);
             // 閉眼閾值 = 基準的 30%（眼瞼覆蓋後暗色像素大幅減少）
             float closedThreshRatio = openEyeDarkBaseline * 0.30f;
             float opennessRange = openEyeDarkBaseline - closedThreshRatio;
-            if (opennessRange < 0.02f) opennessRange = 0.02f;
-            effectiveOpenness = std::clamp((avgDarkRatio - closedThreshRatio) / opennessRange, 0.0f, 1.0f);
+            if (opennessRange < 0.01f) opennessRange = 0.01f;
+            float rawOpenness = std::clamp((avgDarkRatio - closedThreshRatio) / opennessRange, 0.0f, 1.0f);
+
+            // 3 幀中位數：去除單幀量測跳動 (眨眼約 100~400 ms，30 FPS 下至少 3 幀，不受影響)
+            m_recentOpenness.push_back(rawOpenness);
+            while (m_recentOpenness.size() > 3) m_recentOpenness.pop_front();
+            std::array<float, 3> window{rawOpenness, rawOpenness, rawOpenness};
+            for (size_t i = 0; i < m_recentOpenness.size(); ++i) window[i] = m_recentOpenness[i];
+            std::sort(window.begin(), window.end());
+            effectiveOpenness = (m_recentOpenness.size() >= 3) ? window[1] : rawOpenness;
+
+            m_lastDiag.eyeOpenDarkRatio = avgDarkRatio;
+            m_lastDiag.eyeOpenBaseline = openEyeDarkBaseline;
+            m_lastDiag.eyeOpenness = effectiveOpenness;
         }
 
         // 依據跟隨的位置動態生成臉部特徵網格
         result.landmarks = generateCanonicalFaceMesh(width, height, effectiveOpenness, m_trackedCx, m_trackedCy, m_trackedScale);
     } else {
         // 使用者離座 -> 清空特徵點，杜絕假疲勞數據
+        m_recentOpenness.clear();
         result.hasFace = false;
         result.faceConfidence = 0.0f;
         result.landmarks.clear();
@@ -954,6 +969,7 @@ void FaceLandmarker::resetTracking() {
 
 void FaceLandmarker::resetEyeBaseline() {
     m_darkRatioHistory.clear();
+    m_recentOpenness.clear();
     m_openEyeDarkBaseline = 0.18f;
 }
 
@@ -963,14 +979,16 @@ float FaceLandmarker::updateOpenEyeBaseline(float darkRatio, int64_t nowMs) {
         m_darkRatioHistory.pop_front();
     }
     // 樣本太少時沿用預設基準，避免剛開始的幾幀決定基準
-    if (m_darkRatioHistory.size() >= 30) {
+    // 睜眼基準取中位數：清醒時眼睛絕大多數時間是睜開的 (正常 PERCLOS 僅數 %)，中位數即代表一般睜眼狀態。
+    // 舊版取第 90 百分位，暗點比例只要低於基準約 66% 就被判為閉眼，量測雜訊即造成 PERCLOS 45%、眨眼 60 次/分。
+    // 下限 0.02：遠距離時眼睛小，暗點比例本來就低，下限過高會讓一般睜眼也被判為閉眼
+    if (m_darkRatioHistory.size() >= 15) {
         std::vector<float> ratios;
         ratios.reserve(m_darkRatioHistory.size());
         for (const auto& sample : m_darkRatioHistory) ratios.push_back(sample.ratio);
-        size_t k = static_cast<size_t>(static_cast<float>(ratios.size()) * 0.90f);
-        if (k >= ratios.size()) k = ratios.size() - 1;
+        size_t k = ratios.size() / 2;
         std::nth_element(ratios.begin(), ratios.begin() + static_cast<std::ptrdiff_t>(k), ratios.end());
-        m_openEyeDarkBaseline = std::clamp(ratios[k], 0.08f, 0.55f);
+        m_openEyeDarkBaseline = std::clamp(ratios[k], 0.02f, 0.55f);
     }
     return m_openEyeDarkBaseline;
 }

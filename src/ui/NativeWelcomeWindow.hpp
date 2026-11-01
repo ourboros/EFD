@@ -5,6 +5,8 @@
 #include "platform/windows/SystemTrayManager.hpp"
 #include "ui/FatigueFloatingIndicator.hpp"
 #include "vision/CameraService.hpp"
+#include <atomic>
+#include <chrono>
 #include <string>
 #include <memory>
 #include <vector>
@@ -95,6 +97,13 @@ private:
     float m_targetDotY = 0.5f;
     float m_calibrationProgress = 0.0f;
     bool m_lastCalibrationOk = true;      // 最近一次校準是否取得足夠有效人臉幀
+    bool m_recalibrationNoticePending = false; // 舊校準無效，啟動後需提醒重新校準
+    float m_countdownFaceSec = 0.0f;      // 倒數頁連續偵測到臉的秒數 (偵測到臉才倒數)
+    bool m_calibrationExtended = false;   // 校準是否因有效畫面不足而延長
+    // 監控畫面顯示用的在座狀態：連續 3 秒未偵測到臉才顯示離座 (遙測執行緒寫入、繪圖執行緒讀取)
+    std::atomic<bool> m_displayPresent{true};
+    std::chrono::steady_clock::time_point m_noFaceSince{};
+    bool m_noFaceTiming = false;
 
     // 頂部導覽列按鈕區域 (Tab Navigation)
     std::vector<RECT> m_navTabRects;
@@ -105,6 +114,7 @@ private:
     RECT m_readyBtnRect{};
     RECT m_backWelcomeBtnRect{};
     RECT m_skipCalibBtnRect{};
+    RECT m_skipCountdownBtnRect{};
     RECT m_proceedDashboardBtnRect{};
     RECT m_closeBgResultBtnRect{};
     RECT m_restartCalibBtnRect{};

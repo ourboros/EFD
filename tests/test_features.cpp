@@ -623,6 +623,104 @@ static std::vector<uint8_t> makePresenceFrame(bool personPresent, bool eyesOpen)
     return px;
 }
 
+void testFaceFillingFrameNeedsBothEyes() {
+    std::cout << "[TEST] 28. 測試手機拿近、臉佔滿畫面時仍可偵測 (需雙眼成立)，無眼睛或只有單眼時不判定為人臉...";
+    const int w = 320, h = 240;
+    // eyes: 0 = 無眼睛 (整面膚色)、1 = 只有左眼、2 = 雙眼
+    auto makeCloseUp = [&](int eyes) {
+        std::vector<uint8_t> px(static_cast<size_t>(w * h * 3));
+        auto inEllipse = [](int x, int y, int cx, int cy, int rx, int ry) {
+            float dx = static_cast<float>(x - cx) / rx, dy = static_cast<float>(y - cy) / ry;
+            return dx * dx + dy * dy <= 1.0f;
+        };
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                int n = ((x * 7 + y * 13) % 7) - 3;
+                int r = 215, g = 165, b = 135;  // 整個畫面都是臉的膚色
+                if ((eyes >= 1 && inEllipse(x, y, 90, 91, 18, 6)) || (eyes >= 2 && inEllipse(x, y, 230, 91, 18, 6))) {
+                    r = 40; g = 30; b = 30;
+                }
+                size_t i = static_cast<size_t>((y * w + x) * 3);
+                px[i] = static_cast<uint8_t>(std::clamp(r + n, 0, 255));
+                px[i + 1] = static_cast<uint8_t>(std::clamp(g + n, 0, 255));
+                px[i + 2] = static_cast<uint8_t>(std::clamp(b + n, 0, 255));
+            }
+        }
+        return px;
+    };
+    auto detectedAny = [&](const std::vector<uint8_t>& px) {
+        efd::FaceLandmarker lm;
+        lm.initialize();
+        bool any = false;
+        for (int i = 0; i < 5; ++i) any = lm.detect(px.data(), w, h, efd::PixelFormat::RGB888, false).hasFace || any;
+        return any;
+    };
+    assert(!detectedAny(makeCloseUp(0)));
+    assert(!detectedAny(makeCloseUp(1)));
+    assert(detectedAny(makeCloseUp(2)));
+    std::cout << " [PASS]\n";
+}
+
+void testOpennessRobustToMeasurementNoise() {
+    std::cout << "[TEST] 29. 測試睜眼時暗點比例上下跳動不會被誤判為閉眼，閉眼時開合度確實下降...";
+    // 眼睛暗區高度 eyeRy：5 為一般睜眼，8 為暗點偏多 (眉毛、陰影進入量測框)，0 為閉眼
+    auto makeFrame = [](int eyeRy) {
+        const int w = 480, h = 640;
+        std::vector<uint8_t> px(static_cast<size_t>(w * h * 3));
+        auto inEllipse = [](int x, int y, int cx, int cy, int rx, int ry) {
+            float dx = static_cast<float>(x - cx) / rx, dy = static_cast<float>(y - cy) / ry;
+            return dx * dx + dy * dy <= 1.0f;
+        };
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                int n = ((x * 7 + y * 13) % 7) - 3;
+                int r = 120, g = 125, b = 130;
+                if (inEllipse(x, y, 240, 260, 100, 135)) {
+                    r = 215; g = 165; b = 135;
+                    if (y < 150) { r = 30; g = 25; b = 25; }
+                    if (eyeRy > 0 && (inEllipse(x, y, 196, 245, 18, eyeRy) || inEllipse(x, y, 284, 245, 18, eyeRy))) {
+                        r = 40; g = 30; b = 30;
+                    }
+                }
+                size_t i = static_cast<size_t>((y * w + x) * 3);
+                px[i] = static_cast<uint8_t>(std::clamp(r + n, 0, 255));
+                px[i + 1] = static_cast<uint8_t>(std::clamp(g + n, 0, 255));
+                px[i + 2] = static_cast<uint8_t>(std::clamp(b + n, 0, 255));
+            }
+        }
+        return px;
+    };
+    const auto normal = makeFrame(5);
+    const auto larger = makeFrame(8);
+    const auto closed = makeFrame(0);
+
+    efd::FaceLandmarker lm;
+    lm.initialize();
+    // 睜眼 120 幀，其中每 3 幀有 1 幀暗點偏多：舊版以第 90 百分位為睜眼基準時，
+    // 基準被這些幀墊高，一般睜眼的幀反而低於閉眼門檻 (PERCLOS 被誇大)
+    int lowOpenness = 0;
+    int counted = 0;
+    for (int i = 0; i < 120; ++i) {
+        const auto& f = (i % 3 == 2) ? larger : normal;
+        auto r = lm.detect(f.data(), 480, 640, efd::PixelFormat::RGB888, false);
+        if (i >= 30 && r.hasFace) {
+            counted++;
+            // EAR = 0.10 + 0.22 x 開合度；預設閉眼門檻約 0.215 對應開合度 0.52
+            if (lm.getLatestPresenceDiagnostic().eyeOpenness < 0.52f) lowOpenness++;
+        }
+    }
+    assert(counted > 60);
+    assert(lowOpenness * 10 < counted);  // 誤判為閉眼的幀數低於 10%
+    // 閉眼：連續幾幀後開合度降到閉眼範圍
+    float closedOpenness = 1.0f;
+    for (int i = 0; i < 6; ++i) {
+        lm.detect(closed.data(), 480, 640, efd::PixelFormat::RGB888, false);
+        closedOpenness = lm.getLatestPresenceDiagnostic().eyeOpenness;
+    }
+    assert(closedOpenness < 0.3f);
+    std::cout << " [PASS] (睜眼誤判 " << lowOpenness << "/" << counted << "，閉眼開合度 " << closedOpenness << ")\n";
+}
+
 void testClosedEyesStillPresentAfterLock() {
     std::cout << "[TEST] 26. 測試鎖定臉部後閉眼/低頭仍判定在座，人離開後 1 秒判定離座...";
     const auto open = makePresenceFrame(true, true);
@@ -1214,7 +1312,9 @@ int main() {
     testWarmLitWallIsNotSkin();
     testClosedEyesStillPresentAfterLock();
     testCameraPixelFormatConversion();
+    testFaceFillingFrameNeedsBothEyes();
+    testOpennessRobustToMeasurementNoise();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 27 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 29 項測試順利通過！\n";
     return 0;
 }
