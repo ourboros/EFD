@@ -76,8 +76,9 @@ public:
 
     // 連續多久未偵測到人臉才判定離開 (以時間計，與幀率無關)
     static constexpr int64_t kFaceLostTimeoutMs = 1000;
-    // 睜眼暗部基準取最近 60 秒暗部比例的中位數
+    // 睜眼暗部基準取最近 60 秒「確認睜眼」幀暗部比例的中位數 (至少 15 個樣本才更新)
     static constexpr int64_t kEyeBaselineWindowMs = 60000;
+    static constexpr size_t kEyeBaselineMinSamples = 15;
 
 private:
     bool m_isInitialized = false;
@@ -107,8 +108,9 @@ private:
     std::deque<DarkRatioSample> m_darkRatioHistory;
     float m_openEyeDarkBaseline = 0.18f;
     std::deque<float> m_recentOpenness;   // 最近 3 幀的開合度 (中位數濾波)
+    int m_baselineStarvedFrames = 0;      // 睜眼基準樣本未滿的連續幀數
 
-    float updateOpenEyeBaseline(float darkRatio, int64_t nowMs);
+    float updateOpenEyeBaseline(float darkRatio, int64_t nowMs, bool eyesVerifiedOpen);
 
     std::vector<Point3D> generateCanonicalFaceMesh(int frameWidth, int frameHeight, float openness, float customCx = 0.0f, float customCy = 0.0f, float customScale = 0.0f) const;
 };

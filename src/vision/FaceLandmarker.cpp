@@ -764,8 +764,13 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
     } else {
         m_consecutiveMissingFrames++;
         m_consecutiveFaceFrames = 0;
-        // 連續 1 秒 (以時間計，不受手機低幀率影響) 丟失才確認離座，避免體位微偏引發誤判
-        if (m_lastFaceSeenMs == 0 || nowMs - m_lastFaceSeenMs >= kFaceLostTimeoutMs) {
+        // 當候選區域因目標特徵區域過小或佔滿全視野 (failStage == "size") 且未通過眼睛檢驗時，
+        // 表示鏡頭前為非正常人體/距離過近物體，立即中斷追蹤，不延遲 1 秒離座緩衝
+        if (diag.failStage == "size") {
+            m_isFaceConfirmed = false;
+            m_trackedScale = 0.0f;
+            m_lastFaceSeenMs = 0;
+        } else if (m_lastFaceSeenMs == 0 || nowMs - m_lastFaceSeenMs >= kFaceLostTimeoutMs) {
             m_isFaceConfirmed = false;
             m_trackedScale = 0.0f;
         }
@@ -820,6 +825,11 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
                 }
                 effectiveOpenness = std::clamp(m_simulatedOpenness * blinkFactor + tremor, 0.02f, 1.05f);
             }
+        } else if (!rawDetectionActive) {
+            // 本幀未真正檢測到正臉 (處於短暫微偏或丟失容錯期間)：
+            // 嚴禁將未確認人臉的無特徵畫面判定為閉眼 (0.0f)，避免造成假 PERCLOS 與假疲勞
+            effectiveOpenness = 1.0f;
+            m_lastDiag.eyeOpenness = effectiveOpenness;
         } else {
             // 實體相機：依據眼睛興趣區域 (AOI) 二值化後計算黑色像素比例 (Black Pixels Ratio)
             float eyeDist = m_trackedScale * 0.28f;
@@ -908,7 +918,9 @@ LandmarkDetectionResult FaceLandmarker::detect(const uint8_t* pixelData, int wid
             float avgDarkRatio = totalDarkRatio / 2.0f;
             // 睜眼時瞳孔/睫毛形成暗色區域（darkRatio 較高），閉眼時膚色覆蓋（darkRatio 下降）
             // 自適應映射：以個人「睜眼基準暗度」換算 0.0 ~ 1.0 的開合度，解決不同光源差異
-            float openEyeDarkBaseline = updateOpenEyeBaseline(avgDarkRatio, nowMs);
+            // 只有本幀通過眼睛檢查 (看得到瞳孔/睫毛暗點，而非靠追蹤維持在座) 才用來學習睜眼基準
+            const bool eyesVerifiedOpen = rawDetectionActive && !diag.presenceByTracking;
+            float openEyeDarkBaseline = updateOpenEyeBaseline(avgDarkRatio, nowMs, eyesVerifiedOpen);
             // 閉眼閾值 = 基準的 30%（眼瞼覆蓋後暗色像素大幅減少）
             float closedThreshRatio = openEyeDarkBaseline * 0.30f;
             float opennessRange = openEyeDarkBaseline - closedThreshRatio;
@@ -970,19 +982,35 @@ void FaceLandmarker::resetTracking() {
 void FaceLandmarker::resetEyeBaseline() {
     m_darkRatioHistory.clear();
     m_recentOpenness.clear();
+    m_baselineStarvedFrames = 0;
     m_openEyeDarkBaseline = 0.18f;
 }
 
-float FaceLandmarker::updateOpenEyeBaseline(float darkRatio, int64_t nowMs) {
-    m_darkRatioHistory.push_back({nowMs, darkRatio});
-    while (!m_darkRatioHistory.empty() && nowMs - m_darkRatioHistory.front().timestampMs > kEyeBaselineWindowMs) {
-        m_darkRatioHistory.pop_front();
+float FaceLandmarker::updateOpenEyeBaseline(float darkRatio, int64_t nowMs, bool eyesVerifiedOpen) {
+    // 只用「確認睜眼」的幀學習：通過眼睛檢查 (看得到瞳孔/睫毛暗點) 且暗點比例沒有明顯低於目前基準。
+    // 若所有幀都納入，長時間閉眼 (30 秒以上) 後基準會變成閉眼的暗點比例，閉眼反被判為睜眼、PERCLOS 不升反降。
+    // 第二個條件排除閉眼時睫毛被眼睛檢查誤認為暗點的幀；樣本未滿時先全部接受，讓基準能從預設值收斂
+    // 眼睛不易通過檢查的使用者 (距離遠、逆光) 可能遲遲收不滿樣本，基準停在預設值會讓每幀都被判為閉眼；
+    // 約 10 秒 (300 幀) 仍收不滿時，暫時接受所有幀建立初始基準
+    const bool bootstrapping = m_darkRatioHistory.size() < kEyeBaselineMinSamples;
+    if (bootstrapping) {
+        m_baselineStarvedFrames++;
+    } else {
+        m_baselineStarvedFrames = 0;
     }
-    // 樣本太少時沿用預設基準，避免剛開始的幾幀決定基準
-    // 睜眼基準取中位數：清醒時眼睛絕大多數時間是睜開的 (正常 PERCLOS 僅數 %)，中位數即代表一般睜眼狀態。
-    // 舊版取第 90 百分位，暗點比例只要低於基準約 66% 就被判為閉眼，量測雜訊即造成 PERCLOS 45%、眨眼 60 次/分。
+    const bool starved = bootstrapping && m_baselineStarvedFrames > 300;
+    if ((eyesVerifiedOpen || starved) && (bootstrapping || darkRatio >= m_openEyeDarkBaseline * 0.60f)) {
+        m_darkRatioHistory.push_back({nowMs, darkRatio});
+        while (m_darkRatioHistory.size() > kEyeBaselineMinSamples &&
+               nowMs - m_darkRatioHistory.front().timestampMs > kEyeBaselineWindowMs) {
+            m_darkRatioHistory.pop_front();
+        }
+    }
+    // 樣本太少時沿用目前基準，避免剛開始的幾幀決定基準；沒有新的睜眼樣本時 (例如持續閉眼) 基準維持不變
+    // 睜眼基準取中位數，代表一般睜眼狀態。舊版取第 90 百分位，暗點比例只要低於基準約 66% 就被判為閉眼，
+    // 量測雜訊即造成 PERCLOS 45%、眨眼 60 次/分。
     // 下限 0.02：遠距離時眼睛小，暗點比例本來就低，下限過高會讓一般睜眼也被判為閉眼
-    if (m_darkRatioHistory.size() >= 15) {
+    if (m_darkRatioHistory.size() >= kEyeBaselineMinSamples) {
         std::vector<float> ratios;
         ratios.reserve(m_darkRatioHistory.size());
         for (const auto& sample : m_darkRatioHistory) ratios.push_back(sample.ratio);

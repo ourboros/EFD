@@ -719,6 +719,29 @@ void testOpennessRobustToMeasurementNoise() {
     }
     assert(closedOpenness < 0.3f);
     std::cout << " [PASS] (睜眼誤判 " << lowOpenness << "/" << counted << "，閉眼開合度 " << closedOpenness << ")\n";
+
+    std::cout << "[TEST] 30. 測試長時間閉眼 (閉眼幀多於睜眼幀) 時開合度維持閉眼、仍判定在座，睜眼後恢復...";
+    // 接續上面的狀態再閉眼 250 幀：若睜眼基準納入閉眼幀，中位數會變成閉眼的暗點比例，閉眼反被判為睜眼。
+    // 真實閉眼仍留有睫毛線與陰影 (三星 A71 實測閉眼暗點比例約 0.05，高於基準下限 0.02)，以高度 2 的暗線模擬
+    const auto lashLine = makeFrame(2);
+    bool presentThroughout = true;
+    int openedDuringClosure = 0;
+    for (int i = 0; i < 250; ++i) {
+        auto r = lm.detect(lashLine.data(), 480, 640, efd::PixelFormat::RGB888, false);
+        presentThroughout = presentThroughout && r.hasFace;
+        if (lm.getLatestPresenceDiagnostic().eyeOpenness >= 0.52f) openedDuringClosure++;
+    }
+    const auto closureDiag = lm.getLatestPresenceDiagnostic();
+    std::cout << " (閉眼暗點 " << closureDiag.eyeOpenDarkRatio << " / 睜眼基準 " << closureDiag.eyeOpenBaseline << ")";
+    assert(presentThroughout);
+    assert(openedDuringClosure == 0);
+    float reopened = 0.0f;
+    for (int i = 0; i < 6; ++i) {
+        lm.detect(normal.data(), 480, 640, efd::PixelFormat::RGB888, false);
+        reopened = lm.getLatestPresenceDiagnostic().eyeOpenness;
+    }
+    assert(reopened > 0.8f);
+    std::cout << " [PASS] (閉眼 250 幀皆判定閉眼，睜眼後開合度 " << reopened << ")\n";
 }
 
 void testClosedEyesStillPresentAfterLock() {
@@ -1315,6 +1338,6 @@ int main() {
     testFaceFillingFrameNeedsBothEyes();
     testOpennessRobustToMeasurementNoise();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 29 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 30 項測試順利通過！\n";
     return 0;
 }
