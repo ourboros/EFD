@@ -229,7 +229,7 @@ public class MainActivity extends AppCompatActivity {
     private void setupViews() {
         mMainContainer = new LinearLayout(this);
         mMainContainer.setOrientation(LinearLayout.VERTICAL);
-        mMainContainer.setBackgroundColor(Color.parseColor("#25291C")); // EFD 深黑墨綠背景
+        mMainContainer.setBackgroundColor(Color.parseColor("#1EB18A")); // EFD 薄荷綠背景 (與各頁一致)
 
         // 階段內容容器 (不繪製頂部導覽列，純靠介面流程按鈕切換)
         mStageContentContainer = new FrameLayout(this);
@@ -300,7 +300,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupTopNavBar() {
         HorizontalScrollView scroll = new HorizontalScrollView(this);
-        scroll.setBackgroundColor(Color.parseColor("#181C12"));
+        scroll.setBackgroundColor(Color.parseColor("#148C6C"));
         scroll.setHorizontalScrollBarEnabled(false);
 
         mNavBarContainer = new LinearLayout(this);
@@ -320,7 +320,7 @@ public class MainActivity extends AppCompatActivity {
             btn.setTextSize(11);
             btn.setPadding(18, 6, 18, 6);
             boolean isActive = (stage == mCurrentStage);
-            styleButton(btn, isActive ? "#1EB18A" : "#343A26", isActive ? "#FFFFFF" : "#F7E3AF");
+            styleButton(btn, isActive ? "#FFFFFF" : "#33FFFFFF", isActive ? "#1EB18A" : "#FFFFFF");
 
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -344,7 +344,7 @@ public class MainActivity extends AppCompatActivity {
             if (child instanceof Button) {
                 Button btn = (Button) child;
                 boolean isActive = (stages[i] == mCurrentStage);
-                styleButton(btn, isActive ? "#1EB18A" : "#343A26", isActive ? "#FFFFFF" : "#F7E3AF");
+                styleButton(btn, isActive ? "#FFFFFF" : "#33FFFFFF", isActive ? "#1EB18A" : "#FFFFFF");
             }
         }
     }
@@ -384,128 +384,161 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // -------------------------------------------------------------------------
-    // 階段 1：歡迎介面 (滿版薄荷綠背景 + 純白圓形徽章)
+    // 共用版面：與監控中心、設定頁相同的設計系統 (薄荷綠底、白色圓角卡片、墨黑文字)
     // -------------------------------------------------------------------------
-    private void renderWelcomeScreen() {
+    /** 薄荷綠底、內容置中、可捲動的頁面；回傳內容容器。 */
+    private LinearLayout createMintPage(boolean centerVertically) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(Color.parseColor(C_MINT));
+        scroll.setFillViewport(true);
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(Gravity.CENTER);
-        layout.setBackgroundColor(Color.parseColor("#1EB18A")); // 薄荷綠
-        layout.setPadding(32, 32, 32, 32);
+        layout.setGravity(centerVertically ? Gravity.CENTER : Gravity.CENTER_HORIZONTAL);
+        layout.setPadding(dp(24), dp(20), dp(24), dp(28));
+        scroll.addView(layout, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        mStageContentContainer.addView(scroll, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        return layout;
+    }
 
-        // 載入資產 10 (資產 10.png) 圖片 - 縮小比例，透明無邊框
+    private TextView addPageTitle(LinearLayout parent, String text, float sizeSp) {
+        TextView title = new TextView(this);
+        title.setText(text);
+        title.setTextSize(sizeSp);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setTextColor(Color.WHITE);
+        title.setGravity(Gravity.CENTER);
+        parent.addView(title);
+        return title;
+    }
+
+    private TextView addPageSubtitle(LinearLayout parent, String text) {
+        TextView sub = new TextView(this);
+        sub.setText(text);
+        sub.setTextSize(14);
+        sub.setTypeface(null, android.graphics.Typeface.BOLD);
+        sub.setTextColor(Color.parseColor(C_AMBER));
+        sub.setGravity(Gravity.CENTER);
+        sub.setPadding(0, dp(6), 0, 0);
+        parent.addView(sub);
+        return sub;
+    }
+
+    /** 白色圓角說明卡片：薄荷綠粗體標題 + 墨黑內文。 */
+    private LinearLayout addInfoCard(LinearLayout parent, String title, String body) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(roundedBg(C_WHITE, 14));
+        card.setPadding(dp(16), dp(12), dp(16), dp(14));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(12), 0, 0);
+        card.setLayoutParams(lp);
+        if (title != null) {
+            TextView t = new TextView(this);
+            t.setText(title);
+            t.setTextSize(15);
+            t.setTypeface(null, android.graphics.Typeface.BOLD);
+            t.setTextColor(Color.parseColor(C_MINT));
+            card.addView(t);
+        }
+        TextView b = new TextView(this);
+        b.setText(body);
+        b.setTextSize(13);
+        b.setTextColor(Color.parseColor(C_INK));
+        b.setLineSpacing(dp(2), 1f);
+        b.setPadding(0, title != null ? dp(4) : 0, 0, 0);
+        card.addView(b);
+        parent.addView(card);
+        return card;
+    }
+
+    // -------------------------------------------------------------------------
+    // 階段 1：歡迎介面
+    // -------------------------------------------------------------------------
+    private void renderWelcomeScreen() {
+        LinearLayout layout = createMintPage(true);
+
+        // 白色圓形徽章內嵌官方「資產 10」Logo
+        FrameLayout badge = new FrameLayout(this);
+        android.graphics.drawable.GradientDrawable badgeBg = new android.graphics.drawable.GradientDrawable();
+        badgeBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        badgeBg.setColor(Color.WHITE);
+        badgeBg.setStroke(dp(3), Color.parseColor(C_AMBER));
+        badge.setBackground(badgeBg);
         android.widget.ImageView logoImage = new android.widget.ImageView(this);
         int logoResId = getResources().getIdentifier("logo10", "drawable", getPackageName());
         if (logoResId != 0) {
             logoImage.setImageResource(logoResId);
         }
-        logoImage.setAdjustViewBounds(true);
         logoImage.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams logoLp = new FrameLayout.LayoutParams(dp(74), dp(74), Gravity.CENTER);
+        badge.addView(logoImage, logoLp);
+        LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(dp(112), dp(112));
+        badgeLp.gravity = Gravity.CENTER_HORIZONTAL;
+        badgeLp.setMargins(0, 0, 0, dp(20));
+        layout.addView(badge, badgeLp);
 
-        int logoWidth = 90; // 縮小 50% 適合手機螢幕置中的 Logo 寬度
-        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(
-                logoWidth, ViewGroup.LayoutParams.WRAP_CONTENT);
-        logoParams.gravity = Gravity.CENTER;
-        logoParams.setMargins(0, 16, 0, 24);
-        layout.addView(logoImage, logoParams);
+        addPageTitle(layout, "感謝協助測試 EFD", 26);
+        addPageSubtitle(layout, "AI 驅動眼睛特徵提取與即時疲勞監控研究系統");
 
-        TextView title = new TextView(this);
-        title.setText("感謝協助測試EFD");
-        title.setTextSize(26);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 32, 0, 8);
-        layout.addView(title);
+        addInfoCard(layout, null,
+                "EFD 會使用前鏡頭即時分析眨眼與閉眼特徵，在眼睛疲勞時提醒你休息。\n"
+                + "影像只在這支手機上分析，不會儲存或上傳；每日只上傳疲勞數值統計。");
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText("Eye Fatigue Detection 行動科研版");
-        subtitle.setTextSize(14);
-        subtitle.setTypeface(null, android.graphics.Typeface.BOLD);
-        subtitle.setTextColor(Color.parseColor("#F7E3AF"));
-        subtitle.setGravity(Gravity.CENTER);
-        subtitle.setPadding(0, 0, 0, 48);
-        layout.addView(subtitle);
-
-        Button startBtn = new Button(this);
-        startBtn.setText("開始眼動校準測驗");
-        startBtn.setTextSize(16);
-        startBtn.setPadding(32, 16, 32, 16);
-        styleButton(startBtn, "#F7E3AF", "#25291C");
+        Button startBtn = dashButton("進入測驗說明", C_WHITE, C_MINT, 24);
         startBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
         layout.addView(startBtn);
-
-        mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     // -------------------------------------------------------------------------
     // 階段 2：校準說明介面
     // -------------------------------------------------------------------------
     private void renderInstructionScreen() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(Gravity.CENTER);
-        layout.setBackgroundColor(Color.parseColor("#25291C"));
-        layout.setPadding(32, 24, 32, 24);
+        LinearLayout layout = createMintPage(true);
+        addPageTitle(layout, "眼動特徵校準說明", 23);
+        addPageSubtitle(layout, "約 5 秒，讓系統認識你睜眼時的眼睛特徵");
 
-        TextView title = new TextView(this);
-        title.setText("特徵提取測驗說明");
-        title.setTextSize(22);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-        layout.addView(title);
+        addInfoCard(layout, "1. 臉部正對前鏡頭",
+                "把手機拿到與眼睛同高、約一個手臂的距離，讓整張臉出現在畫面中。");
+        addInfoCard(layout, "2. 眼睛跟著黃點移動",
+                "校準開始後黃點會依序移到螢幕四個角落，請保持頭部不動、只用眼睛跟隨。");
+        addInfoCard(layout, "3. 避免背光與強光",
+                "天花板燈或窗戶不要出現在鏡頭裡，臉部太暗會無法偵測。保持自然眨眼即可。");
 
-        TextView desc = new TextView(this);
-        desc.setText("測驗即將開始！\n請凝視畫面上移動的黃色圓點，\n系統將自動校準您的個人眼睛閉合特徵基準。");
-        desc.setTextSize(15);
-        desc.setTypeface(null, android.graphics.Typeface.BOLD);
-        desc.setTextColor(Color.parseColor("#E0E0E0"));
-        desc.setGravity(Gravity.CENTER);
-        desc.setPadding(0, 24, 0, 32);
-        layout.addView(desc);
-
-        Button readyBtn = new Button(this);
-        readyBtn.setText("我準備好了，開始測驗");
-        readyBtn.setTextSize(16);
-        readyBtn.setPadding(32, 16, 32, 16);
-        styleButton(readyBtn, "#1EB18A", "#FFFFFF");
+        Button readyBtn = dashButton("我準備好了，開始校準", C_WHITE, C_MINT, 24);
         readyBtn.setOnClickListener(v -> setStage(UIStage.CountdownWait));
         layout.addView(readyBtn);
 
-        mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        Button backBtn = dashButton("返回歡迎介面", "#33FFFFFF", C_WHITE, 10);
+        backBtn.setOnClickListener(v -> setStage(UIStage.Welcome));
+        layout.addView(backBtn);
     }
 
     // -------------------------------------------------------------------------
     // 階段 3：倒數計時等待
     // -------------------------------------------------------------------------
     private void renderCountdownScreen() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(Gravity.CENTER);
-        layout.setBackgroundColor(Color.parseColor("#25291C"));
+        LinearLayout layout = createMintPage(true);
 
         TextView cdText = new TextView(this);
         cdText.setText("3");
-        cdText.setTextSize(90);
+        cdText.setTextSize(64);
         cdText.setTypeface(null, android.graphics.Typeface.BOLD);
-        cdText.setTextColor(Color.parseColor("#F7E3AF"));
+        cdText.setTextColor(Color.parseColor(C_MINT));
         cdText.setGravity(Gravity.CENTER);
-        layout.addView(cdText);
+        android.graphics.drawable.GradientDrawable circle = new android.graphics.drawable.GradientDrawable();
+        circle.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        circle.setColor(Color.WHITE);
+        circle.setStroke(dp(4), Color.parseColor(C_AMBER));
+        cdText.setBackground(circle);
+        LinearLayout.LayoutParams cdLp = new LinearLayout.LayoutParams(dp(140), dp(140));
+        cdLp.gravity = Gravity.CENTER_HORIZONTAL;
+        layout.addView(cdText, cdLp);
 
-        TextView hint = new TextView(this);
-        hint.setText("請將手機拿正，平視前鏡頭...");
-        hint.setTextSize(16);
-        hint.setTypeface(null, android.graphics.Typeface.BOLD);
-        hint.setTextColor(Color.WHITE);
-        hint.setGravity(Gravity.CENTER);
-        hint.setPadding(0, 24, 0, 0);
-        layout.addView(hint);
-
-        mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        TextView hint = addPageTitle(layout, "請將手機拿正，平視前鏡頭…", 17);
+        hint.setPadding(0, dp(24), 0, 0);
 
         mCountdownSec = 3;
         mHandler.postDelayed(new Runnable() {
@@ -524,45 +557,75 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // -------------------------------------------------------------------------
-    // 階段 4：動態 5 點眼動特徵採樣
+    // 階段 4：動態 5 點眼動特徵採樣 (與 Windows 版相同路徑：中心→左上→右上→右下→左下→中心)
     // -------------------------------------------------------------------------
+    private static final float[][] CALIB_PATH = {
+            {0.50f, 0.50f}, {0.15f, 0.22f}, {0.85f, 0.22f}, {0.85f, 0.78f}, {0.15f, 0.78f}, {0.50f, 0.50f}
+    };
+
     private void renderActiveCalibrationScreen() {
         FrameLayout layout = new FrameLayout(this);
-        layout.setBackgroundColor(Color.parseColor("#25291C"));
+        layout.setBackgroundColor(Color.parseColor(C_MINT));
 
+        TextView title = new TextView(this);
+        title.setText("眼動特徵基準校準中…");
+        title.setTextSize(22);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setTextColor(Color.WHITE);
+        title.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams titleLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP);
+        titleLp.setMargins(0, dp(24), 0, 0);
+        layout.addView(title, titleLp);
+
+        final float dotRadius = dp(22);
         View dotCanvas = new View(this) {
             @Override
             protected void onDraw(Canvas canvas) {
                 super.onDraw(canvas);
                 Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-                p.setColor(Color.parseColor("#F7E3AF")); // 金黃小點
                 float x = getWidth() * mDotX;
                 float y = getHeight() * mDotY;
-                canvas.drawCircle(x, y, 28f, p);
-
+                p.setColor(Color.parseColor(C_AMBER)); // 暖琥珀黃凝視點
+                canvas.drawCircle(x, y, dotRadius, p);
                 p.setStyle(Paint.Style.STROKE);
-                p.setColor(Color.WHITE);
-                p.setStrokeWidth(4f);
-                canvas.drawCircle(x, y, 36f, p);
+                p.setColor(Color.parseColor("#CC96C5F7")); // 晴空藍外暈
+                p.setStrokeWidth(dp(4));
+                canvas.drawCircle(x, y, dotRadius + dp(3), p);
             }
         };
-        layout.addView(dotCanvas, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        FrameLayout.LayoutParams canvasLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        canvasLp.setMargins(dp(16), dp(80), dp(16), dp(110));
+        layout.addView(dotCanvas, canvasLp);
 
-        // 底部進度條
+        TextView hint = new TextView(this);
+        hint.setText("請保持臉部不動，只用眼睛跟著黃點移動…");
+        hint.setTextSize(14);
+        hint.setTypeface(null, android.graphics.Typeface.BOLD);
+        hint.setTextColor(Color.WHITE);
+        hint.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams hintLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+        hintLp.setMargins(dp(24), 0, dp(24), dp(64));
+        layout.addView(hint, hintLp);
+
+        // 底部暖琥珀色進度條
         ProgressBar pbar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         pbar.setMax(100);
         pbar.setProgress(0);
+        pbar.setProgressTintList(android.content.res.ColorStateList.valueOf(Color.parseColor(C_AMBER)));
+        pbar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#148C6C")));
         FrameLayout.LayoutParams pbarParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 24);
-        pbarParams.gravity = Gravity.BOTTOM;
-        pbarParams.setMargins(32, 0, 32, 32);
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(10), Gravity.BOTTOM);
+        pbarParams.setMargins(dp(40), 0, dp(40), dp(36));
         layout.addView(pbar, pbarParams);
 
         mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // 動畫計時器
+        mDotX = CALIB_PATH[0][0];
+        mDotY = CALIB_PATH[0][1];
         final long startTime = System.currentTimeMillis();
         mHandler.post(new Runnable() {
             @Override
@@ -570,13 +633,16 @@ public class MainActivity extends AppCompatActivity {
                 if (isActivityDestroyed() || mCurrentStage != UIStage.ActiveCalibration) return;
 
                 long elapsed = System.currentTimeMillis() - startTime;
-                float t = elapsed / 5000f; // 5 秒
+                float t = elapsed / 5000f; // 5 秒，每段 1 秒
 
                 if (t < 1.0f) {
                     pbar.setProgress((int) (t * 100));
-                    float angle = t * 6.283f * 2;
-                    mDotX = 0.5f + 0.35f * (float) Math.cos(angle);
-                    mDotY = 0.5f + 0.30f * (float) Math.sin(angle);
+                    float segPos = t * 5f;
+                    int seg = Math.min(4, (int) segPos);
+                    float segT = segPos - seg;
+                    float smooth = 0.5f * (1f - (float) Math.cos(segT * Math.PI)); // 緩入緩出
+                    mDotX = CALIB_PATH[seg][0] + (CALIB_PATH[seg + 1][0] - CALIB_PATH[seg][0]) * smooth;
+                    mDotY = CALIB_PATH[seg][1] + (CALIB_PATH[seg + 1][1] - CALIB_PATH[seg][1]) * smooth;
                     dotCanvas.invalidate();
                     mHandler.postDelayed(this, 16);
                 } else {
@@ -597,77 +663,38 @@ public class MainActivity extends AppCompatActivity {
     // 階段 5：校準完成結果提示
     // -------------------------------------------------------------------------
     private void renderCalibrationResultScreen() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(Gravity.CENTER);
-        layout.setBackgroundColor(Color.parseColor("#1EB18A"));
-        layout.setPadding(32, 32, 32, 32);
+        LinearLayout layout = createMintPage(true);
+        addPageTitle(layout, mLastCalibrationOk ? "眼動特徵基準校準完成！" : "校準未完成", 24);
 
-        TextView title = new TextView(this);
-        title.setText(mLastCalibrationOk ? "眼動特徵基準校準完成！" : "校準未完成");
-        title.setTextSize(24);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 16, 0, 8);
-        layout.addView(title);
-
-        TextView val = new TextView(this);
+        String body;
         if (mLastCalibrationOk) {
-            val.setText(String.format(java.util.Locale.getDefault(),
-                    "個人適應性 EAR 判定閾值 = %.3f\n下次開啟將直接沿用此基準", mLastThreshold));
+            body = String.format(java.util.Locale.getDefault(),
+                    "個人化閉眼判定閾值 EAR = %.3f\n下次開啟將直接沿用此基準。", mLastThreshold);
         } else if (!EfdNativeBridge.isEngineRunning()) {
-            val.setText("偵測引擎尚未啟動，請確認已允許相機權限後重新校準");
+            body = "偵測引擎尚未啟動，請確認已允許相機權限後重新校準。";
         } else {
-            val.setText("校準期間未穩定偵測到臉部\n請在光線充足處正對鏡頭後重新校準");
+            body = "校準期間未穩定偵測到臉部。\n請把手機拿到與眼睛同高、避免燈光在畫面中，正對鏡頭後重新校準。";
         }
-        val.setTextSize(15);
-        val.setTypeface(null, android.graphics.Typeface.BOLD);
-        val.setTextColor(Color.parseColor("#F7E3AF"));
-        val.setGravity(Gravity.CENTER);
-        val.setPadding(0, 0, 0, 36);
-        layout.addView(val);
+        addInfoCard(layout, mLastCalibrationOk ? "校準結果" : "可能原因", body);
 
         if (!mLastCalibrationOk) {
-            Button retryBtn = new Button(this);
-            retryBtn.setText("重新校準");
-            retryBtn.setTextSize(15);
-            retryBtn.setPadding(24, 14, 24, 14);
-            styleButton(retryBtn, "#FFFFFF", "#25291C");
+            Button retryBtn = dashButton("重新校準", C_WHITE, C_MINT, 24);
             retryBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
-            LinearLayout.LayoutParams retryLp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            retryLp.setMargins(0, 0, 0, 12);
-            retryBtn.setLayoutParams(retryLp);
             layout.addView(retryBtn);
         }
 
-        Button proceedBtn = new Button(this);
-        proceedBtn.setText(mLastCalibrationOk ? "進入即時眼動監控中心" : "略過，先使用預設基準");
-        proceedBtn.setTextSize(15);
-        proceedBtn.setPadding(24, 14, 24, 14);
-        styleButton(proceedBtn, "#F7E3AF", "#25291C");
+        Button proceedBtn = dashButton(mLastCalibrationOk ? "進入即時眼動監控中心" : "略過，先使用預設基準",
+                C_WHITE, C_MINT, mLastCalibrationOk ? 24 : 10);
         proceedBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
         layout.addView(proceedBtn);
 
-        // 新增按鈕：數據提取後關閉系統介面 (背景持續監控)
-        Button closeBgBtn = new Button(this);
-        closeBgBtn.setText("關閉系統介面");
-        closeBgBtn.setTextSize(14);
-        closeBgBtn.setPadding(24, 12, 24, 12);
-        styleButton(closeBgBtn, "#FFFFFF", "#1EB18A");
-        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        closeLp.setMargins(0, 12, 0, 0);
-        closeBgBtn.setLayoutParams(closeLp);
+        // 數據提取後轉入背景持續監控
+        Button closeBgBtn = dashButton("背景運行模式", C_CORAL, C_WHITE, 10);
         closeBgBtn.setOnClickListener(v -> {
             Toast.makeText(this, "EFD 已轉入背景監控，僅於疲勞超標時跳出提醒", Toast.LENGTH_LONG).show();
             moveTaskToBack(true);
         });
         layout.addView(closeBgBtn);
-
-        mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     // -------------------------------------------------------------------------
@@ -1055,35 +1082,15 @@ public class MainActivity extends AppCompatActivity {
     // 階段 8：後測介面 (問卷連結與狀態解鎖)
     // -------------------------------------------------------------------------
     private void renderStudyGateScreen() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(Gravity.CENTER);
-        layout.setBackgroundColor(Color.parseColor("#1EB18A"));
-        layout.setPadding(32, 32, 32, 32);
+        LinearLayout layout = createMintPage(true);
+        addPageTitle(layout, "14 天施測已完成", 24);
+        addPageSubtitle(layout, "感謝你的參與，還差最後一步");
 
-        TextView title = new TextView(this);
-        title.setText("後測介面");
-        title.setTextSize(24);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-        title.setPadding(0, 0, 0, 16);
-        layout.addView(title);
+        addInfoCard(layout, "請填寫後測問卷",
+                "點擊下方按鈕前往 Google 表單填寫後測問卷，完成後即結束本次實驗流程。\n"
+                + "問卷網址：https://forms.gle/y5f1jTnrrtsxz65G9");
 
-        TextView urlText = new TextView(this);
-        urlText.setText("施測已結束，請點擊下方按鈕前往填寫後測問卷以完成實驗流程\n問卷網址: https://forms.gle/y5f1jTnrrtsxz65G9");
-        urlText.setTextSize(14);
-        urlText.setTypeface(null, android.graphics.Typeface.BOLD);
-        urlText.setTextColor(Color.parseColor("#F7E3AF"));
-        urlText.setGravity(Gravity.CENTER);
-        urlText.setPadding(0, 0, 0, 32);
-        layout.addView(urlText);
-
-        Button surveyBtn = new Button(this);
-        surveyBtn.setText("前往填寫後測問卷 (Google 表單)");
-        surveyBtn.setTextSize(15);
-        surveyBtn.setPadding(24, 14, 24, 14);
-        styleButton(surveyBtn, "#F7E3AF", "#25291C");
+        Button surveyBtn = dashButton("前往填寫後測問卷 (Google 表單)", C_WHITE, C_MINT, 24);
         surveyBtn.setOnClickListener(v -> {
             try {
                 android.content.Intent intent = new android.content.Intent(
@@ -1098,60 +1105,27 @@ public class MainActivity extends AppCompatActivity {
         });
         layout.addView(surveyBtn);
 
-        Button returnBtn = new Button(this);
-        returnBtn.setText("返回即時監控中心");
-        returnBtn.setTextSize(14);
-        returnBtn.setPadding(20, 10, 20, 10);
-        styleButton(returnBtn, "#343A26", "#F7E3AF");
-        LinearLayout.LayoutParams retLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        retLp.setMargins(0, 16, 0, 0);
-        retLp.gravity = Gravity.CENTER;
-        returnBtn.setLayoutParams(retLp);
+        Button returnBtn = dashButton("返回即時監控中心", "#33FFFFFF", C_WHITE, 10);
         returnBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
         layout.addView(returnBtn);
-
-        mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     // -------------------------------------------------------------------------
     // 階段 9：問卷提交完成
     // -------------------------------------------------------------------------
     private void renderQuestionnaireSubmittedScreen() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(Gravity.CENTER);
-        layout.setBackgroundColor(Color.parseColor("#25291C"));
-        layout.setPadding(32, 32, 32, 32);
+        LinearLayout layout = createMintPage(true);
+        addPageTitle(layout, "問卷已成功送出！", 24);
+        addPageSubtitle(layout, "感謝你 14 天以來的協助");
 
-        TextView title = new TextView(this);
-        title.setText("問卷已成功送出！");
-        title.setTextSize(24);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-        layout.addView(title);
-
-        TextView tokenText = new TextView(this);
         String unlockToken = EfdNativeBridge.getUnlockToken();
-        tokenText.setText("科研憑證: " + (unlockToken.isEmpty() ? "尚未取得" : unlockToken)
-                + "\n\n感謝您 14 天以來的協助！\n現在您可以關閉或解除安裝本系統。");
-        tokenText.setTextSize(15);
-        tokenText.setTypeface(null, android.graphics.Typeface.BOLD);
-        tokenText.setTextColor(Color.parseColor("#F7E3AF"));
-        tokenText.setGravity(Gravity.CENTER);
-        tokenText.setPadding(0, 20, 0, 40);
-        layout.addView(tokenText);
+        addInfoCard(layout, "科研憑證",
+                (unlockToken.isEmpty() ? "尚未取得" : unlockToken)
+                + "\n\n現在你可以關閉或解除安裝本系統。");
 
-        Button exitBtn = new Button(this);
-        exitBtn.setText("關閉並結束應用程式");
-        styleButton(exitBtn, "#EB5757", "#FFFFFF");
+        Button exitBtn = dashButton("關閉並結束應用程式", C_CORAL, C_WHITE, 24);
         exitBtn.setOnClickListener(v -> finish());
         layout.addView(exitBtn);
-
-        mStageContentContainer.addView(layout, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     // -------------------------------------------------------------------------

@@ -3,7 +3,10 @@
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorAccent">@color/accent</item>
-        <item name="android:windowBackground">@color/background_dark</item>
+        <!-- 視窗、狀態列、導覽列與各頁相同的薄荷綠，切換頁面時不會閃出深色 -->
+        <item name="android:windowBackground">@color/primary</item>
+        <item name="android:statusBarColor">@color/primary</item>
+        <item name="android:navigationBarColor">@color/primary</item>
         <item name="android:textColor">#FFFFFF</item>
         <!-- 全域白色文字會讓白底對話框的按鈕與內文「白底白字」隱形，對話框改用專屬主題 -->
         <item name="alertDialogTheme">@style/EfdAlertDialog</item>
