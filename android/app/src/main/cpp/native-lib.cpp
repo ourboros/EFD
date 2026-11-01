@@ -43,7 +43,9 @@ static std::mutex g_debugMutex;
 // -----------------------------------------------------------------------------
 // 自動畫面方向：部分手機 (例如三星 A71) 由背景服務開相機時，CameraX 回報的旋轉角與實際不符，
 // 送進偵測程式的臉會橫躺 90°。尚未鎖定方向時，連續一段時間找不到臉就輪流額外旋轉
-// 0° / 90° / 270°；在某個方向第一次偵測到臉 (需通過眼睛檢查) 即鎖定並存檔，之後不再嘗試。
+// 0° / 90° / 270°；在某個方向連續數幀偵測到臉 (需通過眼睛檢查) 才鎖定並存檔。
+// 單幀就鎖定時，手臂或暖色牆面的一次誤判會把方向永久鎖錯，之後臉再也偵測不到；
+// 因此鎖定後若連續一段時間都沒有臉，就解除鎖定重新搜尋 (存檔在下次鎖定時覆寫)。
 // -----------------------------------------------------------------------------
 static std::atomic<int> g_orientationOffset{0};      // 額外旋轉角 (0 / 90 / 270)
 static std::atomic<bool> g_orientationLocked{false};
@@ -51,9 +53,12 @@ static std::atomic<int> g_lastReportedRotation{0};   // CameraX 回報的旋轉�
 static std::atomic<int> g_lastSensorWidth{0};
 static std::atomic<int> g_lastSensorHeight{0};
 static std::atomic<int64_t> g_orientationTrialStartMs{0};
+static std::atomic<int64_t> g_lastFaceSeenMs{0};
 static std::string g_orientationFilePath;
 static constexpr int kOrientationCandidates[3] = {0, 90, 270};
-static constexpr int64_t kOrientationTrialMs = 1500;  // 每個方向嘗試 1.5 秒
+static constexpr int64_t kOrientationTrialMs = 1500;    // 每個方向嘗試 1.5 秒
+static constexpr int kOrientationLockFrames = 3;        // 連續 3 幀偵測到臉才鎖定
+static constexpr int64_t kOrientationRelockMs = 20000;  // 鎖定後 20 秒都沒有臉即重新搜尋
 
 static int64_t steadyNowMsJni() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -64,6 +69,8 @@ static void loadOrientationLock(const std::string& dir) {
     g_orientationFilePath = dir.empty() ? std::string() : dir + "/efd_orientation.txt";
     g_orientationOffset.store(0);
     g_orientationLocked.store(false);
+    g_orientationTrialStartMs.store(0);
+    g_lastFaceSeenMs.store(steadyNowMsJni());
     if (g_orientationFilePath.empty()) return;
     FILE* f = std::fopen(g_orientationFilePath.c_str(), "r");
     if (!f) return;
@@ -76,13 +83,26 @@ static void loadOrientationLock(const std::string& dir) {
     std::fclose(f);
 }
 
-// 每幀偵測結果 (遙測回呼，於分析執行緒)：推進或鎖定方向
-static void updateOrientationSearch(bool rawFaceFound) {
-    if (g_orientationLocked.load()) return;
+// 每幀偵測結果 (遙測回呼，於分析執行緒)：推進、鎖定或解除方向
+// stableFaceFrames：連續偵測到臉的幀數；hasFace：目前是否判定在座
+static void updateOrientationSearch(int stableFaceFrames, bool hasFace) {
+    const int64_t now = steadyNowMsJni();
+    if (hasFace) g_lastFaceSeenMs.store(now);
+
+    if (g_orientationLocked.load()) {
+        if (now - g_lastFaceSeenMs.load() >= kOrientationRelockMs) {
+            // 從目前方向開始重新輪試；若原本的方向正確，使用者回到鏡頭前就會再次鎖定
+            g_orientationLocked.store(false);
+            g_orientationTrialStartMs.store(now);
+            LOGI("鎖定方向 (額外旋轉 %d 度) 已 %lld 秒未偵測到臉，重新搜尋畫面方向",
+                 g_orientationOffset.load(), static_cast<long long>(kOrientationRelockMs / 1000));
+        }
+        return;
+    }
     // 剛切換方向的 400 ms 內，管線中可能仍是舊方向的畫面，結果不採用，避免鎖錯方向
     const int64_t trialStart = g_orientationTrialStartMs.load();
-    if (rawFaceFound && trialStart != 0 && steadyNowMsJni() - trialStart < 400) return;
-    if (rawFaceFound) {
+    const bool settled = trialStart == 0 || now - trialStart >= 400;
+    if (stableFaceFrames >= kOrientationLockFrames && settled) {
         g_orientationLocked.store(true);
         const int offset = g_orientationOffset.load();
         LOGI("偵測到臉部，鎖定畫面方向：額外旋轉 %d 度 (CameraX 回報 %d 度)", offset, g_lastReportedRotation.load());
@@ -94,13 +114,13 @@ static void updateOrientationSearch(bool rawFaceFound) {
         }
         return;
     }
-    const int64_t now = steadyNowMsJni();
-    int64_t start = g_orientationTrialStartMs.load();
-    if (start == 0) {
+    // 這個方向已經看到臉 (尚未滿 3 幀)，先不要換方向
+    if (stableFaceFrames > 0 || hasFace) return;
+    if (trialStart == 0) {
         g_orientationTrialStartMs.store(now);
         return;
     }
-    if (now - start >= kOrientationTrialMs) {
+    if (now - trialStart >= kOrientationTrialMs) {
         int idx = 0;
         for (int i = 0; i < 3; ++i) {
             if (kOrientationCandidates[i] == g_orientationOffset.load()) idx = i;
@@ -191,8 +211,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
 
         engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
             if (!telemetry.latestFrame.isSynthetic) {
-                updateOrientationSearch(telemetry.presenceDiagnostic.rawPersonInFrame &&
-                                        telemetry.presenceDiagnostic.rawFacingCamera);
+                updateOrientationSearch(telemetry.presenceDiagnostic.stableCount,
+                                        telemetry.detection.hasFace);
             }
 
             // 診斷擷取：複製 C++ 實際分析的這一幀 (RGB888) 與偵測數值
@@ -408,6 +428,11 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* 
         << "\"synthetic\":" << (telemetry.latestFrame.isSynthetic ? "true" : "false") << ","
         << "\"frameW\":" << telemetry.latestFrame.width << ","
         << "\"frameH\":" << telemetry.latestFrame.height << ",";
+    size_t calibSamples = 0;
+    size_t calibFrames = 0;
+    engine->getCalibrationProgress(calibSamples, calibFrames);
+    oss << "\"calibSamples\":" << calibSamples << ","
+        << "\"calibFrames\":" << calibFrames << ",";
     appendDiagnosticJson(oss, telemetry.presenceDiagnostic);
     oss << "}";
 

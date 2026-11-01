@@ -537,23 +537,65 @@ public class MainActivity extends AppCompatActivity {
         cdLp.gravity = Gravity.CENTER_HORIZONTAL;
         layout.addView(cdText, cdLp);
 
-        TextView hint = addPageTitle(layout, "請將手機拿正，平視前鏡頭…", 17);
+        TextView hint = addPageTitle(layout, "正在尋找你的臉部…", 17);
         hint.setPadding(0, dp(24), 0, 0);
+        TextView sub = addPageSubtitle(layout, "請將手機拿到與眼睛同高，正對前鏡頭");
+
+        // 偵測到臉才倒數：第一次使用時手機還在判斷畫面方向，提早開始校準會浪費掉大部分校準時間
+        Button skipBtn = dashButton("略過，先使用預設基準", "#33FFFFFF", C_WHITE, 24);
+        skipBtn.setVisibility(View.GONE);
+        skipBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
+        layout.addView(skipBtn);
 
         mCountdownSec = 3;
+        final long startTime = System.currentTimeMillis();
         mHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                if (isActivityDestroyed()) return;
-                mCountdownSec--;
-                if (mCountdownSec > 0) {
+                if (isActivityDestroyed() || mCurrentStage != UIStage.CountdownWait) return;
+                if (isFaceDetectedNow()) {
+                    hint.setText("已偵測到臉部，請保持不動…");
+                    sub.setText("接下來只用眼睛跟著黃點移動");
+                    mCountdownSec--;
+                    if (mCountdownSec <= 0) {
+                        setStage(UIStage.ActiveCalibration);
+                        return;
+                    }
                     cdText.setText(String.valueOf(mCountdownSec));
-                    mHandler.postDelayed(this, 1000);
                 } else {
-                    setStage(UIStage.ActiveCalibration);
+                    mCountdownSec = 3;
+                    cdText.setText("3");
+                    hint.setText("正在尋找你的臉部…");
+                    if (System.currentTimeMillis() - startTime > 10000) {
+                        sub.setText("還沒偵測到臉部：請面向窗戶或燈光（不要背對光源），讓整張臉出現在鏡頭前");
+                        skipBtn.setVisibility(View.VISIBLE);
+                    }
                 }
+                mHandler.postDelayed(this, 1000);
             }
         }, 1000);
+    }
+
+    /** 偵測引擎目前是否判定使用者在鏡頭前 (校準前檢查用)。 */
+    private boolean isFaceDetectedNow() {
+        try {
+            JSONObject obj = new JSONObject(EfdNativeBridge.getTelemetryJson());
+            return obj.optBoolean("engineRunning", false)
+                    && obj.optBoolean("hasFace", false)
+                    && !obj.optBoolean("stale", false);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 回傳 {有效人臉幀, 第一次看到臉之後的總幀數}。 */
+    private int[] getCalibrationProgress() {
+        try {
+            JSONObject obj = new JSONObject(EfdNativeBridge.getTelemetryJson());
+            return new int[] { obj.optInt("calibSamples", 0), obj.optInt("calibFrames", 0) };
+        } catch (Throwable t) {
+            return new int[] { 0, 0 };
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -633,10 +675,18 @@ public class MainActivity extends AppCompatActivity {
                 if (isActivityDestroyed() || mCurrentStage != UIStage.ActiveCalibration) return;
 
                 long elapsed = System.currentTimeMillis() - startTime;
-                float t = elapsed / 5000f; // 5 秒，每段 1 秒
+                float t = (elapsed % 5000) / 5000f; // 一輪 5 秒，每段 1 秒
 
-                if (t < 1.0f) {
-                    pbar.setProgress((int) (t * 100));
+                // 至少一輪 5 秒；有效畫面不足時 (例如中途臉被判定離開) 繼續巡迴，最多 15 秒
+                boolean keepGoing = elapsed < 5000;
+                if (!keepGoing && elapsed < 15000) {
+                    int[] prog = getCalibrationProgress();
+                    keepGoing = prog[0] < 20 || prog[0] < prog[1] * 0.6f;
+                    if (keepGoing) hint.setText("偵測中斷，請正對鏡頭並保持不動，校準會自動延長…");
+                }
+
+                if (keepGoing) {
+                    pbar.setProgress((int) (elapsed < 5000 ? elapsed / 50 : elapsed / 150));
                     float segPos = t * 5f;
                     int seg = Math.min(4, (int) segPos);
                     float segT = segPos - seg;
@@ -681,6 +731,11 @@ public class MainActivity extends AppCompatActivity {
             Button retryBtn = dashButton("重新校準", C_WHITE, C_MINT, 24);
             retryBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
             layout.addView(retryBtn);
+
+            // 失敗當下最能看出原因：直接擷取偵測畫面存到相簿，方便回傳給研究人員
+            Button exportBtn = dashButton("匯出診斷畫面 (回報問題用)", "#33FFFFFF", C_WHITE, 10);
+            exportBtn.setOnClickListener(v -> onExportDiagnosticClicked());
+            layout.addView(exportBtn);
         }
 
         Button proceedBtn = dashButton(mLastCalibrationOk ? "進入即時眼動監控中心" : "略過，先使用預設基準",

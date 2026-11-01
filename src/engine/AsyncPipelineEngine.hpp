@@ -84,6 +84,8 @@ public:
     bool finishCalibration();
     bool isCalibrating() const;
     float getLastCalibrationValidRatio() const;
+    // 校準進行中的進度：有效人臉幀數與 (第一次偵測到臉之後的) 總幀數，供 UI 決定是否延長校準
+    void getCalibrationProgress(size_t& validSamples, size_t& totalFrames) const;
 
     // 是否已有保存的個人化校準 (可直接進入監控畫面)
     bool hasSavedCalibration() const;
@@ -170,7 +172,7 @@ private:
     mutable std::mutex m_calibrationMutex;
     bool m_isCalibrating = false;
     std::vector<float> m_calibrationSamples;
-    size_t m_calibrationTotalFrames = 0;
+    size_t m_calibrationTotalFrames = 0;   // 第一次偵測到臉之後才開始累計
     float m_lastCalibrationValidRatio = 0.0f;
     std::atomic<bool> m_requestEyeBaselineReset{false};
 

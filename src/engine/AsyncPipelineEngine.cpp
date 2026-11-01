@@ -271,6 +271,12 @@ float AsyncPipelineEngine::getLastCalibrationValidRatio() const {
     return m_lastCalibrationValidRatio;
 }
 
+void AsyncPipelineEngine::getCalibrationProgress(size_t& validSamples, size_t& totalFrames) const {
+    std::lock_guard<std::mutex> lock(m_calibrationMutex);
+    validSamples = m_calibrationSamples.size();
+    totalFrames = m_calibrationTotalFrames;
+}
+
 bool AsyncPipelineEngine::hasSavedCalibration() const {
     return m_studyTracker.getSavedCalibration().isCalibrated;
 }
@@ -527,7 +533,8 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         // 3.5 校準期間收集清醒睜眼樣本
         {
             std::lock_guard<std::mutex> lock(m_calibrationMutex);
-            if (m_isCalibrating) {
+            // 開始校準到第一次偵測到臉之間 (使用者還在對準、手機還在判斷畫面方向) 不列入分母
+            if (m_isCalibrating && (hasFace || !m_calibrationSamples.empty())) {
                 m_calibrationTotalFrames++;
                 if (hasFace) {
                     m_calibrationSamples.push_back(eyeMetrics.earAvg);
