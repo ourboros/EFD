@@ -15,7 +15,10 @@ val keystoreProperties = Properties().apply {
 
 // 版本識別：每次建置的 versionCode 取建置時間 (yyMMddHH，只會變大，同簽章可直接覆蓋安裝)，
 // 並把 git commit 寫進 BuildConfig，錯誤回報才看得出手機上裝的是哪一版
-val buildVersionCode = SimpleDateFormat("yyMMddHH").format(Date()).toInt()
+val buildTime = Date()
+val buildVersionCode = SimpleDateFormat("yyMMddHH").format(buildTime).toInt()
+// 顯示用版本名稱精確到分鐘 (versionCode 為 int，只能到小時)，同一小時內的多次建置也分得出來
+val buildVersionName = "1.0." + SimpleDateFormat("yyMMdd.HHmm").format(buildTime)
 val gitCommit: String = try {
     val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
         .directory(rootProject.projectDir)
@@ -37,7 +40,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = buildVersionCode
-        versionName = "1.0.$buildVersionCode"
+        versionName = buildVersionName
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

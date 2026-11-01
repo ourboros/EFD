@@ -4,6 +4,7 @@
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <numeric>
 #include <sstream>
 
 namespace efd {
@@ -245,6 +246,11 @@ bool AsyncPipelineEngine::finishCalibration() {
                       << ")，保留原基準，請使用者重新校準\n";
             return false;
         }
+        const float meanEar = std::accumulate(samples.begin(), samples.end(), 0.0f) / static_cast<float>(samples.size());
+        if (meanEar < kMinCalibrationMeanEar) {
+            std::cout << "[校準] 睜眼平均 EAR 過低 (" << meanEar << ")，眼睛開合未被量到，保留原基準\n";
+            return false;
+        }
     }
 
     CalibrationData data;
@@ -278,7 +284,9 @@ void AsyncPipelineEngine::getCalibrationProgress(size_t& validSamples, size_t& t
 }
 
 bool AsyncPipelineEngine::hasSavedCalibration() const {
-    return m_studyTracker.getSavedCalibration().isCalibrated;
+    const CalibrationData saved = m_studyTracker.getSavedCalibration();
+    // 門檻過低的舊校準不會被沿用 (AdaptiveBaseline::restoreCalibration)，視同尚未校準
+    return saved.isCalibrated && saved.thresholdEar > AdaptiveBaseline::kMinUsableThreshold;
 }
 
 void AsyncPipelineEngine::setSensitivity(int level) {

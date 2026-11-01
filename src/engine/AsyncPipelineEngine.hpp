@@ -48,6 +48,9 @@ public:
     // 校準有效幀比例門檻：校準期間至少 60% 的幀需偵測到人臉
     static constexpr float kMinCalibrationValidRatio = 0.60f;
     static constexpr size_t kMinCalibrationSamples = 20;
+    // 睜眼時的平均 EAR 下限：眼睛開合度量測的 EAR 範圍為 0.10 (全閉) ~ 0.32 (全開)，
+    // 校準期間平均低於此值代表量測位置不在眼睛上 (例如畫面方向錯誤)，存下來的閉眼門檻會低於 0.10、永遠判定不到閉眼
+    static constexpr float kMinCalibrationMeanEar = 0.15f;
 
     explicit AsyncPipelineEngine(PlatformType platform = PlatformType::Windows);
     ~AsyncPipelineEngine();

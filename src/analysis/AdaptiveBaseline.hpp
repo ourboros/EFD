@@ -33,6 +33,8 @@ public:
 
     // 校準後，動態閾值只能在校準閾值的 ±kCalibratedDriftRatio 內浮動
     static constexpr float kCalibratedDriftRatio = 0.15f;
+    // 可沿用的校準閾值下限：EAR 全閉眼約 0.10，閾值不高於此值時閉眼永遠不會成立
+    static constexpr float kMinUsableThreshold = 0.11f;
 
     // 重置滑動窗口與基準
     void reset();

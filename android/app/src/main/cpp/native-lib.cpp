@@ -42,10 +42,12 @@ static std::mutex g_debugMutex;
 
 // -----------------------------------------------------------------------------
 // 自動畫面方向：部分手機 (例如三星 A71) 由背景服務開相機時，CameraX 回報的旋轉角與實際不符，
-// 送進偵測程式的臉會橫躺 90°。尚未鎖定方向時，連續一段時間找不到臉就輪流額外旋轉
-// 0° / 90° / 270°；在某個方向連續數幀偵測到臉 (需通過眼睛檢查) 才鎖定並存檔。
-// 單幀就鎖定時，手臂或暖色牆面的一次誤判會把方向永久鎖錯，之後臉再也偵測不到；
-// 因此鎖定後若連續一段時間都沒有臉，就解除鎖定重新搜尋 (存檔在下次鎖定時覆寫)。
+// 送進偵測程式的臉會橫躺 90°。因此輪流額外旋轉 0° / 90° / 270° 各 1.5 秒，
+// 統計每個方向「通過眼睛檢查」的幀數，一輪結束後選分數明顯最高的方向鎖定。
+// 只要某方向連續幾幀過關就鎖定的做法，會被橫躺畫面上偶發的誤判鎖錯 (三星 A71 實測鎖在 90°，
+// 之後追蹤黏在下巴、脖子，量眼睛開合的位置不在眼睛上，閉眼率永遠 0%)。
+// 每次啟動都重新比較一輪 (約 4.5 秒)；存檔的方向只決定從哪個方向開始試。
+// 鎖定後若「在座但幾乎都沒通過眼睛檢查」或長時間沒有通過，代表方向可能錯了，重新比較。
 // -----------------------------------------------------------------------------
 static std::atomic<int> g_orientationOffset{0};      // 額外旋轉角 (0 / 90 / 270)
 static std::atomic<bool> g_orientationLocked{false};
@@ -56,9 +58,12 @@ static std::atomic<int64_t> g_orientationTrialStartMs{0};
 static std::atomic<int64_t> g_lastFaceSeenMs{0};
 static std::string g_orientationFilePath;
 static constexpr int kOrientationCandidates[3] = {0, 90, 270};
-static constexpr int64_t kOrientationTrialMs = 1500;    // 每個方向嘗試 1.5 秒
-static constexpr int kOrientationLockFrames = 3;        // 連續 3 幀偵測到臉才鎖定
-static constexpr int64_t kOrientationRelockMs = 30000;  // 鎖定後 30 秒都沒有通過眼睛檢查即重新搜尋
+static constexpr int64_t kOrientationTrialMs = 1500;     // 每個方向嘗試 1.5 秒
+static constexpr int64_t kOrientationSettleMs = 400;     // 切換後 400 ms 內仍可能是舊方向的畫面，不計分
+static constexpr int kOrientationMinScore = 3;           // 最佳方向至少 3 幀通過眼睛檢查
+static constexpr int64_t kOrientationRelockMs = 30000;   // 鎖定後 30 秒都沒有通過眼睛檢查即重新比較
+static constexpr int kOrientationAuditFrames = 900;      // 鎖定後每約 30 秒 (在座幀數) 檢查一次
+static constexpr float kOrientationAuditMinRatio = 0.03f; // 在座幀中通過眼睛檢查不到 3% 視為方向可疑
 
 static int64_t steadyNowMsJni() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -78,61 +83,118 @@ static void loadOrientationLock(const std::string& dir) {
     int offset = -1;
     if (std::fscanf(f, "%d", &offset) == 1 && (offset == 0 || offset == 90 || offset == 270)) {
         g_orientationOffset.store(offset);
-        g_orientationLocked.store(true);
-        LOGI("沿用已鎖定的畫面方向：額外旋轉 %d 度", offset);
+        LOGI("上次鎖定的畫面方向為額外旋轉 %d 度，從此方向開始比較", offset);
     }
     std::fclose(f);
 }
 
-// 每幀偵測結果 (遙測回呼，於分析執行緒)：推進、鎖定或解除方向
-// eyesVerified：這一幀是否通過眼睛檢查 (不含鎖定後靠追蹤維持的在座)。
-// 鎖定與重新搜尋都只看 eyesVerified：方向錯誤時，追蹤會黏在下巴、脖子等膚色區域讓「在座」一直成立
-static int g_eyesVerifiedStreak = 0;  // 只在分析執行緒存取
+// 以下狀態只在分析執行緒 (遙測回呼) 存取
+static int g_trialScore[3] = {0, 0, 0};   // 本輪各方向通過眼睛檢查的幀數
+static int g_trialsInCycle = 0;           // 本輪已試完的方向數
+static int g_failedCycles = 0;            // 重新比較後連續沒有結果的輪數
+static int g_previousLockedOffset = -1;   // 重新比較前鎖定的方向 (比較不出結果時退回)
+static int g_auditFaceFrames = 0;         // 鎖定後的在座幀數
+static int g_auditVerifiedFrames = 0;     // 其中通過眼睛檢查的幀數
 
-static void updateOrientationSearch(bool eyesVerified) {
+static int orientationIndex(int offset) {
+    for (int i = 0; i < 3; ++i) {
+        if (kOrientationCandidates[i] == offset) return i;
+    }
+    return 0;
+}
+
+static void lockOrientation(int offset, const char* why) {
+    g_orientationOffset.store(offset);
+    g_orientationLocked.store(true);
+    g_auditFaceFrames = 0;
+    g_auditVerifiedFrames = 0;
+    g_failedCycles = 0;
+    g_lastFaceSeenMs.store(steadyNowMsJni());
+    LOGI("鎖定畫面方向：額外旋轉 %d 度 (CameraX 回報 %d 度，%s)", offset, g_lastReportedRotation.load(), why);
+    if (!g_orientationFilePath.empty()) {
+        if (FILE* f = std::fopen(g_orientationFilePath.c_str(), "w")) {
+            std::fprintf(f, "%d\n", offset);
+            std::fclose(f);
+        }
+    }
+}
+
+static void startOrientationComparison(int64_t now, const char* why) {
+    g_previousLockedOffset = g_orientationLocked.load() ? g_orientationOffset.load() : -1;
+    g_orientationLocked.store(false);
+    g_trialScore[0] = g_trialScore[1] = g_trialScore[2] = 0;
+    g_trialsInCycle = 0;
+    g_failedCycles = 0;
+    g_orientationTrialStartMs.store(now);
+    LOGI("重新比較畫面方向 (目前額外旋轉 %d 度)：%s", g_orientationOffset.load(), why);
+}
+
+// 每幀偵測結果：推進、鎖定或解除方向
+// eyesVerified：這一幀是否通過眼睛檢查 (不含鎖定後靠追蹤維持的在座)；hasFace：目前是否判定在座
+static void updateOrientationSearch(bool eyesVerified, bool hasFace) {
     const int64_t now = steadyNowMsJni();
-    g_eyesVerifiedStreak = eyesVerified ? g_eyesVerifiedStreak + 1 : 0;
     if (eyesVerified) g_lastFaceSeenMs.store(now);
 
     if (g_orientationLocked.load()) {
-        if (now - g_lastFaceSeenMs.load() >= kOrientationRelockMs) {
-            // 從目前方向開始重新輪試；若原本的方向正確，使用者回到鏡頭前就會再次鎖定
-            g_orientationLocked.store(false);
-            g_orientationTrialStartMs.store(now);
-            LOGI("鎖定方向 (額外旋轉 %d 度) 已 %lld 秒未偵測到臉，重新搜尋畫面方向",
-                 g_orientationOffset.load(), static_cast<long long>(kOrientationRelockMs / 1000));
-        }
-        return;
-    }
-    // 剛切換方向的 400 ms 內，管線中可能仍是舊方向的畫面，結果不採用，避免鎖錯方向
-    const int64_t trialStart = g_orientationTrialStartMs.load();
-    const bool settled = trialStart == 0 || now - trialStart >= 400;
-    if (g_eyesVerifiedStreak >= kOrientationLockFrames && settled) {
-        g_orientationLocked.store(true);
-        const int offset = g_orientationOffset.load();
-        LOGI("偵測到臉部，鎖定畫面方向：額外旋轉 %d 度 (CameraX 回報 %d 度)", offset, g_lastReportedRotation.load());
-        if (!g_orientationFilePath.empty()) {
-            if (FILE* f = std::fopen(g_orientationFilePath.c_str(), "w")) {
-                std::fprintf(f, "%d\n", offset);
-                std::fclose(f);
+        if (hasFace) {
+            g_auditFaceFrames++;
+            if (eyesVerified) g_auditVerifiedFrames++;
+            if (g_auditFaceFrames >= kOrientationAuditFrames) {
+                const float ratio = static_cast<float>(g_auditVerifiedFrames) / g_auditFaceFrames;
+                g_auditFaceFrames = 0;
+                g_auditVerifiedFrames = 0;
+                if (ratio < kOrientationAuditMinRatio) {
+                    startOrientationComparison(now, "在座期間幾乎都沒有通過眼睛檢查");
+                    return;
+                }
             }
         }
-        return;
-    }
-    // 這個方向已經看到臉 (尚未滿 3 幀)，先不要換方向
-    if (g_eyesVerifiedStreak > 0) return;
-    if (trialStart == 0) {
-        g_orientationTrialStartMs.store(now);
-        return;
-    }
-    if (now - trialStart >= kOrientationTrialMs) {
-        int idx = 0;
-        for (int i = 0; i < 3; ++i) {
-            if (kOrientationCandidates[i] == g_orientationOffset.load()) idx = i;
+        if (now - g_lastFaceSeenMs.load() >= kOrientationRelockMs) {
+            g_lastFaceSeenMs.store(now);
+            startOrientationComparison(now, "30 秒沒有通過眼睛檢查");
         }
-        g_orientationOffset.store(kOrientationCandidates[(idx + 1) % 3]);
-        g_orientationTrialStartMs.store(now);
+        return;
     }
+
+    int64_t trialStart = g_orientationTrialStartMs.load();
+    if (trialStart == 0) {
+        startOrientationComparison(now, "啟動");
+        return;
+    }
+    const int idx = orientationIndex(g_orientationOffset.load());
+    if (eyesVerified && now - trialStart >= kOrientationSettleMs) {
+        g_trialScore[idx]++;
+    }
+    if (now - trialStart < kOrientationTrialMs) return;
+
+    // 這個方向試完：換下一個方向；三個方向都試完就比較分數
+    g_trialsInCycle++;
+    if (g_trialsInCycle >= 3) {
+        int best = 0;
+        for (int i = 1; i < 3; ++i) {
+            if (g_trialScore[i] > g_trialScore[best]) best = i;
+        }
+        int second = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (i != best) second = std::max(second, g_trialScore[i]);
+        }
+        LOGI("方向比較分數：0°=%d 90°=%d 270°=%d", g_trialScore[0], g_trialScore[1], g_trialScore[2]);
+        if (g_trialScore[best] >= kOrientationMinScore && g_trialScore[best] >= second * 2) {
+            lockOrientation(kOrientationCandidates[best], "三個方向中通過眼睛檢查最多");
+            return;
+        }
+        // 比較不出結果 (使用者不在、眼睛不易辨識)：重新比較兩輪後仍無結果就先退回原本的方向，
+        // 避免在座但眼睛較難辨識時一直輪轉畫面、追蹤反覆中斷
+        g_failedCycles++;
+        if (g_previousLockedOffset >= 0 && g_failedCycles >= 2) {
+            lockOrientation(g_previousLockedOffset, "比較不出更好的方向，沿用原方向");
+            return;
+        }
+        g_trialScore[0] = g_trialScore[1] = g_trialScore[2] = 0;
+        g_trialsInCycle = 0;
+    }
+    g_orientationOffset.store(kOrientationCandidates[(idx + 1) % 3]);
+    g_orientationTrialStartMs.store(now);
 }
 
 static std::string jsonEscape(const std::string& s) {
@@ -217,7 +279,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
         engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
             if (!telemetry.latestFrame.isSynthetic) {
                 const auto& pd = telemetry.presenceDiagnostic;
-                updateOrientationSearch(pd.rawPersonInFrame && pd.rawFacingCamera && !pd.presenceByTracking);
+                updateOrientationSearch(pd.rawPersonInFrame && pd.rawFacingCamera && !pd.presenceByTracking,
+                                        telemetry.detection.hasFace);
             }
 
             // 診斷擷取：複製 C++ 實際分析的這一幀 (RGB888) 與偵測數值

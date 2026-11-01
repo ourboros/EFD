@@ -764,6 +764,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView mDashStatusText;
     private TextView mDashMetricsText;
     private boolean mPreviewBoundToService = false;
+    private boolean mCalibrationChecked = false;   // 本次開啟是否已檢查校準是否可用
+    private long mNoFaceSinceMs = 0;                // 連續未偵測到臉的起始時間 (0 = 目前有臉)
 
     // 與原 iOS 版相同的設計系統：薄荷綠底、白色圓角卡片、墨黑文字、珊瑚紅警示
     private static final String C_MINT = "#1EB18A";
@@ -1009,6 +1011,17 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "已複製錯誤資訊，請貼到 LINE 傳給研究人員", Toast.LENGTH_LONG).show();
     }
 
+    /** 舊的校準結果無法沿用 (未量到眼睛開合) 時，提醒使用者重新校準。 */
+    private void showRecalibrationNeededDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("需要重新校準")
+                .setMessage("先前的校準沒有量到眼睛開合（可能當時畫面方向尚未調整好），閉眼率會無法正確計算。\n\n"
+                        + "請正對鏡頭重新校準一次，約 10 秒即可完成。")
+                .setNegativeButton("稍後", null)
+                .setPositiveButton("現在校準", (d, w) -> setStage(UIStage.CalibrationInstruction))
+                .show();
+    }
+
     // -------------------------------------------------------------------------
     // 階段 7：設定面板 (僅保留：提示靈敏度、重設眼動監測、警告通知發送)
     // -------------------------------------------------------------------------
@@ -1109,28 +1122,15 @@ public class MainActivity extends AppCompatActivity {
                 "依手機廠牌設定自動啟動與電池不受限制，劃掉 App 後仍會提醒",
                 notifyOn ? "通知開啟  ›" : "通知關閉  ›", true, v -> showBackgroundSettingsGuide());
 
-        // 3. 測試背景通知
-        addSettingsCard(layout, "測試背景通知",
-                "10 秒後送出測試通知，可在這段時間把 EFD 劃掉確認背景運作",
-                "›", true, v -> onTestBackgroundAlertClicked());
-
-        // 4. 重設眼動監測
+        // 3. 重設眼動監測
         addSettingsCard(layout, "重新校準眼動基準",
                 "換了使用環境、光線或配戴眼鏡時，重新校準可提升準確度",
                 "›", true, v -> setStage(UIStage.CalibrationInstruction));
 
-        // 5. 錯誤回報
-        addSettingsCard(layout, "複製錯誤資訊",
-                "把目前偵測狀態與手機資訊複製成文字（不含影像），貼給研究人員",
-                "›", true, v -> copyDiagnosticReport());
+        // 4. 錯誤回報 (畫面＋偵測狀態＋手機資訊一次匯出)；自動科研同步恆定開啟，不需設定項目
         addSettingsCard(layout, "匯出診斷畫面",
-                "擷取 5 張偵測畫面存到相簿「EFD」，並複製數值（含臉部影像）",
+                "擷取 5 張偵測畫面存到相簿「EFD」，並複製偵測狀態與手機資訊（含臉部影像）",
                 "›", true, v -> onExportDiagnosticClicked());
-
-        // 6. 自動科研同步 (恆定開啟)
-        addSettingsCard(layout, "自動科研同步",
-                "每晚 21:00 後上傳當日數值；錯過時會自動補傳",
-                "已開啟", false, null).setTextColor(Color.parseColor(C_MINT));
 
         // 底部返回按鈕
         Button returnBtn = dashButton("返回監控中心", C_WHITE, C_MINT, 20);
@@ -1284,13 +1284,26 @@ public class MainActivity extends AppCompatActivity {
                             }
                         }
                     } else {
+                        if (!mCalibrationChecked && mCurrentStage == UIStage.MainDashboard) {
+                            mCalibrationChecked = true;
+                            if (!EfdNativeBridge.hasSavedCalibration()) showRecalibrationNeededDialog();
+                        }
                         mCurrentScore = (float) obj.optDouble("fatigueScore", 0.0);
                         mCurrentLevel = obj.optInt("fatigueLevel", 0);
                         mLastThreshold = (float) obj.optDouble("threshold", 0.0);
                         int cooldownState = obj.optInt("cooldownState", 0);
                         int cooldownRemaining = obj.optInt("cooldownRemaining", 0);
 
-                        boolean hasFace = obj.optBoolean("hasFace", true);
+                        // 畫面顯示的「未偵測到臉」需連續 3 秒才出現：引擎丟失臉部 1 秒即暫停計算，
+                        // 但轉頭、低頭、光線瞬間變化造成的短暫丟失不必讓使用者看到離座提示
+                        boolean rawHasFace = obj.optBoolean("hasFace", true);
+                        long nowMs = System.currentTimeMillis();
+                        if (rawHasFace) {
+                            mNoFaceSinceMs = 0;
+                        } else if (mNoFaceSinceMs == 0) {
+                            mNoFaceSinceMs = nowMs;
+                        }
+                        boolean hasFace = rawHasFace || nowMs - mNoFaceSinceMs < 3000;
                         float currentEar = (float) obj.optDouble("currentEar", 0.312);
                         float threshold = (float) obj.optDouble("threshold", 0.265);
                         float perclos = (float) obj.optDouble("perclos", 0.0);
@@ -1431,11 +1444,14 @@ public class MainActivity extends AppCompatActivity {
         }
 
         final int savedCount = saved;
+        // 原「複製錯誤資訊」的內容 (背景偵測狀態、目前偵測數值) 一併附上，只需按一個按鈕回報
         final String text = "[EFD Android 診斷]\n"
                 + "版本: " + versionLabel() + "\n"
                 + "裝置: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android " + Build.VERSION.RELEASE
                 + " (SDK " + Build.VERSION.SDK_INT + ")\n"
-                + "時間: " + stamp + " / 通知: " + (EfdNotificationHudManager.canPostFatigueAlerts(this) ? "開啟" : "關閉") + "\n"
+                + "時間: " + stamp + " / 通知: " + (EfdNotificationHudManager.canPostFatigueAlerts(this) ? "開啟" : "關閉")
+                + " / 背景偵測: " + (EfdForegroundService.getInstance() != null ? "執行中" : "未執行") + "\n"
+                + "目前偵測: " + EfdNativeBridge.getTelemetryJson() + "\n"
                 + summary;
         mHandler.post(() -> {
             if (isActivityDestroyed()) return;
@@ -1487,28 +1503,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // -------------------------------------------------------------------------
-    // 背景通知：測試、權限檢查與廠牌背景執行說明
+    // 背景通知：權限檢查與廠牌背景執行說明
     // -------------------------------------------------------------------------
     private boolean mNotificationCheckShown = false;
-
-    private void onTestBackgroundAlertClicked() {
-        if (!EfdNotificationHudManager.canPostFatigueAlerts(this)) {
-            showNotificationsDisabledDialog();
-            return;
-        }
-        EfdForegroundService service = EfdForegroundService.getInstance();
-        if (service == null) {
-            Toast.makeText(this, "背景偵測尚未啟動，請先回到監控中心", Toast.LENGTH_LONG).show();
-            return;
-        }
-        service.scheduleTestAlert(10_000L);
-        new AlertDialog.Builder(this)
-                .setTitle("10 秒後發送測試通知")
-                .setMessage("請現在把 EFD 從最近使用的 App 清單劃掉，或回到桌面。\n\n"
-                        + "10 秒後應會收到內容為「【測試通知】背景通知運作正常」的通知；若沒有收到，請按「通知與背景執行設定」依說明調整。")
-                .setPositiveButton("好", null)
-                .show();
-    }
 
     /** 進入監控中心時檢查一次：通知被關閉時疲勞提醒會被系統直接丟棄。 */
     private void checkNotificationsEnabledOnce() {

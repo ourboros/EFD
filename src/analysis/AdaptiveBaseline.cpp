@@ -121,6 +121,8 @@ CalibrationData AdaptiveBaseline::getCalibrationData() const {
 
 void AdaptiveBaseline::restoreCalibration(const CalibrationData& data) {
     if (!data.isCalibrated || data.baselineEar <= 0.0f || data.thresholdEar <= 0.0f) return;
+    // 舊版可能存下眼睛未被量到時的校準 (門檻低於全閉眼的 EAR 0.10，閉眼永遠不會成立)，不予沿用
+    if (data.thresholdEar <= kMinUsableThreshold) return;
     m_baselineEar = data.baselineEar;
     m_calibratedStdDev = data.earStdDev;
     m_calibratedThreshold = data.thresholdEar;
