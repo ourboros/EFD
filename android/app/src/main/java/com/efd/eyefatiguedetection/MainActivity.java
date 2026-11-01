@@ -252,6 +252,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void setStage(UIStage stage) {
+        // 離開監控中心時預覽畫面會被移除；三星等手機在預覽的輸出畫面消失後整個相機串流會停住，
+        // 影像分析跟著收不到畫面 (校準倒數一直找不到臉、匯出診斷「未取得畫面」)，因此先改回只做影像分析
+        if (stage != UIStage.MainDashboard) {
+            releasePreviewFromService();
+        }
         mCurrentStage = stage;
         if (stage == UIStage.MainDashboard || stage == UIStage.SettingsPanel) {
             getSharedPreferences("efd_prefs", MODE_PRIVATE)
@@ -1612,13 +1617,17 @@ public class MainActivity extends AppCompatActivity {
     protected void onStop() {
         super.onStop();
         // 介面不可見時，服務的相機改回只做影像分析，不再綁定即將消失的預覽畫面
-        if (mPreviewBoundToService) {
-            EfdForegroundService fgService = EfdForegroundService.getInstance();
-            if (fgService != null && fgService.getCameraManager() != null) {
-                fgService.getCameraManager().startCamera();
-            }
-            mPreviewBoundToService = false;
+        releasePreviewFromService();
+    }
+
+    /** 服務的相機改回只做影像分析 (解除監控中心預覽畫面的綁定)。 */
+    private void releasePreviewFromService() {
+        if (!mPreviewBoundToService) return;
+        EfdForegroundService fgService = EfdForegroundService.getInstance();
+        if (fgService != null && fgService.getCameraManager() != null) {
+            fgService.getCameraManager().startCamera();
         }
+        mPreviewBoundToService = false;
     }
 
     @Override
