@@ -4,6 +4,8 @@
 
 本研究旨在開發一款基於 **C++ 單一核心語言** 的跨平台眼睛疲勞偵測與干預應用程式（EFD Native App）。應用程式具備完整的跨平台能力，能在 **Android、iOS、macOS、Windows** 四大主流作業系統上以原生高效能模式運行。
 
+> **2026-10 更新：** 實際支援平台縮減為 **Windows (x64)** 與 **Android (AArch64)**。iOS / macOS 不允許背景使用相機，無法滿足背景守護需求，相關程式碼、建置流程與文件已移除；下文中提及 iOS / macOS 的段落屬原始規劃。
+
 系統採用本機端邊緣運算（純 Client-Side Edge Computing），透過裝置攝影機捕捉影像，融合「常規幾何統計特徵（EAR, PERCLOS）」與「非線性時序複雜度特徵（EMD, MSE）」，動態評估疲勞狀態並給予個人化提醒，同時安全管控為期 14 天的科研實驗數據生命週期。
 
 ---
@@ -143,8 +145,8 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
   - 平均 $< 45$：回到常態追蹤；
   - 介於兩者之間：不提醒，繼續下一輪 5 分鐘快篩。
   - 窗口未滿 5 分鐘不提前判定。
-- **離座自動歸零 (5m Auto-Reset):** 連續 5 分鐘未偵測到人臉，視為已休息：清除冷卻與快篩，平滑分數歸零，回到常態追蹤。App 在背景 (iOS) 或關閉期間比照離座計時。
-- **提示靈敏度 (Sensitivity):** 只調整「提醒門檻」與「需持續秒數」，冷卻 20 分鐘、快篩 5 分鐘、離座 5 分鐘清零等時間規則不變；設定保存在設定檔的 `sensitivityLevel` 欄位 (由第 20 項測試驗證)。Windows / macOS / iOS 以開關切換標準與高，Android 可在三段間切換。
+- **離座自動歸零 (5m Auto-Reset):** 連續 5 分鐘未偵測到人臉，視為已休息：清除冷卻與快篩，平滑分數歸零，回到常態追蹤。App 關閉期間比照離座計時。
+- **提示靈敏度 (Sensitivity):** 只調整「提醒門檻」與「需持續秒數」，冷卻 20 分鐘、快篩 5 分鐘、離座 5 分鐘清零等時間規則不變；設定保存在設定檔的 `sensitivityLevel` 欄位 (由第 20 項測試驗證)。Windows 以開關切換標準與高，Android 可在三段間切換。
 
   | 等級 | 提醒門檻 (平滑分數) | 需持續 |
   | :--- | :--- | :--- |
@@ -186,20 +188,18 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 └──────────────┘ └──────────────┘ └────────────────┘ └────────────────┘
 ```
 
-> 註：上圖為原始規劃。目前各平台介面皆為原生實作 (Windows Win32 + GDI+、macOS Cocoa、Android View、iOS UIKit)，未使用 Qt。
+> 註：上圖為原始規劃。目前各平台介面皆為原生實作 (Windows Win32 + GDI+、macOS Cocoa、Android View、iOS UIKit)，未使用 Qt。iOS / macOS 已於 2026-10 移除。
 
 | 平台        | 常駐機制 (Background Mode)                                            | 視訊擷取 (Camera Input)                   | 資料目錄 / 每日同步                               |
 | :---------- | :-------------------------------------------------------------------- | :---------------------------------------- | :------------------------------------------------ |
 | **Windows** | 最小化至系統托盤 (System Tray)，背景持續偵測                          | Media Foundation：選最接近 640x480 的原生格式，請系統轉 RGB32/RGB24，失敗時自行解碼 NV12 / YUY2 / UYVY；依實際解析度、stride (含行尾補齊、由下而上) 讀取，720p 以上整數倍縮到寬約 640 (第 27 項測試) | 執行檔工作目錄；C++ 引擎 21:00 同步 + 補傳 (PowerShell) |
-| **macOS**   | 頂部選單列狀態圖示 (Status Bar Item)，背景持續偵測                    | AVFoundation                              | `~/Library/Application Support/EFD`；C++ 引擎同步 + 補傳 (NSURLSession) |
 | **Android** | **前景服務 (camera 類型)** 擁有偵測引擎，App 介面被劃掉後仍持續偵測與提醒；首次進入監控頁引導加入電池最佳化白名單。Android 14+ 不允許開機自動開相機，改發「點此開始今日偵測」通知 | CameraX (ImageAnalysis) → JNI | `filesDir`；Java `EfdSyncManager` 21:00 鬧鐘 + 補傳 + 失敗 10 分鐘重試 (C++ 端同步關閉) |
-| **iOS**     | **iOS 不允許背景使用相機**：只在前景偵測；進入背景時暫停並保存冷卻狀態，排定一次休息提醒 (冷卻中延到冷卻結束) | AVFoundation / AVCaptureSession           | `Application Support/EFD`；開啟/回前景時補傳 + BGAppRefreshTask (執行時間由 iOS 決定) |
 
 - **每日同步共同規則:** 上傳成功才標記已同步；失敗 10 分鐘後重試；21:00 前若發現昨天 (含) 以前的資料尚未上傳，立即補傳。
 - **模擬相機:** 實體鏡頭無畫面時會切換為模擬相機以維持管線運作，但模擬影格不寫入研究資料庫。
-- **iOS 診斷與錯誤回報:** 校準頁不顯示鏡頭畫面，黃點與 Windows 版相同依 中心→左上→右上→右下→左下→中心 巡迴 5 秒，下方顯示即時未偵測原因；校準失敗時說明主要原因與有效幀比例，並可「複製錯誤資訊」(純文字，含最近 10 秒有臉比例)；監控頁右上角也有「回報問題」。設定頁的「診斷模式」(預設關閉) 顯示即時偵測數值；「匯出診斷畫面」擷取 5 張畫面存到「照片」App，並把每張的偵測數值與錯誤回報複製成文字 (LINE 一次分享多個檔案時常只傳出一個，因此不用檔案分享)，PNG/PPM/JSON 另存於「檔案」App 的 EFD 資料夾供進階使用。電腦端以 `tests/convert_to_ppm.ps1` 把傳回的 JPG/PNG 轉成 PPM，再以 `efd_diag_replay <資料夾>` 重播同一套判斷。匯出的畫面含臉部影像，只在使用者按下匯出時產生，`debug_frames/` 不進版本庫。
+- **Android 診斷與錯誤回報:** 監控中心未偵測到臉時顯示原因 (卡在哪一關) 與相機畫面尺寸、fps；設定頁「匯出診斷畫面」擷取 5 張 C++ 實際分析的 RGB 畫面存到相簿 Pictures/EFD，並把每張的偵測數值與裝置資訊複製成文字 (LINE 一次分享多個檔案時常只傳出一個，因此用相簿照片 + 貼上文字)；「測試背景通知」10 秒後送出「【測試通知】」，與真實疲勞提醒文字區隔；服務被廠商系統關閉時，看門狗 (每 15 分鐘，07:00~23:00) 發出「EFD 疲勞偵測已停止」。Windows 以 `efd_diag_replay --capture` 擷取相機畫面檢查格式。電腦端以 `tests/convert_to_ppm.ps1` 把傳回的 JPG/PNG 轉成 PPM，再以 `efd_diag_replay <資料夾>` 重播同一套判斷。匯出的畫面含臉部影像，只在使用者按下匯出時產生，`debug_frames/` 不進版本庫。
 - **上傳 JSON 格式 (四平台共用):** 由 `NetworkSyncWorker::buildPayloadJson()` 產生，Android 經 JNI 呼叫同一函式 (不附逐筆 `records`)。`metrics` 的 EAR、PERCLOS、CI 與 `fatigue_score` 為資料庫紀錄的實際平均；`blink_rate` 為有效眨眼率的平均 (窗口未滿 30 秒的 0 值不計入)；無紀錄時上述欄位為 `null`、`record_count` 為 0。`status` 為研究流程狀態 (`Active` / `Locked` / `Completed`)；`checksum` 由紀錄內容計算；`token` 為填寫後測問卷後產生的解鎖憑證，未取得時為空字串。資料庫每列新增第 8 欄 `BlinkRatePerMin`，讀取時相容舊版 7 欄資料。
-- **開機自動啟動:** Windows 寫入 `HKCU\...\Run` (舊版另建的「啟動」資料夾捷徑會被清除，避免開機啟動兩次)；macOS 寫入 `~/Library/LaunchAgents/com.efd.EyeFatigueDetection.plist`；iOS 系統不允許，已移除該設定；Android 14+ 以開機通知代替。
+- **開機自動啟動:** Windows 寫入 `HKCU\...\Run` (舊版另建的「啟動」資料夾捷徑會被清除，避免開機啟動兩次)；Android 14+ 以開機通知代替。
 
 ---
 

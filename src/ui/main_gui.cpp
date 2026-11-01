@@ -10,8 +10,6 @@
 #endif
 #include <windows.h>
 #include "NativeWelcomeWindow.hpp"
-#elif defined(__APPLE__)
-#include "macos/MacWelcomeWindow.h"
 #endif
 
 #ifdef _WIN32
@@ -100,9 +98,6 @@ int main(int argc, char* argv[]) {
         CloseHandle(hSingleMutex);
     }
     return exitCode;
-#elif defined(__APPLE__)
-    efd::MacWelcomeWindow window(winWidth, winHeight);
-    return window.run();
 #else
     std::cerr << "Unsupported platform for native GUI.\n";
     return 1;

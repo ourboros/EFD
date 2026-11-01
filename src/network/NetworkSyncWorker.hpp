@@ -63,7 +63,7 @@ public:
     // 本機同步封裝 JSON 的存放路徑 (預設為工作目錄下 efd_daily_sync.json)
     void setDumpPath(const std::string& path);
 
-    // 替換上傳實作 (未設定時使用平台預設：Windows PowerShell / Apple NSURLSession)
+    // 替換上傳實作 (未設定時使用平台預設：Windows PowerShell；Android 由 Java 層上傳)
     void setUploader(Uploader uploader);
 
     // 觸發非同步科研資料同步 (包含問卷答案上傳與解鎖 Token 交換)

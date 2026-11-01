@@ -1,5 +1,5 @@
 # 把 debug_frames/ (含子資料夾) 裡的 JPG / PNG 轉成 efd_diag_replay 可讀的 PPM
-# iOS 診斷模式匯出的照片經 LINE 傳回後是 JPG，轉檔後即可重播：
+# 手機診斷模式匯出的照片經 LINE 傳回後是 JPG，轉檔後即可重播：
 #   powershell -File tests/convert_to_ppm.ps1 [資料夾]
 #   build/verify/tests/Debug/efd_diag_replay.exe debug_frames
 param([string]$Folder = (Join-Path $PSScriptRoot "..\debug_frames"))

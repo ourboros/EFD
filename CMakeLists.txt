@@ -6,9 +6,8 @@ project(EFD
     LANGUAGES CXX C
 )
 
-if(APPLE)
-    enable_language(OBJC OBJCXX)
-endif()
+# 支援平台：Windows (x64，桌面程式) 與 Android (AArch64，經 android/ 的 Gradle + NDK 建置)。
+# iOS / macOS 不允許背景使用相機，無法滿足背景守護需求，已移除。
 
 # -----------------------------------------------------------------------------
 # C++ Standard & Compiler Options
@@ -62,7 +61,7 @@ set(EFD_CORE_HEADERS
     src/vision/drivers/SyntheticCameraDriver.hpp
     src/vision/drivers/WindowsMfCameraDriver.hpp
     src/vision/drivers/AndroidCamera2Driver.hpp
-    src/vision/drivers/AppleAvFoundationCameraDriver.hpp
+    src/vision/drivers/PixelConverters.hpp
     src/platform/PlatformLifecycleAdapter.hpp
     src/platform/windows/SystemTrayManager.hpp
     src/storage/DatabaseService.hpp
@@ -95,11 +94,6 @@ if(WIN32)
         src/platform/windows/SystemTrayManager.cpp
         src/ui/FatigueFloatingIndicator.cpp
     )
-elseif(APPLE)
-    list(APPEND EFD_CORE_SOURCES
-        src/vision/drivers/AppleAvFoundationCameraDriver.mm
-        src/network/NetworkSyncWorkerApple.mm
-    )
 endif()
 
 add_library(efd_core STATIC
@@ -109,8 +103,6 @@ add_library(efd_core STATIC
 
 if(WIN32)
     target_link_libraries(efd_core PUBLIC mf.lib mfplat.lib mfreadwrite.lib mfuuid.lib ole32.lib gdi32 user32 shell32 gdiplus winhttp.lib)
-elseif(APPLE)
-    target_link_libraries(efd_core PUBLIC "-framework Foundation" "-framework AVFoundation" "-framework CoreVideo" "-framework CoreMedia")
 endif()
 
 target_include_directories(efd_core PUBLIC
@@ -124,9 +116,7 @@ target_compile_features(efd_core PUBLIC cxx_std_20)
 # -----------------------------------------------------------------------------
 # CLI / Simulation App Target: efd_cli
 # -----------------------------------------------------------------------------
-# CLI / Simulation App Target: efd_cli
-# -----------------------------------------------------------------------------
-if(EFD_BUILD_CLI AND NOT IOS)
+if(EFD_BUILD_CLI)
     if(WIN32)
         add_executable(efd_cli
             src/main.cpp
@@ -148,117 +138,35 @@ if(EFD_BUILD_CLI AND NOT IOS)
 endif()
 
 # -----------------------------------------------------------------------------
-# GUI Application Target: efd_gui (Full Welcome / Calibration / Monitoring UI)
+# GUI Application Target: efd_gui (Windows 歡迎 / 校準 / 監控介面)
 # -----------------------------------------------------------------------------
-if(NOT IOS)
-    set(EFD_GUI_SOURCES
-        src/ui/main_gui.cpp
-    )
-
-    if(WIN32)
-        list(APPEND EFD_GUI_SOURCES
-            src/ui/NativeWelcomeWindow.cpp
-            src/ui/NativeWelcomeWindow.hpp
-            src/ui/FatigueFloatingIndicator.cpp
-            src/ui/FatigueFloatingIndicator.hpp
-            src/platform/windows/SystemTrayManager.cpp
-            src/platform/windows/SystemTrayManager.hpp
-            src/platform/windows/app.rc
-            src/ui/Theme.hpp
-        )
-    elseif(APPLE)
-        list(APPEND EFD_GUI_SOURCES
-            src/ui/macos/MacWelcomeWindow.h
-            src/ui/macos/MacWelcomeWindow.mm
-            src/platform/macos/MacStatusItemManager.h
-            src/platform/macos/MacStatusItemManager.mm
-            src/ui/Theme.hpp
-        )
-    endif()
-
+if(WIN32)
     add_executable(efd_gui WIN32
-        ${EFD_GUI_SOURCES}
+        src/ui/main_gui.cpp
+        src/ui/NativeWelcomeWindow.cpp
+        src/ui/NativeWelcomeWindow.hpp
+        src/ui/FatigueFloatingIndicator.cpp
+        src/ui/FatigueFloatingIndicator.hpp
+        src/platform/windows/SystemTrayManager.cpp
+        src/platform/windows/SystemTrayManager.hpp
+        src/platform/windows/app.rc
+        src/ui/Theme.hpp
     )
-
-    target_link_libraries(efd_gui PRIVATE efd_core)
-
-    if(WIN32)
-        target_link_libraries(efd_gui PRIVATE gdi32 user32 shell32 gdiplus)
-        add_custom_command(TARGET efd_gui POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/assets"
-                "$<TARGET_FILE_DIR:efd_gui>/assets"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/design"
-                "$<TARGET_FILE_DIR:efd_gui>/design"
-        )
-    elseif(APPLE)
-        set_target_properties(efd_gui PROPERTIES
-            MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist
-            MACOSX_BUNDLE_BUNDLE_NAME "EFD"
-            MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
-            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-            MACOSX_BUNDLE_BUNDLE_VERSION "2.0.0"
-        )
-        target_link_libraries(efd_gui PRIVATE 
-            "-framework Cocoa"
-            "-framework AppKit"
-            "-framework Foundation"
-            "-framework AVFoundation"
-            "-framework QuartzCore"
-            "-framework UserNotifications"
-        )
-        add_custom_command(TARGET efd_gui POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/assets"
-                "$<TARGET_FILE_DIR:efd_gui>/../Resources/assets"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/design"
-                "$<TARGET_FILE_DIR:efd_gui>/../Resources/design"
-        )
-    endif()
-endif()
-
-# -----------------------------------------------------------------------------
-# iOS Application Target: EFD_iOS
-# -----------------------------------------------------------------------------
-if(IOS)
-    set(EFD_IOS_RESOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/ios/logo.png
-    )
-    add_executable(EFD_iOS MACOSX_BUNDLE
-        ios/main.m
-        ios/AppDelegate.h
-        ios/AppDelegate.mm
-        ios/ViewController.h
-        ios/ViewController.mm
-        ${EFD_IOS_RESOURCES}
-    )
-    target_include_directories(EFD_iOS PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/ios
-    )
-    target_link_libraries(EFD_iOS PRIVATE efd_core "-framework UIKit" "-framework Foundation" "-framework AVFoundation" "-framework AudioToolbox" "-framework CoreGraphics" "-framework UserNotifications" "-framework BackgroundTasks" "-framework CoreVideo" "-framework CoreMedia")
-    set_target_properties(EFD_iOS PROPERTIES
-        MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.efd.EyeFatigueDetection"
-        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.efd.EyeFatigueDetection"
-        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
-        XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
-        XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
-        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""
-        XCODE_GENERATE_SCHEME TRUE
-        RESOURCE "${EFD_IOS_RESOURCES}"
+    target_link_libraries(efd_gui PRIVATE efd_core gdi32 user32 shell32 gdiplus)
+    add_custom_command(TARGET efd_gui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+            "$<TARGET_FILE_DIR:efd_gui>/assets"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/design"
+            "$<TARGET_FILE_DIR:efd_gui>/design"
     )
 endif()
 
 # -----------------------------------------------------------------------------
 # Unit Tests Target
 # -----------------------------------------------------------------------------
-if(EFD_BUILD_TESTS AND NOT IOS)
+if(EFD_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()

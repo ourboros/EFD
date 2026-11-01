@@ -6,10 +6,6 @@
 #include <fstream>
 #include <ctime>
 
-#if defined(__APPLE__)
-#include "NetworkSyncWorkerApple.h"
-#endif
-
 namespace efd {
 
 namespace {
@@ -299,9 +295,6 @@ bool NetworkSyncWorker::uploadWithPlatformDefault(const std::string& url, const 
     }
     response = rawOutput;
     return false;
-#elif defined(__APPLE__)
-    (void)dumpPath;
-    return PerformAppleHttpUpload(url, jsonBody, response);
 #else
     // Android 等平台由原生層 (Java EfdSyncManager) 負責上傳
     (void)url;
