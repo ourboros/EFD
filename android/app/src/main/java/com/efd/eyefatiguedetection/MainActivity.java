@@ -982,9 +982,15 @@ public class MainActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
+    /** 版本字串 (建置時間版號 + git commit)，用來確認回報來自哪一版 APK。 */
+    private static String versionLabel() {
+        return BuildConfig.VERSION_NAME + " (" + BuildConfig.GIT_COMMIT + ")";
+    }
+
     /** 監控中心「回報問題」：把目前偵測狀態與裝置資訊複製成文字 (不含影像)。 */
     private void copyDiagnosticReport() {
         String text = "[EFD Android 錯誤回報]\n"
+                + "版本: " + versionLabel() + "\n"
                 + "裝置: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android " + Build.VERSION.RELEASE
                 + " (SDK " + Build.VERSION.SDK_INT + ")\n"
                 + "通知: " + (EfdNotificationHudManager.canPostFatigueAlerts(this) ? "開啟" : "關閉")
@@ -1127,6 +1133,14 @@ public class MainActivity extends AppCompatActivity {
         returnBtn.setTextSize(16);
         returnBtn.setOnClickListener(v -> setStage(UIStage.MainDashboard));
         layout.addView(returnBtn);
+
+        TextView version = new TextView(this);
+        version.setText("版本 " + versionLabel());
+        version.setTextSize(11);
+        version.setTextColor(Color.parseColor("#B3FFFFFF"));
+        version.setGravity(Gravity.CENTER);
+        version.setPadding(0, dp(12), 0, 0);
+        layout.addView(version);
 
         scroll.addView(layout);
         mStageContentContainer.addView(scroll, new FrameLayout.LayoutParams(
@@ -1413,6 +1427,7 @@ public class MainActivity extends AppCompatActivity {
 
         final int savedCount = saved;
         final String text = "[EFD Android 診斷]\n"
+                + "版本: " + versionLabel() + "\n"
                 + "裝置: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android " + Build.VERSION.RELEASE
                 + " (SDK " + Build.VERSION.SDK_INT + ")\n"
                 + "時間: " + stamp + " / 通知: " + (EfdNotificationHudManager.canPostFatigueAlerts(this) ? "開啟" : "關閉") + "\n"

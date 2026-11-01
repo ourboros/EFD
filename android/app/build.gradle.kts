@@ -1,3 +1,5 @@
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Properties
 
 plugins {
@@ -11,6 +13,20 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+// 版本識別：每次建置的 versionCode 取建置時間 (yyMMddHH，只會變大，同簽章可直接覆蓋安裝)，
+// 並把 git commit 寫進 BuildConfig，錯誤回報才看得出手機上裝的是哪一版
+val buildVersionCode = SimpleDateFormat("yyMMddHH").format(Date()).toInt()
+val gitCommit: String = try {
+    val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    val out = process.inputStream.bufferedReader().readText().trim()
+    if (process.waitFor() == 0 && out.isNotEmpty()) out else "unknown"
+} catch (e: Exception) {
+    "unknown"
+}
+
 android {
     namespace = "com.efd.eyefatiguedetection"
     compileSdk = 35
@@ -20,8 +36,9 @@ android {
         applicationId = "com.efd.eyefatiguedetection"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = buildVersionCode
+        versionName = "1.0.$buildVersionCode"
+        buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -60,6 +77,10 @@ android {
         debug {
             isDebuggable = true
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {
