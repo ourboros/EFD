@@ -1,5 +1,6 @@
 #include "AsyncPipelineEngine.hpp"
 #include "vision/FaceLandmarker.hpp"
+#include "efd/version.hpp"
 #include <chrono>
 #include <algorithm>
 #include <ctime>
@@ -67,6 +68,28 @@ AsyncPipelineEngine::AsyncPipelineEngine(PlatformType platform)
     m_syncWorker.setEndpointUrl(m_studyTracker.getCloudSyncEndpoint());
     m_cachedComplexity.complexityIndex = kComplexityPriorCi;
     restoreFromStorage();
+    m_platformName = (platform == PlatformType::Android) ? "Android" : "Windows";
+
+    // 交叉設計：不提醒的那一週仍照常判定與冷卻，只是不把提醒交給介面 (記錄為「未顯示」)
+    m_stateMachine.setAlertCallback([this](FatigueLevel level, float score, const std::string& msg) {
+        const bool enabled = m_studyTracker.areAlertsEnabledToday();
+        m_minute.alert = enabled ? "shown" : "suppressed";
+        if (!enabled) {
+            std::cout << "[交叉設計] 本週只收數據：提醒未顯示 (分數 " << score << ")\n";
+            return;
+        }
+        AlertCallback callback;
+        {
+            std::lock_guard<std::mutex> lock(m_alertCallbackMutex);
+            callback = m_platformAlertCallback;
+        }
+        if (callback) callback(level, score, msg);
+    });
+
+    // 每日上傳附上最近 3 天的每分鐘摘要與提醒自評 (Apps Script 會略過已寫入的時間點)
+    m_syncWorker.setExtraPayloadProvider([this](const std::string& subjectId) {
+        return buildStudyLogJson(subjectId);
+    });
 
     // 綁定生命週期事件監聽
     m_lifecycle.setLifecycleCallback([this](const LifecycleEvent& event) {
@@ -85,6 +108,7 @@ void AsyncPipelineEngine::setDataDirectory(const std::string& directory, const s
     m_syncWorker.setEndpointUrl(m_studyTracker.getCloudSyncEndpoint());
     m_syncWorker.setDumpPath(joinPath(directory, "efd_daily_sync.json"));
     m_fsmStatePath = joinPath(directory, "efd_fsm_state.txt");
+    m_studyLog.setDirectory(directory);
     restoreFromStorage();
 }
 
@@ -193,6 +217,8 @@ void AsyncPipelineEngine::stop() {
         if (m_signalProcessingThread.joinable()) {
             m_signalProcessingThread.join();
         }
+        // 訊號執行緒已結束：寫出最後一個未滿的分鐘
+        flushMinute();
 
         // 清空佇列
         {
@@ -223,7 +249,8 @@ void AsyncPipelineEngine::setTelemetryCallback(TelemetryCallback callback) {
 }
 
 void AsyncPipelineEngine::setAlertCallback(AlertCallback callback) {
-    m_stateMachine.setAlertCallback(std::move(callback));
+    std::lock_guard<std::mutex> lock(m_alertCallbackMutex);
+    m_platformAlertCallback = std::move(callback);
 }
 
 void AsyncPipelineEngine::beginCalibration() {
@@ -324,6 +351,7 @@ bool AsyncPipelineEngine::setLandmarkDetector(std::unique_ptr<ILandmarkDetector>
 void AsyncPipelineEngine::submitExternalDetection(RawFrame frameInfo, LandmarkDetectionResult detection,
                                                   PresenceDiagnostic diagnostic) {
     if (!m_isRunning.load() || m_isPaused.load() || m_cameraSuspended.load()) return;
+    m_externalDetectorUsed.store(true);
 
     std::lock_guard<std::mutex> lock(m_inferenceQueueMutex);
     while (m_inferenceQueue.size() >= MAX_INFERENCE_QUEUE) {
@@ -617,6 +645,8 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             complexity.complexityIndex,
             deltaSec
         );
+        accumulateMinute(true, hasFace, eyeMetrics, complexity.complexityIndex, state, deltaSec,
+                         package.detection.landmarksMeasured);
         int64_t count = ++m_processedFrameCount;
 
         // 5. 每秒落盤一筆 (僅在人臉在座時記錄有效特徵)
@@ -736,6 +766,91 @@ void AsyncPipelineEngine::resumeCamera() {
     std::cout << "[省電] 需要採樣，重新開啟相機\n";
 }
 
+void AsyncPipelineEngine::accumulateMinute(bool cameraOn, bool hasFace, const EyeMetrics& eye, float ci,
+                                           const SystemState& state, float dt, bool measuredDetector) {
+    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const int64_t minuteStart = nowMs - nowMs % 60000;
+    if (m_minute.minuteStartMs != 0 && m_minute.minuteStartMs != minuteStart) {
+        flushMinute();
+    }
+    if (m_minute.minuteStartMs == 0) m_minute.minuteStartMs = minuteStart;
+
+    if (cameraOn) m_minute.cameraOnSec += dt;
+    if (hasFace) {
+        m_minute.presentSec += dt;
+        m_minute.ears.push_back(eye.earAvg);
+        m_minute.perclos = eye.perclos;
+        m_minute.ci = ci;
+        // 眨眼次數與總時長為累計值 (離座時會被重置)：取本分鐘的增量
+        const float durTotal = eye.avgBlinkDurationMs * static_cast<float>(eye.blinkCount);
+        if (eye.blinkCount >= m_lastBlinkCount) {
+            m_minute.blinks += eye.blinkCount - m_lastBlinkCount;
+            m_minute.blinkDurMs += std::max(0.0f, durTotal - m_lastBlinkDurTotal);
+        } else {
+            m_minute.blinks += eye.blinkCount;
+            m_minute.blinkDurMs += durTotal;
+        }
+        m_lastBlinkCount = eye.blinkCount;
+        m_lastBlinkDurTotal = durTotal;
+        m_minute.detector = measuredDetector ? (m_externalDetectorUsed.load() ? "mediapipe" : m_landmarker->name())
+                                             : "heuristic";
+    }
+    m_minute.score = state.smoothedFatigueScore;
+    m_minute.cooldownState = static_cast<int>(state.cooldownState);
+}
+
+void AsyncPipelineEngine::flushMinute() {
+    if (m_minute.minuteStartMs == 0) return;
+    if (m_minute.cameraOnSec > 0.0f || m_minute.presentSec > 0.0f || m_minute.alert != "none" ||
+        m_minute.cooldownState != 0) {
+        MinuteSummary m;
+        m.minuteMs = m_minute.minuteStartMs;
+        m.studyDay = m_studyTracker.getCurrentDay();
+        m.group = m_studyTracker.getStudyGroup();
+        m.alertsEnabled = StudyWorkflowTracker::alertsEnabledFor(m.group, m.studyDay);
+        m.presentSec = m_minute.presentSec;
+        m.cameraOnSec = m_minute.cameraOnSec;
+        if (!m_minute.ears.empty()) {
+            std::vector<float>& e = m_minute.ears;
+            m.earMean = std::accumulate(e.begin(), e.end(), 0.0f) / static_cast<float>(e.size());
+            const size_t k = e.size() / 10;
+            std::nth_element(e.begin(), e.begin() + static_cast<std::ptrdiff_t>(k), e.end());
+            m.earP10 = e[k];
+        }
+        m.perclos = m_minute.perclos;
+        m.blinkCount = m_minute.blinks;
+        m.blinkDurMs = (m_minute.blinks > 0) ? m_minute.blinkDurMs / static_cast<float>(m_minute.blinks) : 0.0f;
+        m.ci = m_minute.ci;
+        m.score = m_minute.score;
+        m.cooldownState = m_minute.cooldownState;
+        m.alert = m_minute.alert;
+        m.detector = m_minute.detector;
+        m.platform = m_platformName;
+        m.appVersion = EFD_VERSION_STRING;
+        m_studyLog.appendMinute(m);
+    }
+    m_minute = MinuteAccumulator{};
+}
+
+void AsyncPipelineEngine::recordEyeFatigueResponse(int64_t alertTimeMs, int eyeFatigue, float responseSec) {
+    SurveyResponse s;
+    s.timeMs = alertTimeMs;
+    s.studyDay = m_studyTracker.getCurrentDay();
+    s.group = m_studyTracker.getStudyGroup();
+    s.alertsEnabled = StudyWorkflowTracker::alertsEnabledFor(s.group, s.studyDay);
+    s.eyeFatigue = (eyeFatigue >= 0 && eyeFatigue <= 10) ? eyeFatigue : -1;
+    s.skipped = s.eyeFatigue < 0;
+    s.responseSec = std::max(0.0f, responseSec);
+    m_studyLog.appendSurvey(s);
+}
+
+std::string AsyncPipelineEngine::buildStudyLogJson(const std::string& subjectId) const {
+    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    return m_studyLog.buildUploadJsonFields(subjectId, nowMs - kStudyLogUploadDays * 24LL * 3600 * 1000);
+}
+
 void AsyncPipelineEngine::setExternalCameraControl(bool external) {
     m_externalCameraControl.store(external);
 }
@@ -747,6 +862,7 @@ void AsyncPipelineEngine::tickWhileCameraSuspended() {
     m_lastSuspendedTick = now;
 
     SystemState state = m_stateMachine.advanceWithoutObservation(dt);
+    accumulateMinute(false, false, EyeMetrics{}, 0.0f, state, dt, false);
     // 使用者重新校準時需要畫面，即使仍在冷卻中也開啟相機
     if (!m_cameraPowerSaving.load() || state.shouldCameraRun || isCalibrating()) {
         resumeCamera();

@@ -29,6 +29,7 @@ add_library(efd_jni SHARED
     ${EFD_ROOT_DIR}/src/vision/drivers/SyntheticCameraDriver.cpp
     ${EFD_ROOT_DIR}/src/platform/PlatformLifecycleAdapter.cpp
     ${EFD_ROOT_DIR}/src/storage/DatabaseService.cpp
+    ${EFD_ROOT_DIR}/src/storage/StudyDataLog.cpp
     ${EFD_ROOT_DIR}/src/study/StudyWorkflowTracker.cpp
     ${EFD_ROOT_DIR}/src/network/NetworkSyncWorker.cpp
     ${EFD_ROOT_DIR}/src/engine/AsyncPipelineEngine.cpp

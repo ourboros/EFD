@@ -57,6 +57,14 @@ public:
     int getSensitivityLevel() const;
     void setSensitivityLevel(int level);
 
+    // 交叉設計組別 ("A" / "B"；空字串 = 未分組，全程提醒)，由研究人員在歡迎介面後選擇，選定後鎖定
+    // A 組：第 1-7 天只收數據、第 8-14 天提醒；B 組相反
+    static constexpr int kCrossoverSwitchDay = 8;
+    std::string getStudyGroup() const;
+    bool setStudyGroup(const std::string& group);   // 只接受 "A" / "B"，已選定時不可更改
+    bool areAlertsEnabledToday() const;
+    static bool alertsEnabledFor(const std::string& group, int studyDay);
+
     // 雲端同步端點 (支援 Google 試算表 Web App 或科研中心 API)
     std::string getCloudSyncEndpoint() const;
     void setCloudSyncEndpoint(const std::string& endpoint);
@@ -87,6 +95,7 @@ private:
     std::string m_cloudSyncEndpoint = kDefaultCloudSyncEndpoint;
     int m_lastSyncedDate = 0;
     int m_sensitivityLevel = 1;
+    std::string m_studyGroup;
     mutable std::mutex m_mutex;
 
     int refreshStudyProgressUnlocked();

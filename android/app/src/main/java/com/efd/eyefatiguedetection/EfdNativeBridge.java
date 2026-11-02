@@ -267,6 +267,39 @@ public class EfdNativeBridge {
         }
     }
 
+    // 交叉設計組別 ("A" / "B")；選定後鎖定，回傳 false 代表無效或已選了另一組
+    public static boolean setStudyGroup(String group) {
+        if (!sLibraryLoaded || group == null) return false;
+        try {
+            return nativeSetStudyGroup(group);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeSetStudyGroup failed: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    // 尚未分組或引擎未啟動時回傳空字串
+    public static String getStudyGroup() {
+        if (!sLibraryLoaded) return "";
+        try {
+            String g = nativeGetStudyGroup();
+            return g == null ? "" : g;
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeGetStudyGroup failed: " + t.getMessage(), t);
+            return "";
+        }
+    }
+
+    // 提醒出現時的眼睛疲勞自評 (0~10；-1 = 略過或逾時)
+    public static void recordEyeFatigueResponse(long alertTimeMs, int eyeFatigue, float responseSec) {
+        if (!sLibraryLoaded) return;
+        try {
+            nativeRecordEyeFatigueResponse(alertTimeMs, eyeFatigue, responseSec);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeRecordEyeFatigueResponse failed: " + t.getMessage(), t);
+        }
+    }
+
     // 冷卻或快篩非採樣時段，相機應關閉
     public static boolean isCameraSuspended() {
         if (!sLibraryLoaded) return false;
@@ -334,6 +367,9 @@ public class EfdNativeBridge {
     private static native void nativePauseEngine();
     private static native void nativeResumeEngine();
     private static native boolean nativeIsCameraSuspended();
+    private static native boolean nativeSetStudyGroup(String group);
+    private static native String nativeGetStudyGroup();
+    private static native void nativeRecordEyeFatigueResponse(long alertTimeMs, int eyeFatigue, float responseSec);
     private static native String nativeGetTelemetryJson();
     private static native String nativeConsumeAlertJson();
     private static native String nativeGetSubjectUuid();

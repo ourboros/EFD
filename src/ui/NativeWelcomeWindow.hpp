@@ -29,6 +29,7 @@ namespace efd {
 
 enum class UIStage : uint8_t {
     Welcome,                // 階段 1: 歡迎介面 (Logo + 感謝協助測試EFD + 開始按鈕)
+    GroupSelection,         // 交叉設計分組 (研究人員選擇 A / B 組，選定後鎖定)
     CalibrationInstruction, // 階段 2: 說明與演示預覽介面 (預覽動畫視窗 + 3大操作指南 + 「我準備好了」按鈕)
     CountdownWait,          // 階段 3: 3 秒倒數計時等待 (3 -> 2 -> 1 -> 開始！)
     ActiveCalibration,      // 階段 4: 實際多點眼動提取 (黃點全螢幕多點移動採樣)
@@ -111,6 +112,9 @@ private:
 
     // 按鈕區域
     RECT m_startBtnRect{};
+    RECT m_groupABtnRect{};
+    RECT m_groupBBtnRect{};
+    RECT m_groupBackBtnRect{};
     RECT m_readyBtnRect{};
     RECT m_backWelcomeBtnRect{};
     RECT m_skipCalibBtnRect{};
@@ -179,6 +183,10 @@ private:
 
     // 各階段專屬 GDI+ 繪製函式
     void drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h);
+    void drawGroupSelection(Gdiplus::Graphics& g, int w, int h);
+    void confirmStudyGroup(const std::string& group);
+    // 提醒出現時詢問眼睛疲勞程度 (0~10)，在 UI 執行緒顯示
+    void showEyeFatigueQuestion(int64_t alertTimeMs);
     void drawCalibrationInstruction(Gdiplus::Graphics& g, int w, int h);
     void drawCountdownWait(Gdiplus::Graphics& g, int w, int h);
     void drawActiveCalibration(Gdiplus::Graphics& g, int w, int h);

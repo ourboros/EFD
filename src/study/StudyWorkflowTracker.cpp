@@ -132,6 +132,7 @@ void StudyWorkflowTracker::resetInMemoryUnlocked() {
     m_cloudSyncEndpoint.clear();
     m_lastSyncedDate = 0;
     m_sensitivityLevel = 1;
+    m_studyGroup.clear();
 }
 
 bool StudyWorkflowTracker::initialize() {
@@ -337,6 +338,31 @@ const char* StudyWorkflowTracker::statusLabel(StudyStatus status) {
     }
 }
 
+std::string StudyWorkflowTracker::getStudyGroup() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_studyGroup;
+}
+
+bool StudyWorkflowTracker::setStudyGroup(const std::string& group) {
+    if (group != "A" && group != "B") return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_studyGroup.empty()) return m_studyGroup == group;
+    m_studyGroup = group;
+    saveConfigUnlocked();
+    return true;
+}
+
+bool StudyWorkflowTracker::alertsEnabledFor(const std::string& group, int studyDay) {
+    if (group == "A") return studyDay >= kCrossoverSwitchDay;
+    if (group == "B") return studyDay < kCrossoverSwitchDay;
+    return true;
+}
+
+bool StudyWorkflowTracker::areAlertsEnabledToday() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return alertsEnabledFor(m_studyGroup, m_currentDay);
+}
+
 int StudyWorkflowTracker::getSensitivityLevel() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_sensitivityLevel;
@@ -386,7 +412,8 @@ void StudyWorkflowTracker::saveConfigUnlocked() {
         << "  \"calibThresholdEar\": " << m_savedThresholdEar << ",\n"
         << "  \"cloudSyncEndpoint\": \"" << m_cloudSyncEndpoint << "\",\n"
         << "  \"lastSyncedDate\": " << m_lastSyncedDate << ",\n"
-        << "  \"sensitivityLevel\": " << m_sensitivityLevel << "\n"
+        << "  \"sensitivityLevel\": " << m_sensitivityLevel << ",\n"
+        << "  \"studyGroup\": \"" << m_studyGroup << "\"\n"
         << "}\n";
 }
 
@@ -433,6 +460,7 @@ void StudyWorkflowTracker::loadConfigUnlocked() {
             else if (key == "cloudSyncEndpoint") m_cloudSyncEndpoint = val;
             else if (key == "lastSyncedDate") m_lastSyncedDate = std::stoi(val);
             else if (key == "sensitivityLevel") m_sensitivityLevel = std::clamp(std::stoi(val), 0, 2);
+            else if (key == "studyGroup") m_studyGroup = (val == "A" || val == "B") ? val : std::string();
         } catch (const std::exception&) {
             std::cerr << "[StudyWorkflowTracker] 設定欄位損毀，已略過: " << key << "\n";
         }

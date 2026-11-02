@@ -1,4 +1,8 @@
 #include "NativeWelcomeWindow.hpp"
+#include <commctrl.h>
+// TaskDialog (眼睛疲勞自評) 需要 Common Controls 6
+#pragma comment(lib, "comctl32.lib")
+#pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #include "vision/OnnxFaceLandmarker.hpp"
 #include <iostream>
 #include <cmath>
@@ -143,6 +147,8 @@ static void drawRoundedButton(Gdiplus::Graphics& g, int x, int y, int w, int h, 
 } // anonymous namespace
 
 static const UINT WM_EFD_SHOW_UI = RegisterWindowMessageW(L"WM_EFD_SHOW_UI_MSG");
+// 提醒出現 (引擎執行緒) -> UI 執行緒詢問眼睛疲勞程度；lParam = 提醒時間 (epoch 毫秒)
+static const UINT WM_EFD_EYE_FATIGUE = RegisterWindowMessageW(L"WM_EFD_EYE_FATIGUE_MSG");
 
 NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBackground)
     : m_width(width), m_height(height), m_startInBackground(startInBackground), m_engine(PlatformType::Windows) {
@@ -367,6 +373,12 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
                     level
                 );
             }
+            // 同時詢問眼睛疲勞程度 (對話框需在 UI 執行緒顯示)
+            if (this->m_hwnd) {
+                const int64_t alertTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                PostMessage(this->m_hwnd, WM_EFD_EYE_FATIGUE, 0, static_cast<LPARAM>(alertTimeMs));
+            }
         }
     });
 
@@ -503,7 +515,17 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
     // 依據主畫面流程按鈕進行切換
     if (m_currentStage == UIStage::Welcome) {
         if (PtInRect(&m_startBtnRect, pt)) {
-            setStage(UIStage::CalibrationInstruction);
+            // 尚未分組時先選擇組別 (交叉設計)，選定後才進入校準
+            setStage(m_engine.getStudyTracker().getStudyGroup().empty()
+                ? UIStage::GroupSelection : UIStage::CalibrationInstruction);
+        }
+    } else if (m_currentStage == UIStage::GroupSelection) {
+        if (PtInRect(&m_groupABtnRect, pt)) {
+            confirmStudyGroup("A");
+        } else if (PtInRect(&m_groupBBtnRect, pt)) {
+            confirmStudyGroup("B");
+        } else if (PtInRect(&m_groupBackBtnRect, pt)) {
+            setStage(UIStage::Welcome);
         }
     } else if (m_currentStage == UIStage::CalibrationInstruction) {
         if (PtInRect(&m_readyBtnRect, pt)) {
@@ -713,6 +735,11 @@ LRESULT CALLBACK NativeWelcomeWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam
         return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 
+    if (msg == WM_EFD_EYE_FATIGUE) {
+        pThis->showEyeFatigueQuestion(static_cast<int64_t>(lParam));
+        return 0;
+    }
+
     if (msg == WM_EFD_SHOW_UI) {
         pThis->showMainWindow();
         bool hasTested = pThis->m_engine.getStudyTracker().isInitialSetupCompleted() || 
@@ -879,6 +906,9 @@ void NativeWelcomeWindow::onPaint(HWND hwnd) {
     case UIStage::Welcome:
         drawWelcomeScreen(g, width, height);
         break;
+    case UIStage::GroupSelection:
+        drawGroupSelection(g, width, height);
+        break;
     case UIStage::CalibrationInstruction:
         drawCalibrationInstruction(g, width, height);
         break;
@@ -937,6 +967,7 @@ void NativeWelcomeWindow::drawTopNavigationBar(Gdiplus::Graphics& g, int w, int 
         const wchar_t* label;
     } items[] = {
         { UIStage::Welcome,                L"歡迎" },
+        { UIStage::GroupSelection,         L"分組" },
         { UIStage::CalibrationInstruction, L"說明" },
         { UIStage::CountdownWait,          L"倒數" },
         { UIStage::ActiveCalibration,      L"測驗" },
@@ -1114,6 +1145,113 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::SolidBrush btnTextBrush(Gdiplus::Color(255, 30, 177, 138));
     Gdiplus::RectF btnTextRect(static_cast<float>(btnX), static_cast<float>(btnY), static_cast<float>(btnWidth), static_cast<float>(btnHeight));
     g.DrawString(L"進入測試說明", -1, &btnFont, btnTextRect, &format, &btnTextBrush);
+}
+
+// -----------------------------------------------------------------------------
+// 交叉設計分組：研究人員依分配表選擇 A / B 組，選定後鎖定
+// -----------------------------------------------------------------------------
+void NativeWelcomeWindow::drawGroupSelection(Gdiplus::Graphics& g, int w, int h) {
+    Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 30, 177, 138));
+    g.FillRectangle(&bgBrush, 0, 0, w, h);
+
+    Gdiplus::FontFamily fontFamily(L"Microsoft JhengHei");
+    Gdiplus::Font titleFont(&fontFamily, 30.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::Font subFont(&fontFamily, 14.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::Font bodyFont(&fontFamily, 15.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::Font btnFont(&fontFamily, 18.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush white(Gdiplus::Color(255, 255, 255, 255));
+    Gdiplus::SolidBrush amber(Gdiplus::Color(230, 247, 227, 175));
+    Gdiplus::SolidBrush mint(Gdiplus::Color(255, 30, 177, 138));
+    Gdiplus::SolidBrush dark(Gdiplus::Color(255, 37, 41, 28));
+    Gdiplus::StringFormat center;
+    center.SetAlignment(Gdiplus::StringAlignmentCenter);
+    center.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+    const float top = std::max(70.0f, static_cast<float>(h) / 2.0f - 230.0f);
+    g.DrawString(L"選擇組別", -1, &titleFont, Gdiplus::RectF(0.0f, top, static_cast<float>(w), 44.0f), &center, &white);
+    g.DrawString(L"請由研究人員依分配表選擇，選擇後無法更改", -1, &subFont,
+                 Gdiplus::RectF(0.0f, top + 46.0f, static_cast<float>(w), 24.0f), &center, &amber);
+
+    const int cardW = std::min(w - 80, 460);
+    const int cardX = (w - cardW) / 2;
+    const wchar_t* cards[2][2] = {
+        {L"A 組", L"第 1–7 天：只記錄數據，不顯示疲勞提醒\n第 8–14 天：顯示疲勞提醒"},
+        {L"B 組", L"第 1–7 天：顯示疲勞提醒\n第 8–14 天：只記錄數據，不顯示疲勞提醒"},
+    };
+    RECT* btnRects[2] = {&m_groupABtnRect, &m_groupBBtnRect};
+    float y = top + 92.0f;
+    for (int i = 0; i < 2; ++i) {
+        // 說明卡片 + 選擇按鈕
+        drawRoundedButton(g, cardX, static_cast<int>(y), cardW, 96, 16, &white);
+        Gdiplus::StringFormat left;
+        left.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        g.DrawString(cards[i][1], -1, &bodyFont,
+                     Gdiplus::RectF(static_cast<float>(cardX + 20), y, static_cast<float>(cardW - 150), 96.0f), &left, &dark);
+        const int btnX = cardX + cardW - 120;
+        const int btnY = static_cast<int>(y) + 24;
+        drawRoundedButton(g, btnX, btnY, 100, 48, 18, &mint);
+        g.DrawString(cards[i][0], -1, &btnFont,
+                     Gdiplus::RectF(static_cast<float>(btnX), static_cast<float>(btnY), 100.0f, 48.0f), &center, &white);
+        *btnRects[i] = {btnX, btnY, btnX + 100, btnY + 48};
+        y += 112.0f;
+    }
+
+    const int backW = 200;
+    const int backX = (w - backW) / 2;
+    const int backY = static_cast<int>(y) + 8;
+    Gdiplus::SolidBrush translucent(Gdiplus::Color(60, 255, 255, 255));
+    drawRoundedButton(g, backX, backY, backW, 44, 18, &translucent);
+    g.DrawString(L"返回歡迎介面", -1, &subFont,
+                 Gdiplus::RectF(static_cast<float>(backX), static_cast<float>(backY), static_cast<float>(backW), 44.0f),
+                 &center, &white);
+    m_groupBackBtnRect = {backX, backY, backX + backW, backY + 44};
+}
+
+void NativeWelcomeWindow::confirmStudyGroup(const std::string& group) {
+    const std::wstring text = L"確認選擇 " + utf8ToWide(group) + L" 組？\n\n選擇後無法更改。若選錯，請聯絡研究人員重新設定。";
+    if (MessageBoxW(m_hwnd, text.c_str(), L"選擇組別", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    if (m_engine.getStudyTracker().setStudyGroup(group)) {
+        setStage(UIStage::CalibrationInstruction);
+    } else {
+        MessageBoxW(m_hwnd, L"設定失敗：已選擇另一組。", L"選擇組別", MB_OK | MB_ICONWARNING);
+    }
+}
+
+// 提醒時的眼睛疲勞自評：一題 0~10，點一下即完成；30 秒未作答視為略過
+void NativeWelcomeWindow::showEyeFatigueQuestion(int64_t alertTimeMs) {
+    constexpr int kSkipId = 200;
+    constexpr int kTimeoutMs = 30000;
+    TASKDIALOG_BUTTON buttons[12];
+    static const wchar_t* labels[11] = {L"0", L"1", L"2", L"3", L"4", L"5", L"6", L"7", L"8", L"9", L"10"};
+    for (int i = 0; i <= 10; ++i) buttons[i] = {100 + i, labels[i]};
+    buttons[11] = {kSkipId, L"略過"};
+
+    TASKDIALOGCONFIG config{};
+    config.cbSize = sizeof(config);
+    config.hwndParent = m_hwnd;
+    config.dwFlags = TDF_CALLBACK_TIMER | TDF_POSITION_RELATIVE_TO_WINDOW;
+    config.pszWindowTitle = L"EFD 疲勞提醒";
+    config.pszMainInstruction = L"你的眼睛處於疲勞狀態，請適當休息";
+    config.pszContent = L"你現在眼睛疲勞的程度？　0 = 完全不累，10 = 非常疲勞";
+    config.cButtons = 12;
+    config.pButtons = buttons;
+    config.nDefaultButton = kSkipId;
+    // 30 秒未作答自動略過
+    config.pfCallback = [](HWND hwnd, UINT notification, WPARAM wParam, LPARAM, LONG_PTR) -> HRESULT {
+        if (notification == TDN_TIMER && wParam >= kTimeoutMs) {
+            SendMessage(hwnd, TDM_CLICK_BUTTON, kSkipId, 0);
+        }
+        return S_OK;
+    };
+
+    const auto shownAt = std::chrono::steady_clock::now();
+    int clicked = kSkipId;
+    if (FAILED(TaskDialogIndirect(&config, &clicked, nullptr, nullptr))) {
+        clicked = kSkipId;
+    }
+    const float responseSec = std::chrono::duration<float>(std::chrono::steady_clock::now() - shownAt).count();
+    const int value = (clicked >= 100 && clicked <= 110) ? clicked - 100 : -1;
+    m_engine.recordEyeFatigueResponse(alertTimeMs, value, responseSec);
 }
 
 // -----------------------------------------------------------------------------

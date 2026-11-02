@@ -40,7 +40,24 @@ public class EfdForegroundService extends LifecycleService {
 
     /** 前景 Activity 顯示中時接收疲勞警報 (改以對話框呈現，不重複發通知)。 */
     public interface AlertListener {
-        void onFatigueAlert(String message);
+        /** alertTimeMs 為提醒出現的 epoch 毫秒；0 代表測試通知 (不詢問眼睛疲勞程度)。 */
+        void onFatigueAlert(String message, long alertTimeMs);
+    }
+
+    /** 以通知送出、尚未詢問眼睛疲勞程度的提醒時間 (0 = 沒有)。 */
+    private static final String PREF_PENDING_EYE_FATIGUE_ALERT = "pending_eye_fatigue_alert_ms";
+
+    public static void setPendingEyeFatigueAlert(android.content.Context context, long alertTimeMs) {
+        context.getSharedPreferences("efd_prefs", MODE_PRIVATE).edit()
+                .putLong(PREF_PENDING_EYE_FATIGUE_ALERT, alertTimeMs).apply();
+    }
+
+    /** 取出並清除待詢問的提醒時間。 */
+    public static long takePendingEyeFatigueAlert(android.content.Context context) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("efd_prefs", MODE_PRIVATE);
+        long t = prefs.getLong(PREF_PENDING_EYE_FATIGUE_ALERT, 0L);
+        if (t != 0L) prefs.edit().remove(PREF_PENDING_EYE_FATIGUE_ALERT).apply();
+        return t;
     }
 
     private static volatile AlertListener sAlertListener;
@@ -246,12 +263,16 @@ public class EfdForegroundService extends LifecycleService {
                     JSONObject alert = new JSONObject(EfdNativeBridge.consumeAlertJson());
                     if (alert.optInt("level", 0) == 2) {
                         String message = alert.optString("message", "你的眼睛處於疲勞狀態，請適當休息");
+                        // 測試通知不詢問眼睛疲勞程度 (timeMs = 0)
+                        long alertTimeMs = alert.optLong("timeMs", 0L);
                         AlertListener listener = sAlertListener;
                         if (listener != null) {
-                            listener.onFatigueAlert(message);
+                            listener.onFatigueAlert(message, alertTimeMs);
                         } else {
                             Log.w(TAG, "C++ 狀態機發射重度疲勞警報，發送通知提醒");
                             mHudManager.triggerSevereFatigueAlert("EFD 疲勞提醒", message);
+                            // 背景時無法立即詢問：記下來，使用者下次開啟 App 時補問 (30 分鐘內)
+                            if (alertTimeMs > 0) setPendingEyeFatigueAlert(EfdForegroundService.this, alertTimeMs);
                         }
                     }
 

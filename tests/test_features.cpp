@@ -27,6 +27,7 @@
 #include "vision/ExternalLandmarks.hpp"
 #include "vision/OnnxFaceLandmarker.hpp"
 #include "analysis/RollingOpenBaseline.hpp"
+#include "storage/StudyDataLog.hpp"
 #include "vision/CameraService.hpp"
 #include "vision/VisionPipeline.hpp"
 #include "vision/drivers/SyntheticCameraDriver.hpp"
@@ -1126,6 +1127,87 @@ void testRollingOpenBaselineP80() {
     std::cout << std::setprecision(3) << " [PASS] (一般看螢幕 P80 門檻 " << normalPerclosThr << "，低頭 2.5 分鐘後 " << baseline.perclosThreshold() << ")\n";
 }
 
+void testCrossoverGroupsAndStudyLog() {
+    std::cout << "[TEST] 37. 交叉設計分組、不提醒週照常冷卻、每分鐘摘要與提醒自評上傳...";
+    // 組別規則：A 組第 8 天起提醒，B 組第 1-7 天提醒，未分組全程提醒
+    assert(!efd::StudyWorkflowTracker::alertsEnabledFor("A", 1));
+    assert(!efd::StudyWorkflowTracker::alertsEnabledFor("A", 7));
+    assert(efd::StudyWorkflowTracker::alertsEnabledFor("A", 8));
+    assert(efd::StudyWorkflowTracker::alertsEnabledFor("B", 7));
+    assert(!efd::StudyWorkflowTracker::alertsEnabledFor("B", 8));
+    assert(efd::StudyWorkflowTracker::alertsEnabledFor("", 3));
+
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "efd_test_crossover";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    // 組別存檔並鎖定：選定後不可改成另一組
+    {
+        efd::StudyWorkflowTracker tracker((dir / "cfg.json").string());
+        tracker.initialize();
+        assert(tracker.getStudyGroup().empty());
+        assert(!tracker.setStudyGroup("C"));
+        assert(tracker.setStudyGroup("A"));
+        assert(!tracker.setStudyGroup("B"));
+        assert(tracker.getStudyGroup() == "A");
+    }
+    {
+        efd::StudyWorkflowTracker reloaded((dir / "cfg.json").string());
+        reloaded.initialize();
+        assert(reloaded.getStudyGroup() == "A");
+        assert(!reloaded.areAlertsEnabledToday());   // 第 1 天，A 組不提醒
+    }
+
+    // 引擎：A 組第 1 天觸發疲勞判定 -> 照常冷卻，但不交給介面
+    efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+    engine.setAutoNightlySyncEnabled(false);
+    engine.setDataDirectory(dir.string(), "cfg.json");
+    std::atomic<int> shownAlerts{0};
+    engine.setAlertCallback([&](efd::FatigueLevel, float, const std::string&) { shownAlerts++; });
+    int fsmAlerts = 0;
+    efd::FatigueStateMachine& fsm = engine.getStateMachine();
+    for (int i = 0; i < 150; ++i) fsm.update(true, kSevereInput.perclos, kSevereInput.blink, kSevereInput.ci, 1.0f);
+    fsmAlerts = fsm.getState().cooldownState == efd::CooldownState::InCooldown ? 1 : 0;
+    assert(fsmAlerts == 1);
+    assert(shownAlerts.load() == 0);
+
+    // 提醒自評與每分鐘摘要寫入本機紀錄，並出現在上傳 JSON
+    engine.recordEyeFatigueResponse(1793600000000LL, 7, 2.5f);
+    engine.recordEyeFatigueResponse(1793600060000LL, -1, 30.0f);
+    efd::StudyDataLog log;
+    log.setDirectory(dir.string());
+    efd::MinuteSummary m;
+    m.minuteMs = 1793600040000LL;
+    m.group = "A";
+    m.alertsEnabled = false;
+    m.presentSec = 58.0f;
+    m.cameraOnSec = 60.0f;
+    m.earMean = 0.25f;
+    m.blinkCount = 14;
+    m.alert = "suppressed";
+    m.detector = "onnx";
+    m.platform = "Windows";
+    log.appendMinute(m);
+    const auto minutes = log.readMinutesSince(0);
+    assert(minutes.size() == 1 && minutes[0].blinkCount == 14 && minutes[0].alert == "suppressed");
+    const auto surveys = log.readSurveysSince(0);
+    assert(surveys.size() == 2 && surveys[0].eyeFatigue == 7 && !surveys[0].skipped && surveys[1].skipped);
+    assert(surveys[0].group == "A" && !surveys[0].alertsEnabled);
+
+    efd::PayloadHeader header;
+    header.subjectUuid = "SUBJ-TEST";
+    header.extraJsonFields = log.buildUploadJsonFields("SUBJ-TEST", 0);
+    const std::string json = efd::NetworkSyncWorker::buildPayloadJson(header, {}, false);
+    assert(json.find("\"minute_summaries\": [") != std::string::npos);
+    assert(json.find("\"alert\": \"suppressed\"") != std::string::npos);
+    assert(json.find("\"eye_fatigue\": 7") != std::string::npos);
+    assert(json.find("\"eye_fatigue\": null") != std::string::npos);
+    assert(json.find("\"subject_id\": \"SUBJ-TEST\"") != std::string::npos);
+    // 時間範圍外的資料不上傳
+    assert(log.buildUploadJsonFields("SUBJ-TEST", 1793700000000LL).find("\"minute\"") == std::string::npos);
+    std::cout << " [PASS]\n";
+}
+
 void testAdvanceWithoutObservationKeepsCooldown() {
     std::cout << "[TEST] 32. 相機關閉時只推進倒數：冷卻 20 分鐘與快篩 4+1 分鐘排程、不算離座...";
     efd::FatigueStateMachine fsm(1200, 300, 300);
@@ -1774,7 +1856,8 @@ int main() {
     testEngineSuspendsCameraDuringCooldown();
     testOnnxFaceLandmarkerMatchesMediaPipe();
     testRollingOpenBaselineP80();
+    testCrossoverGroupsAndStudyLog();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 36 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 37 項測試順利通過！\n";
     return 0;
 }

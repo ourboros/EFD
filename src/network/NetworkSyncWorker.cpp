@@ -62,6 +62,11 @@ std::string NetworkSyncWorker::getEndpointUrl() const {
     return m_endpointUrl;
 }
 
+void NetworkSyncWorker::setExtraPayloadProvider(std::function<std::string(const std::string&)> provider) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_extraPayloadProvider = std::move(provider);
+}
+
 void NetworkSyncWorker::setDumpPath(const std::string& path) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!path.empty()) {
@@ -184,6 +189,9 @@ std::string NetworkSyncWorker::buildPayloadJson(const PayloadHeader& header, con
                  << "    }" << (i + 1 < records.size() ? "," : "") << "\n";
         }
         json << "  ]";
+    }
+    if (!header.extraJsonFields.empty()) {
+        json << ",\n  " << header.extraJsonFields;
     }
     json << "\n}\n";
     return json.str();
@@ -326,6 +334,10 @@ SyncResult NetworkSyncWorker::executeSync(SyncPayload payload) {
     header.studyStatus = payload.studyStatus;
     header.unlockToken = payload.unlockToken;
     header.questionnaireResponse = payload.questionnaireResponse;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_extraPayloadProvider) header.extraJsonFields = m_extraPayloadProvider(payload.subjectUuid);
+    }
     std::string jsonDump = buildPayloadJson(header, records, true, &payload.dataChecksum);
 
     auto now = std::chrono::system_clock::now();

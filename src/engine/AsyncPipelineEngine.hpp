@@ -13,6 +13,7 @@
 #include "state/FatigueStateMachine.hpp"
 #include "platform/PlatformLifecycleAdapter.hpp"
 #include "storage/DatabaseService.hpp"
+#include "storage/StudyDataLog.hpp"
 #include "study/StudyWorkflowTracker.hpp"
 #include "network/NetworkSyncWorker.hpp"
 
@@ -125,6 +126,13 @@ public:
     void setCameraPowerSaving(bool enabled);
     bool isCameraSuspended() const;
 
+    // 提醒出現時的眼睛疲勞自評 (0~10；-1 = 略過或逾時)，alertTimeMs 為提醒出現的 epoch 毫秒
+    void recordEyeFatigueResponse(int64_t alertTimeMs, int eyeFatigue, float responseSec);
+
+    // 上傳 JSON 的額外欄位：最近 kStudyLogUploadDays 天的每分鐘摘要與提醒自評
+    static constexpr int kStudyLogUploadDays = 3;
+    std::string buildStudyLogJson(const std::string& subjectId) const;
+
     // 相機由平台層開關 (Android CameraX)：恢復時引擎不啟動 CameraService
     // (Android 的 CameraService 找不到原生相機會改用模擬相機，模擬畫面會混進快篩採樣)
     void setExternalCameraControl(bool external);
@@ -225,6 +233,32 @@ private:
     // 相機省電 (只由訊號執行緒切換相機狀態)
     std::atomic<bool> m_cameraPowerSaving{false};
     std::atomic<bool> m_externalCameraControl{false};
+    std::atomic<bool> m_externalDetectorUsed{false};   // 曾收到平台層 (Android MediaPipe) 的偵測結果
+
+    // 提醒：狀態機 -> 交叉設計判斷 (本週是否提醒) -> 平台介面
+    std::mutex m_alertCallbackMutex;
+    AlertCallback m_platformAlertCallback;
+
+    // 每分鐘摘要累加 (只在訊號執行緒使用)
+    struct MinuteAccumulator {
+        int64_t minuteStartMs = 0;
+        float presentSec = 0.0f;
+        float cameraOnSec = 0.0f;
+        std::vector<float> ears;
+        float perclos = 0.0f;
+        int blinks = 0;
+        float blinkDurMs = 0.0f;
+        float ci = 0.0f;
+        float score = 0.0f;
+        int cooldownState = 0;
+        std::string alert = "none";
+        std::string detector = "heuristic";
+    };
+    MinuteAccumulator m_minute;
+    int m_lastBlinkCount = 0;
+    float m_lastBlinkDurTotal = 0.0f;
+    std::string m_platformName = "Windows";
+    StudyDataLog m_studyLog;
     std::atomic<bool> m_cameraSuspended{false};
     std::chrono::steady_clock::time_point m_lastSuspendedTick{};
 
@@ -237,6 +271,9 @@ private:
     void suspendCamera();
     void resumeCamera();
     void tickWhileCameraSuspended();
+    void accumulateMinute(bool cameraOn, bool hasFace, const EyeMetrics& eye, float ci,
+                          const SystemState& state, float dt, bool measuredDetector);
+    void flushMinute();
     void publishTelemetry(InferencePackage& package, const EyeMetrics& eyeMetrics, const ComplexityMetrics& complexity,
                           const SystemState& state, float currentThreshold, int64_t count);
 };

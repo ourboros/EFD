@@ -38,6 +38,8 @@ struct PayloadHeader {
     std::string studyStatus = "Active";
     std::string unlockToken;
     std::string questionnaireResponse;
+    // 額外欄位 ("minute_summaries": [...], "kss_responses": [...])，原樣嵌入上傳 JSON；空字串則不加
+    std::string extraJsonFields;
 };
 
 struct SyncResult {
@@ -62,6 +64,9 @@ public:
 
     // 本機同步封裝 JSON 的存放路徑 (預設為工作目錄下 efd_daily_sync.json)
     void setDumpPath(const std::string& path);
+
+    // 上傳時取得額外欄位 (每分鐘摘要、提醒自評)；參數為受試者 ID
+    void setExtraPayloadProvider(std::function<std::string(const std::string&)> provider);
 
     // 替換上傳實作 (未設定時使用平台預設：Windows PowerShell；Android 由 Java 層上傳)
     void setUploader(Uploader uploader);
@@ -104,6 +109,7 @@ private:
     std::atomic<bool> m_isSyncedToday{false};
 
     mutable std::mutex m_mutex;
+    std::function<std::string(const std::string&)> m_extraPayloadProvider;
     std::condition_variable m_cv;
     std::atomic<bool> m_stopWorker{false};
     std::atomic<bool> m_hasPendingTask{false};

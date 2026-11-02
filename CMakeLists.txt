@@ -83,6 +83,7 @@ set(EFD_CORE_HEADERS
     src/platform/PlatformLifecycleAdapter.hpp
     src/platform/windows/SystemTrayManager.hpp
     src/storage/DatabaseService.hpp
+    src/storage/StudyDataLog.hpp
     src/study/StudyWorkflowTracker.hpp
     src/network/NetworkSyncWorker.hpp
     src/ui/FatigueFloatingIndicator.hpp
@@ -104,6 +105,7 @@ set(EFD_CORE_SOURCES
     src/vision/drivers/SyntheticCameraDriver.cpp
     src/platform/PlatformLifecycleAdapter.cpp
     src/storage/DatabaseService.cpp
+    src/storage/StudyDataLog.cpp
     src/study/StudyWorkflowTracker.cpp
     src/network/NetworkSyncWorker.cpp
     src/engine/AsyncPipelineEngine.cpp

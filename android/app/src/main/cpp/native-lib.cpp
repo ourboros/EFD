@@ -30,6 +30,7 @@ static std::mutex g_engineMutex;
 static std::string g_lastAlertMessage;
 static int g_lastAlertLevel = 0;
 static float g_lastAlertScore = 0.0f;
+static int64_t g_lastAlertTimeMs = 0;   // 提醒出現的 epoch 毫秒 (眼睛疲勞自評對應用)
 static std::mutex g_alertMutex;
 
 // 最新遙測 (不含影像像素，避免每幀複製整張影格)
@@ -287,6 +288,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
             g_lastAlertLevel = static_cast<int>(level);
             g_lastAlertScore = score;
             g_lastAlertMessage = msg;
+            g_lastAlertTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
             LOGI("Alert triggered: Level=%d, Score=%.1f, Msg=%s", static_cast<int>(level), score, msg.c_str());
         });
 
@@ -568,6 +571,34 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeResumeEngine(JNIEnv* /*en
     }
 }
 
+// 交叉設計組別 ("A" / "B")；選定後鎖定，回傳 false 代表無效或已選了另一組
+JNIEXPORT jboolean JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSetStudyGroup(JNIEnv* env, jclass /*clazz*/, jstring group) {
+    auto engine = currentEngine();
+    if (!engine || !group) return JNI_FALSE;
+    const char* str = env->GetStringUTFChars(group, nullptr);
+    if (!str) return JNI_FALSE;
+    const bool ok = engine->getStudyTracker().setStudyGroup(str);
+    env->ReleaseStringUTFChars(group, str);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetStudyGroup(JNIEnv* env, jclass /*clazz*/) {
+    auto engine = currentEngine();
+    return env->NewStringUTF(engine ? engine->getStudyTracker().getStudyGroup().c_str() : "");
+}
+
+// 提醒出現時的眼睛疲勞自評 (0~10；-1 = 略過或逾時)
+JNIEXPORT void JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeRecordEyeFatigueResponse(JNIEnv* /*env*/, jclass /*clazz*/,
+                                                                                jlong alertTimeMs, jint eyeFatigue,
+                                                                                jfloat responseSec) {
+    if (auto engine = currentEngine()) {
+        engine->recordEyeFatigueResponse(static_cast<int64_t>(alertTimeMs), eyeFatigue, responseSec);
+    }
+}
+
 // 相機是否因冷卻或快篩非採樣時段而應關閉
 JNIEXPORT jboolean JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeIsCameraSuspended(JNIEnv* /*env*/, jclass /*clazz*/) {
@@ -621,6 +652,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* 
         << "\"frameW\":" << telemetry.latestFrame.width << ","
         << "\"frameH\":" << telemetry.latestFrame.height << ","
         << "\"cameraSuspended\":" << (telemetry.cameraSuspended ? "true" : "false") << ","
+        << "\"studyGroup\":\"" << engine->getStudyTracker().getStudyGroup() << "\","
+        << "\"alertsEnabled\":" << (engine->getStudyTracker().areAlertsEnabledToday() ? "true" : "false") << ","
         << "\"detector\":\"" << (g_externalDetector.load() ? "mediapipe" : "heuristic") << "\","
         << "\"eyeBlink\":[" << telemetry.detection.eyeBlinkLeft << "," << telemetry.detection.eyeBlinkRight << "],";
     size_t calibSamples = 0;
@@ -641,19 +674,23 @@ JNIEXPORT jstring JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeConsumeAlertJson(JNIEnv* env, jclass /*clazz*/) {
     int level = 0;
     float score = 0.0f;
+    int64_t timeMs = 0;
     std::string msg;
     {
         std::lock_guard<std::mutex> lock(g_alertMutex);
         level = g_lastAlertLevel;
         score = g_lastAlertScore;
         msg = g_lastAlertMessage;
+        timeMs = g_lastAlertTimeMs;
+        g_lastAlertTimeMs = 0;
         g_lastAlertLevel = 0;
         g_lastAlertScore = 0.0f;
         g_lastAlertMessage.clear();
     }
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(1)
-        << "{\"level\":" << level << ",\"score\":" << score << ",\"message\":\"" << msg << "\"}";
+        << "{\"level\":" << level << ",\"score\":" << score << ",\"timeMs\":" << timeMs
+        << ",\"message\":\"" << msg << "\"}";
     return env->NewStringUTF(oss.str().c_str());
 }
 
@@ -695,6 +732,7 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetCloudSyncPayloadJson(J
     auto& db = engine->getDatabaseService();
     db.flush();
     auto records = db.getLatestRecords(db.getRecordCount());
+    header.extraJsonFields = engine->buildStudyLogJson(header.subjectUuid);
     std::string json = efd::NetworkSyncWorker::buildPayloadJson(header, records, false);
     return env->NewStringUTF(json.c_str());
 }

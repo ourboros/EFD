@@ -12,6 +12,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.VibrationEffect;
@@ -45,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
 
     public enum UIStage {
         Welcome,
+        GroupSelection,
         CalibrationInstruction,
         CountdownWait,
         ActiveCalibration,
@@ -306,7 +308,7 @@ public class MainActivity extends AppCompatActivity {
         mNavBarContainer.setPadding(12, 10, 12, 10);
 
         String[] labels = {
-                "歡迎", "說明", "倒數", "測驗",
+                "歡迎", "分組", "說明", "倒數", "測驗",
                 "結果", "監控", "設定", "後測", "問卷"
         };
         UIStage[] stages = UIStage.values();
@@ -353,6 +355,9 @@ public class MainActivity extends AppCompatActivity {
         switch (mCurrentStage) {
             case Welcome:
                 renderWelcomeScreen();
+                break;
+            case GroupSelection:
+                renderGroupSelectionScreen();
                 break;
             case CalibrationInstruction:
                 renderInstructionScreen();
@@ -486,8 +491,115 @@ public class MainActivity extends AppCompatActivity {
                 + "影像只在這支手機上分析，不會儲存或上傳；每日只上傳疲勞數值統計。");
 
         Button startBtn = dashButton("進入測驗說明", C_WHITE, C_MINT, 24);
-        startBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
+        // 尚未分組時先選擇組別 (交叉設計)，選定後才進入校準
+        startBtn.setOnClickListener(v -> setStage(EfdNativeBridge.getStudyGroup().isEmpty()
+                ? UIStage.GroupSelection : UIStage.CalibrationInstruction));
         layout.addView(startBtn);
+    }
+
+    // -------------------------------------------------------------------------
+    // 交叉設計分組：由研究人員依分配表選擇，選定後鎖定
+    // -------------------------------------------------------------------------
+    private void renderGroupSelectionScreen() {
+        LinearLayout layout = createMintPage(true);
+        addPageTitle(layout, "選擇組別", 23);
+        addPageSubtitle(layout, "請由研究人員依分配表選擇，選擇後無法更改");
+
+        addInfoCard(layout, "A 組", "第 1–7 天：只記錄數據，不顯示疲勞提醒\n第 8–14 天：顯示疲勞提醒");
+        addInfoCard(layout, "B 組", "第 1–7 天：顯示疲勞提醒\n第 8–14 天：只記錄數據，不顯示疲勞提醒");
+
+        Button groupA = dashButton("A 組", C_WHITE, C_MINT, 20);
+        groupA.setOnClickListener(v -> confirmStudyGroup("A"));
+        layout.addView(groupA);
+        Button groupB = dashButton("B 組", C_WHITE, C_MINT, 12);
+        groupB.setOnClickListener(v -> confirmStudyGroup("B"));
+        layout.addView(groupB);
+        Button back = dashButton("返回歡迎介面", "#33FFFFFF", C_WHITE, 12);
+        back.setOnClickListener(v -> setStage(UIStage.Welcome));
+        layout.addView(back);
+    }
+
+    private void confirmStudyGroup(String group) {
+        new AlertDialog.Builder(this)
+                .setTitle("確認選擇 " + group + " 組？")
+                .setMessage("選擇後無法更改。若選錯，請聯絡研究人員重新設定。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("確認", (d, w) -> {
+                    if (EfdNativeBridge.setStudyGroup(group)) {
+                        setStage(UIStage.CalibrationInstruction);
+                    } else {
+                        Toast.makeText(this, "設定失敗：偵測引擎尚未啟動 (請先允許相機權限) 或已選擇另一組",
+                                Toast.LENGTH_LONG).show();
+                    }
+                })
+                .show();
+    }
+
+    // -------------------------------------------------------------------------
+    // 提醒時的眼睛疲勞自評：一題 0~10，點一下即完成；30 秒未作答視為略過
+    // -------------------------------------------------------------------------
+    private static final long EYE_FATIGUE_TIMEOUT_MS = 30_000L;
+    private static final long PENDING_EYE_FATIGUE_MAX_AGE_MS = 30 * 60_000L;
+
+    private void showEyeFatigueQuestion(long alertTimeMs, boolean afterNotification) {
+        if (isActivityDestroyed() || alertTimeMs <= 0) return;
+        final long shownAt = SystemClock.elapsedRealtime();
+        final boolean[] done = {false};
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(8), dp(16), 0);
+        TextView hint = new TextView(this);
+        hint.setText("0 = 完全不累　　10 = 非常疲勞");
+        hint.setTextSize(13);
+        box.addView(hint);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(afterNotification ? "稍早的疲勞提醒：當時眼睛有多疲勞？" : "你的眼睛處於疲勞狀態，請適當休息")
+                .setMessage("你現在眼睛疲勞的程度？")
+                .setView(box)
+                .setCancelable(false)
+                .setNegativeButton("略過", null)
+                .create();
+
+        java.util.function.IntConsumer answer = value -> {
+            if (done[0]) return;
+            done[0] = true;
+            EfdNativeBridge.recordEyeFatigueResponse(alertTimeMs, value,
+                    (SystemClock.elapsedRealtime() - shownAt) / 1000f);
+            if (dialog.isShowing()) dialog.dismiss();
+        };
+        for (int[] range : new int[][] {{0, 5}, {6, 10}}) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int v = range[0]; v <= range[1]; v++) {
+                final int value = v;
+                Button b = new Button(this);
+                b.setText(String.valueOf(v));
+                b.setTextSize(16);
+                styleButton(b, C_MINT, "#FFFFFF");
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+                lp.setMargins(dp(3), dp(6), dp(3), 0);
+                b.setOnClickListener(x -> answer.accept(value));
+                row.addView(b, lp);
+            }
+            box.addView(row);
+        }
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+                .setOnClickListener(x -> answer.accept(-1)));
+        dialog.show();
+        mHandler.postDelayed(() -> answer.accept(-1), EYE_FATIGUE_TIMEOUT_MS);
+    }
+
+    // 提醒以通知送出時 (App 在背景) 沒有機會詢問：使用者 30 分鐘內開啟 App 時補問，超過則記為略過
+    private void askPendingEyeFatigueQuestion() {
+        long pending = EfdForegroundService.takePendingEyeFatigueAlert(this);
+        if (pending <= 0) return;
+        if (System.currentTimeMillis() - pending <= PENDING_EYE_FATIGUE_MAX_AGE_MS) {
+            showEyeFatigueQuestion(pending, true);
+        } else {
+            EfdNativeBridge.recordEyeFatigueResponse(pending, -1, 0f);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1205,7 +1317,7 @@ public class MainActivity extends AppCompatActivity {
     // -------------------------------------------------------------------------
     @android.annotation.SuppressLint("MissingPermission")
     @SuppressWarnings("deprecation")
-    private void triggerFatigueAlertNotification(String message) {
+    private void triggerFatigueAlertNotification(String message, long alertTimeMs) {
         if (isActivityDestroyed()) return;
 
         // 1. 手機震動 (安全調用)
@@ -1247,7 +1359,11 @@ public class MainActivity extends AppCompatActivity {
             Log.w(TAG, "Notification trigger failed: " + t.getMessage());
         }
 
-        // 4. 應用內紅色警告對話框
+        // 4. 應用內對話框：真實提醒同時詢問眼睛疲勞程度；測試通知 (alertTimeMs = 0) 只顯示提示
+        if (alertTimeMs > 0) {
+            showEyeFatigueQuestion(alertTimeMs, false);
+            return;
+        }
         try {
             new AlertDialog.Builder(this)
                     .setTitle("疲勞警報提醒")
@@ -1606,11 +1722,12 @@ public class MainActivity extends AppCompatActivity {
             startForegroundMonitoringService();
         }
         // 前景時由對話框呈現警報；背景時服務改發通知
-        EfdForegroundService.setAlertListener(message -> mHandler.post(() -> {
+        EfdForegroundService.setAlertListener((message, alertTimeMs) -> mHandler.post(() -> {
             if (mIsResumed && !isActivityDestroyed()) {
-                triggerFatigueAlertNotification(message);
+                triggerFatigueAlertNotification(message, alertTimeMs);
             }
         }));
+        askPendingEyeFatigueQuestion();
         if (mHandler != null && mTelemetryRunnable != null) {
             mHandler.removeCallbacks(mTelemetryRunnable);
             mHandler.post(mTelemetryRunnable);
