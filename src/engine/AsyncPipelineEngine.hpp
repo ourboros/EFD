@@ -3,7 +3,7 @@
 #include "efd/types.hpp"
 #include "vision/RawFrame.hpp"
 #include "vision/CameraService.hpp"
-#include "vision/FaceLandmarker.hpp"
+#include "vision/ILandmarkDetector.hpp"
 #include "analysis/FeatureExtractor.hpp"
 #include "analysis/AdaptiveBaseline.hpp"
 #include "analysis/EmdCalculator.hpp"
@@ -27,7 +27,7 @@ namespace efd {
 struct EngineTelemetry {
     RawFrame latestFrame;
     LandmarkDetectionResult detection;
-    FaceLandmarker::PresenceDiagnostic presenceDiagnostic;
+    PresenceDiagnostic presenceDiagnostic;
     EyeMetrics eyeMetrics;
     ComplexityMetrics complexityMetrics;
     SystemState systemState;
@@ -100,6 +100,15 @@ public:
     // 設定模擬眼睛開合狀態 (供測試與驗證)
     void setSimulatedEyeOpenness(float openness);
 
+    // 更換臉部特徵點偵測器 (預設為啟發式 FaceLandmarker)，須在 start() 之前呼叫
+    // 傳入的偵測器須已 initialize() 成功；傳入 nullptr 或未就緒時保留原偵測器並回傳 false
+    bool setLandmarkDetector(std::unique_ptr<ILandmarkDetector> detector);
+
+    // 由平台層 (Android MediaPipe) 自行完成偵測時，直接遞交結果給訊號執行緒，略過 Thread 2
+    // frameInfo 只需填寫寬高與時間戳 (可不含像素)；暫停中或未啟動時忽略
+    void submitExternalDetection(RawFrame frameInfo, LandmarkDetectionResult detection,
+                                 PresenceDiagnostic diagnostic = {});
+
     // 執行手動觸發當日眼動數據落盤與雲端同步
     bool triggerManualDataSync();
 
@@ -116,7 +125,7 @@ public:
     AdaptiveBaseline& getAdaptiveBaseline() { return m_baseline; }
     FeatureExtractor& getFeatureExtractor() { return m_extractor; }
     CameraService& getCameraService() { return *m_camera; }
-    FaceLandmarker& getFaceLandmarker() { return *m_landmarker; }
+    ILandmarkDetector& getFaceLandmarker() { return *m_landmarker; }
     DatabaseService& getDatabaseService() { return m_database; }
     StudyWorkflowTracker& getStudyTracker() { return m_studyTracker; }
     NetworkSyncWorker& getSyncWorker() { return m_syncWorker; }
@@ -133,7 +142,7 @@ private:
     NetworkSyncWorker m_syncWorker;
 
     std::unique_ptr<CameraService>  m_camera;
-    std::unique_ptr<FaceLandmarker> m_landmarker;
+    std::unique_ptr<ILandmarkDetector> m_landmarker;
     FeatureExtractor m_extractor;
     AdaptiveBaseline m_baseline;
     EmdCalculator    m_emdCalculator;
@@ -160,7 +169,7 @@ private:
     struct InferencePackage {
         RawFrame frame;
         LandmarkDetectionResult detection;
-        FaceLandmarker::PresenceDiagnostic presenceDiagnostic;
+        PresenceDiagnostic presenceDiagnostic;
     };
     std::queue<InferencePackage> m_inferenceQueue;
     std::mutex m_inferenceQueueMutex;

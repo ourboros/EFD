@@ -925,6 +925,95 @@ void testAsyncPipelineEngine() {
     std::cout << " [PASS] (共非同步處理 " << telemetryCount.load() << " 幀，Pause/Resume 正常)\n";
 }
 
+// 測試用偵測器：永遠回報畫面中沒有臉，用來確認引擎改用注入的偵測器
+class NoFaceTestDetector : public efd::ILandmarkDetector {
+public:
+    bool initialize(const std::string& /*modelPath*/) override { m_ready = true; return true; }
+    bool isReady() const override { return m_ready; }
+    const char* name() const override { return "test-no-face"; }
+    efd::LandmarkDetectionResult detect(const efd::RawFrame& /*frame*/) override { return {}; }
+    efd::PresenceDiagnostic getLatestPresenceDiagnostic() const override { return {}; }
+private:
+    bool m_ready = false;
+};
+
+void testLandmarkDetectorInjectionAndExternalDetection() {
+    std::cout << "[TEST] 31. 臉部偵測器介面：更換偵測器與平台層遞交偵測結果...";
+    efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+    engine.setAutoNightlySyncEnabled(false);
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "efd_test_detector_injection";
+    std::filesystem::create_directories(dir);
+    engine.setDataDirectory(dir.string());
+
+    // 預設為啟發式偵測器
+    assert(std::string(engine.getFaceLandmarker().name()) == "heuristic");
+
+    // 空指標與未初始化的偵測器不可取代原偵測器
+    assert(!engine.setLandmarkDetector(nullptr));
+    assert(!engine.setLandmarkDetector(std::make_unique<NoFaceTestDetector>()));
+    assert(std::string(engine.getFaceLandmarker().name()) == "heuristic");
+
+    auto detector = std::make_unique<NoFaceTestDetector>();
+    assert(detector->initialize(""));
+    assert(engine.setLandmarkDetector(std::move(detector)));
+    assert(std::string(engine.getFaceLandmarker().name()) == "test-no-face");
+
+    std::atomic<int> cameraFaceFrames{0};
+    std::atomic<int> externalFrames{0};
+    engine.setTelemetryCallback([&](const efd::EngineTelemetry& t) {
+        if (t.detection.landmarksMeasured) {
+            if (t.detection.hasFace && t.latestFrame.width == 480 && t.latestFrame.data.empty()) {
+                externalFrames++;
+            }
+        } else if (t.detection.hasFace) {
+            cameraFaceFrames++;
+        }
+    });
+
+    // 未啟動時遞交的結果應被忽略
+    efd::LandmarkDetectionResult external;
+    external.hasFace = true;
+    external.landmarksMeasured = true;
+    external.landmarks.assign(468, efd::Point3D{});
+    efd::RawFrame info;
+    info.width = 480;
+    info.height = 640;
+    engine.submitExternalDetection(info, external);
+
+    engine.getCameraService().setForceSynthetic(true);
+    engine.getCameraService().startSynthetic();
+    assert(engine.start());
+
+    // 執行中不可更換偵測器
+    auto late = std::make_unique<NoFaceTestDetector>();
+    late->initialize("");
+    assert(!engine.setLandmarkDetector(std::move(late)));
+
+    for (int i = 0; i < 5; ++i) {
+        info.timestampMs = i;
+        engine.submitExternalDetection(info, external);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    const int externalWhileRunning = externalFrames.load();
+    assert(externalWhileRunning > 0);
+
+    // 暫停期間遞交的結果應被忽略
+    engine.pause();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const int beforePausedSubmit = externalFrames.load();
+    engine.submitExternalDetection(info, external);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    assert(externalFrames.load() == beforePausedSubmit);
+
+    engine.stop();
+
+    // 相機影格交給注入的偵測器 (永遠無臉)，不應出現有臉的相機影格
+    assert(cameraFaceFrames.load() == 0);
+
+    std::cout << " [PASS] (外部遞交 " << externalWhileRunning << " 幀，相機影格改由注入的偵測器處理)\n";
+}
+
 void testCameraDriversAndHal() {
     std::cout << "[TEST] 8. 測試跨平台相機硬體抽象層 (Camera HAL & Drivers)...";
     efd::CameraService cameraService(640, 480, 30.0f);
@@ -1337,7 +1426,8 @@ int main() {
     testCameraPixelFormatConversion();
     testFaceFillingFrameNeedsBothEyes();
     testOpennessRobustToMeasurementNoise();
+    testLandmarkDetectorInjectionAndExternalDetection();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 30 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 31 項測試順利通過！\n";
     return 0;
 }

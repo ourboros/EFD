@@ -54,6 +54,7 @@ set(EFD_CORE_HEADERS
     src/analysis/AdaptiveBaseline.hpp
     src/state/FatigueStateMachine.hpp
     src/vision/RawFrame.hpp
+    src/vision/ILandmarkDetector.hpp
     src/vision/FaceLandmarker.hpp
     src/vision/CameraService.hpp
     src/vision/VisionPipeline.hpp

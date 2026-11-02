@@ -32,8 +32,13 @@ struct RawFrame {
 struct LandmarkDetectionResult {
     bool hasFace = false;
     float faceConfidence = 0.0f;
-    std::vector<Point3D> landmarks; // 468 點 3D 座標
+    std::vector<Point3D> landmarks; // 468 點 3D 座標 (像素座標，MediaPipe 索引)
     int64_t inferenceTimeMs = 0;
+    // true：特徵點由模型量測 (MediaPipe / ONNX)；false：啟發式偵測器依開合度推算的網格
+    bool landmarksMeasured = false;
+    // MediaPipe blendshape 眨眼分數 (0 睜 ~ 1 閉)；負值代表偵測器未提供
+    float eyeBlinkLeft = -1.0f;
+    float eyeBlinkRight = -1.0f;
 };
 
 } // namespace efd

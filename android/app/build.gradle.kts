@@ -86,6 +86,11 @@ android {
         buildConfig = true
     }
 
+    // MediaPipe 以記憶體映射讀取 assets 內的模型，壓縮後無法載入
+    androidResources {
+        noCompress += listOf("task", "tflite")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -117,5 +122,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-service:2.8.5")
     implementation("androidx.lifecycle:lifecycle-common-java8:2.8.5")
     implementation("androidx.cardview:cardview:1.0.0")
+    // 臉部 478 點特徵點與眨眼 blendshape (模型檔：src/main/assets/face_landmarker.task)
+    implementation("com.google.mediapipe:tasks-vision:0.10.35")
 }
 

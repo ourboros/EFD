@@ -2,6 +2,7 @@
 
 #include "efd/types.hpp"
 #include "vision/RawFrame.hpp"
+#include "vision/ILandmarkDetector.hpp"
 #include <string>
 #include <vector>
 #include <memory>
@@ -10,69 +11,32 @@
 
 namespace efd {
 
-class FaceLandmarker {
+// 啟發式偵測器：膚色網格定位臉部、眼部暗點比例量測開合度，再依開合度產生 468 點網格
+// (網格是推算的，不是量測的)。不需模型，作為模型無法載入時的備援
+class FaceLandmarker : public ILandmarkDetector {
 public:
+    // 沿用舊名稱，既有呼叫端 (JNI、測試) 不需修改
+    using PresenceDiagnostic = efd::PresenceDiagnostic;
+
     FaceLandmarker();
-    ~FaceLandmarker();
+    ~FaceLandmarker() override;
 
-    bool initialize(const std::string& modelPath = "");
-    LandmarkDetectionResult detect(const RawFrame& frame);
+    bool initialize(const std::string& modelPath = "") override;
+    const char* name() const override { return "heuristic"; }
+    LandmarkDetectionResult detect(const RawFrame& frame) override;
     LandmarkDetectionResult detect(const uint8_t* pixelData, int width, int height, PixelFormat format = PixelFormat::RGB888, bool isSynthetic = false);
-    bool isReady() const;
-    void setSimulatedEyeOpenness(float openness);
+    bool isReady() const override;
+    void setSimulatedEyeOpenness(float openness) override;
 
-    struct PresenceDiagnostic {
-        bool rawPersonInFrame = false;
-        bool rawFacingCamera = false;
-        bool isFaceConfirmed = false;
-        int skinPixels = 0;
-        int minSkinRequired = 0;
-        float fillDensity = 0.0f;
-        float aspectRatio = 0.0f;
-        float symmetryRatio = 0.0f;
-        int boxX = 0;
-        int boxY = 0;
-        int boxW = 0;
-        int boxH = 0;
-        int frameWidth = 640;
-        int frameHeight = 480;
-        int stableCount = 0;
-        float trackedCx = 0.0f;
-        float trackedCy = 0.0f;
-        float userBiasX = 0.0f;
-        float userBiasY = 0.0f;
-        bool isPositionBiasCalibrated = false;
-        std::string unconfirmedReason;
-
-        // 診斷模式用：本幀卡在哪一關 ("" 代表全部通過；skin / size / aspect / fill / eyes / symmetry)
-        std::string failStage;
-        // 眼睛或對稱檢查未過，但位置與已鎖定的臉相符而判定在座 (閉眼、低頭、眨眼)
-        bool presenceByTracking = false;
-        // 膚色連通區域 (未裁切) 與裁切後的臉部方框
-        int skinBoxX = 0, skinBoxY = 0, skinBoxW = 0, skinBoxH = 0;
-        int faceBoxX = 0, faceBoxY = 0, faceBoxW = 0, faceBoxH = 0;
-        int avgSkinLum = 0;
-        // 眼部檢查數值 [0] 左 / [1] 右，以及推算的眼睛中心
-        float eyeDarkFraction[2] = {0.0f, 0.0f};
-        float eyeContrast[2] = {0.0f, 0.0f};
-        float eyeGradient[2] = {0.0f, 0.0f};
-        int eyeCenterX[2] = {0, 0};
-        int eyeCenterY = 0;
-        // 追蹤階段的眼睛開合量測：雙眼暗點比例、睜眼基準 (中位數)、換算後的開合度 (0 閉 ~ 1 開)
-        float eyeOpenDarkRatio = 0.0f;
-        float eyeOpenBaseline = 0.0f;
-        float eyeOpenness = 0.0f;
-    };
-
-    PresenceDiagnostic getLatestPresenceDiagnostic() const;
+    PresenceDiagnostic getLatestPresenceDiagnostic() const override;
 
     // 初次測試/校準：記錄並鎖定使用者常態偏向位置
-    void calibrateUserPositionBias(float cx, float cy);
-    bool isPositionBiasCalibrated() const;
-    void resetTracking();
+    void calibrateUserPositionBias(float cx, float cy) override;
+    bool isPositionBiasCalibrated() const override;
+    void resetTracking() override;
 
     // 重置睜眼暗部基準 (重新校準時呼叫)
-    void resetEyeBaseline();
+    void resetEyeBaseline() override;
 
     // 連續多久未偵測到人臉才判定離開 (以時間計，與幀率無關)
     static constexpr int64_t kFaceLostTimeoutMs = 1000;

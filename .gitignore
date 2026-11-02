@@ -73,3 +73,8 @@ android/keystore.properties
 
 # 診斷模式匯出的受試者畫面 (含臉部影像，只留在本機)
 debug_frames/
+
+# 模型轉換用 Python 虛擬環境、ONNX Runtime 二進位 (由 GitHub Releases 下載)、模型解壓中間檔
+.venv-models/
+third_party/onnxruntime/
+models/extracted/

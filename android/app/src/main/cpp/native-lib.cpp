@@ -209,7 +209,7 @@ static std::string jsonEscape(const std::string& s) {
 }
 
 // 偵測診斷的 JSON 欄位 (遙測與診斷擷取共用)
-static void appendDiagnosticJson(std::ostringstream& oss, const efd::FaceLandmarker::PresenceDiagnostic& d) {
+static void appendDiagnosticJson(std::ostringstream& oss, const efd::PresenceDiagnostic& d) {
     oss << "\"failStage\":\"" << jsonEscape(d.failStage) << "\","
         << "\"reason\":\"" << jsonEscape(d.unconfirmedReason) << "\","
         << "\"tracking\":" << (d.presenceByTracking ? "true" : "false") << ","

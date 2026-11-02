@@ -1,4 +1,5 @@
 #include "AsyncPipelineEngine.hpp"
+#include "vision/FaceLandmarker.hpp"
 #include <chrono>
 #include <algorithm>
 #include <ctime>
@@ -302,6 +303,28 @@ void AsyncPipelineEngine::setSimulatedEyeOpenness(float openness) {
     if (m_landmarker) {
         m_landmarker->setSimulatedEyeOpenness(openness);
     }
+}
+
+bool AsyncPipelineEngine::setLandmarkDetector(std::unique_ptr<ILandmarkDetector> detector) {
+    // 執行中更換會與 Thread 2 競爭同一個偵測器
+    if (m_isRunning.load() || !detector || !detector->isReady()) {
+        return false;
+    }
+    m_landmarker = std::move(detector);
+    std::cout << "[Vision] 臉部特徵點偵測器: " << m_landmarker->name() << "\n";
+    return true;
+}
+
+void AsyncPipelineEngine::submitExternalDetection(RawFrame frameInfo, LandmarkDetectionResult detection,
+                                                  PresenceDiagnostic diagnostic) {
+    if (!m_isRunning.load() || m_isPaused.load()) return;
+
+    std::lock_guard<std::mutex> lock(m_inferenceQueueMutex);
+    while (m_inferenceQueue.size() >= MAX_INFERENCE_QUEUE) {
+        m_inferenceQueue.pop();
+    }
+    m_inferenceQueue.push(InferencePackage{std::move(frameInfo), std::move(detection), std::move(diagnostic)});
+    m_inferenceQueueCv.notify_one();
 }
 
 bool AsyncPipelineEngine::triggerManualDataSync() {
