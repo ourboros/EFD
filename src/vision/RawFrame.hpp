@@ -39,6 +39,8 @@ struct LandmarkDetectionResult {
     // MediaPipe blendshape 眨眼分數 (0 睜 ~ 1 閉)；負值代表偵測器未提供
     float eyeBlinkLeft = -1.0f;
     float eyeBlinkRight = -1.0f;
+    // MediaPipe blendshape 眼球往下看 (兩眼平均，0~1)；低頭看手機時眼瞼跟著下垂，用來與閉眼區分。負值代表未提供
+    float eyeLookDown = -1.0f;
 };
 
 } // namespace efd

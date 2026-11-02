@@ -66,6 +66,7 @@ set(EFD_CORE_HEADERS
     src/analysis/EmdCalculator.hpp
     src/analysis/MseCalculator.hpp
     src/analysis/AdaptiveBaseline.hpp
+    src/analysis/RollingOpenBaseline.hpp
     src/state/FatigueStateMachine.hpp
     src/vision/RawFrame.hpp
     src/vision/ILandmarkDetector.hpp
@@ -93,6 +94,7 @@ set(EFD_CORE_SOURCES
     src/analysis/EmdCalculator.cpp
     src/analysis/MseCalculator.cpp
     src/analysis/AdaptiveBaseline.cpp
+    src/analysis/RollingOpenBaseline.cpp
     src/state/FatigueStateMachine.cpp
     src/vision/FaceLandmarker.cpp
     src/vision/ExternalLandmarks.cpp

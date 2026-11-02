@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <vector>
 #include <chrono>
@@ -290,8 +291,9 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
         });
 
         engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
-            // 相機關閉期間沒有畫面，不可當成「這個方向找不到臉」
-            if (!telemetry.latestFrame.isSynthetic && !telemetry.cameraSuspended) {
+            // 相機關閉期間沒有畫面，不可當成「這個方向找不到臉」；
+            // MediaPipe 依兩眼連線自行轉正，不需要方向搜尋 (畫面也不再旋轉)
+            if (!telemetry.latestFrame.isSynthetic && !telemetry.cameraSuspended && !g_externalDetector.load()) {
                 const auto& pd = telemetry.presenceDiagnostic;
                 updateOrientationSearch(pd.rawPersonInFrame && pd.rawFacingCamera && !pd.presenceByTracking,
                                         telemetry.detection.hasFace);
@@ -314,6 +316,25 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
                 g_debugRgb.assign(telemetry.latestFrame.data.begin(), telemetry.latestFrame.data.begin() + bytes);
                 g_debugInfoJson = info.str();
             }
+
+#ifndef NDEBUG
+            // debug 版逐幀紀錄 (adb logcat -s EFD_Frame)：分析眨眼、閉眼與低頭時的 EAR 分布；正式版不輸出
+            if (telemetry.detection.landmarksMeasured && !telemetry.cameraSuspended) {
+                // 頭部俯仰角：額頭 (10) 到下巴 (152) 的深度差 / 平面距離，與畫面旋轉無關；正值代表低頭
+                float pitchDeg = 0.0f;
+                const auto& lm = telemetry.detection.landmarks;
+                if (lm.size() > 152) {
+                    const float planar = std::hypot(lm[152].x - lm[10].x, lm[152].y - lm[10].y);
+                    pitchDeg = std::atan2(lm[152].z - lm[10].z, planar) * 57.2958f;
+                }
+                __android_log_print(ANDROID_LOG_DEBUG, "EFD_Frame",
+                                    "face=%d ear=%.4f thr=%.4f bthr=%.4f closed=%d blink=%.3f,%.3f look=%.3f pitch=%.1f perclos=%.3f",
+                                    telemetry.detection.hasFace ? 1 : 0, telemetry.eyeMetrics.earAvg, telemetry.currentThreshold,
+                                    telemetry.blinkThreshold, telemetry.eyeMetrics.isEyeClosed ? 1 : 0,
+                                    telemetry.detection.eyeBlinkLeft, telemetry.detection.eyeBlinkRight,
+                                    telemetry.detection.eyeLookDown, pitchDeg, telemetry.eyeMetrics.perclos);
+            }
+#endif
 
             efd::EngineTelemetry slim;
             slim.latestFrame.timestampMs = telemetry.latestFrame.timestampMs;
@@ -474,7 +495,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
 JNIEXPORT void JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendLandmarks(JNIEnv* env, jclass /*clazz*/, jfloatArray normalizedXyz,
                                                                     jint width, jint height, jint rotation,
-                                                                    jfloat blinkLeft, jfloat blinkRight, jbyteArray rgb) {
+                                                                    jfloat blinkLeft, jfloat blinkRight, jfloat lookDown,
+                                                                    jbyteArray rgb) {
     auto engine = currentEngine();
     if (!engine || width <= 0 || height <= 0) return;
 
@@ -492,6 +514,7 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendLandmarks(JNIEnv* env
     }
     efd::LandmarkDetectionResult detection = efd::buildExternalDetection(
         xyz.empty() ? nullptr : xyz.data(), xyz.size() / 3, width, height, blinkLeft, blinkRight);
+    detection.eyeLookDown = lookDown;
 
     const int64_t now = steadyNowMsJni();
     if (g_presenceFilterResetRequested.exchange(false)) g_presenceFilter.reset();

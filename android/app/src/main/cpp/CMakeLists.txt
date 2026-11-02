@@ -20,6 +20,7 @@ add_library(efd_jni SHARED
     ${EFD_ROOT_DIR}/src/analysis/EmdCalculator.cpp
     ${EFD_ROOT_DIR}/src/analysis/MseCalculator.cpp
     ${EFD_ROOT_DIR}/src/analysis/AdaptiveBaseline.cpp
+    ${EFD_ROOT_DIR}/src/analysis/RollingOpenBaseline.cpp
     ${EFD_ROOT_DIR}/src/state/FatigueStateMachine.cpp
     ${EFD_ROOT_DIR}/src/vision/FaceLandmarker.cpp
     ${EFD_ROOT_DIR}/src/vision/ExternalLandmarks.cpp

@@ -59,10 +59,11 @@ EyeMetrics FeatureExtractor::processFrame(const std::vector<Point3D>& landmarks,
 EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps) {
     float earAvg = (earLeft + earRight) * 0.5f;
     bool isClosed = (earAvg < m_threshold);
+    bool isBlinkClosed = (earAvg < getBlinkThreshold());
     float sampleMs = (fps > 0.0f) ? (1000.0f / fps) : 33.33f;
 
     // 更新時間窗口
-    m_samples.push_back({earAvg, isClosed, sampleMs});
+    m_samples.push_back({earAvg, isClosed, isBlinkClosed, sampleMs});
     m_windowTotalMs += sampleMs;
     if (isClosed) m_windowClosedMs += sampleMs;
     while (m_samples.size() > 1 && m_windowTotalMs - m_samples.front().durationMs >= m_windowMs) {
@@ -73,7 +74,7 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
     }
 
     // 眨眼檢測狀態機 (以閉眼持續時間判斷)
-    if (isClosed) {
+    if (isBlinkClosed) {
         m_currentClosedMs += sampleMs;
     } else if (m_wasClosed) {
         if (isBlinkDuration(m_currentClosedMs)) {
@@ -82,7 +83,7 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         }
         m_currentClosedMs = 0.0f;
     }
-    m_wasClosed = isClosed;
+    m_wasClosed = isBlinkClosed;
 
     float perclos = (m_windowTotalMs > 0.0f)
         ? std::clamp(m_windowClosedMs / m_windowTotalMs, 0.0f, 1.0f) : 0.0f;
@@ -91,7 +92,7 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
     int windowBlinkCount = 0;
     float segMs = 0.0f;
     for (const Sample& s : m_samples) {
-        if (s.closed) {
+        if (s.blinkClosed) {
             segMs += s.durationMs;
         } else {
             if (isBlinkDuration(segMs)) {
@@ -124,6 +125,14 @@ void FeatureExtractor::setEyeClosedThreshold(float threshold) {
 
 float FeatureExtractor::getEyeClosedThreshold() const {
     return m_threshold;
+}
+
+void FeatureExtractor::setBlinkThreshold(float threshold) {
+    m_blinkThreshold = threshold;
+}
+
+float FeatureExtractor::getBlinkThreshold() const {
+    return (m_blinkThreshold > 0.0f) ? m_blinkThreshold : m_threshold;
 }
 
 std::vector<float> FeatureExtractor::getEarHistory() const {

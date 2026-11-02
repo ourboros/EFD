@@ -95,6 +95,7 @@ void AsyncPipelineEngine::restoreFromStorage() {
         if (saved.isCalibrated) {
             m_baseline.restoreCalibration(saved);
             m_extractor.setEyeClosedThreshold(m_baseline.getCurrentThreshold());
+            m_rollingBaseline.setInitialOpenEar(saved.baselineEar);
         }
     }
     m_stateMachine.setSensitivity(m_studyTracker.getSensitivityLevel());
@@ -263,6 +264,9 @@ bool AsyncPipelineEngine::finishCalibration() {
         m_extractor.reset(); // 校準前的窗口資料以舊閾值判定，不沿用
         m_extractor.setEyeClosedThreshold(m_baseline.getCurrentThreshold());
         data = m_baseline.getCalibrationData();
+        // 模型偵測器的滾動睜眼基準：校準時 (環境、姿勢可能改變) 重新累積，累積不足前以校準值為準
+        m_rollingBaseline.reset();
+        m_rollingBaseline.setInitialOpenEar(data.baselineEar);
     }
     m_studyTracker.markInitialSetupCompleted(data);
     std::cout << "[校準] 完成：基準 EAR=" << data.baselineEar << "，閉眼閾值=" << data.thresholdEar
@@ -563,10 +567,20 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
                 }
             }
 
-            // 2. 動態滑動窗口基準自適應更新 (未偵測到人臉時不污染基準)
-            currentThreshold = hasFace
-                ? m_baseline.update(eyeMetrics.earAvg, eyeMetrics.isEyeClosed)
-                : m_baseline.getCurrentThreshold();
+            // 2. 閉眼門檻更新 (未偵測到人臉時不污染基準)
+            if (package.detection.landmarksMeasured) {
+                // 模型偵測器：PERCLOS 用 P80 (閉合 >= 80%)、眨眼用閉合 >= 50%，以最近 2 分鐘的睜眼 EAR 為準
+                if (hasFace) m_rollingBaseline.add(eyeMetrics.earAvg, deltaSec);
+                currentThreshold = m_rollingBaseline.perclosThreshold();
+                m_lastBlinkThreshold = m_rollingBaseline.blinkThreshold();
+                m_extractor.setBlinkThreshold(m_lastBlinkThreshold);
+            } else {
+                currentThreshold = hasFace
+                    ? m_baseline.update(eyeMetrics.earAvg, eyeMetrics.isEyeClosed)
+                    : m_baseline.getCurrentThreshold();
+                m_lastBlinkThreshold = currentThreshold;
+                m_extractor.setBlinkThreshold(-1.0f);
+            }
             m_extractor.setEyeClosedThreshold(currentThreshold);
 
             // 3. 非線性複雜度分析 (EMD / MSE / CI)，每秒更新一次
@@ -660,6 +674,7 @@ void AsyncPipelineEngine::publishTelemetry(InferencePackage& package, const EyeM
     telemetry.complexityMetrics = complexity;
     telemetry.systemState = state;
     telemetry.currentThreshold = currentThreshold;
+    telemetry.blinkThreshold = m_lastBlinkThreshold;
     telemetry.cameraSuspended = m_cameraSuspended.load();
     telemetry.measuredFps = m_measuredFps;
     telemetry.totalFramesProcessed = count;

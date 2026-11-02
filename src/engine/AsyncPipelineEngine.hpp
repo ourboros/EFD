@@ -7,6 +7,7 @@
 #include "vision/ExternalLandmarks.hpp"
 #include "analysis/FeatureExtractor.hpp"
 #include "analysis/AdaptiveBaseline.hpp"
+#include "analysis/RollingOpenBaseline.hpp"
 #include "analysis/EmdCalculator.hpp"
 #include "analysis/MseCalculator.hpp"
 #include "state/FatigueStateMachine.hpp"
@@ -34,6 +35,8 @@ struct EngineTelemetry {
     ComplexityMetrics complexityMetrics;
     SystemState systemState;
     float currentThreshold = 0.21f;
+    // 眨眼判斷閾值 (模型偵測器為閉合 50%；啟發式偵測器與 currentThreshold 相同)
+    float blinkThreshold = 0.21f;
     // 冷卻期間相機已關閉 (此時沒有影像與偵測結果，只有冷卻倒數)
     bool cameraSuspended = false;
     float measuredFps = 30.0f;
@@ -161,7 +164,9 @@ private:
     std::unique_ptr<CameraService>  m_camera;
     std::unique_ptr<ILandmarkDetector> m_landmarker;
     FeatureExtractor m_extractor;
-    AdaptiveBaseline m_baseline;
+    AdaptiveBaseline m_baseline;               // 啟發式偵測器的閉眼門檻
+    RollingOpenBaseline m_rollingBaseline;     // 模型偵測器的閉眼門檻 (PERCLOS P80)
+    float m_lastBlinkThreshold = 0.21f;        // 只在訊號執行緒使用
     EmdCalculator    m_emdCalculator;
     MseCalculator    m_mseCalculator;
     FatigueStateMachine m_stateMachine;

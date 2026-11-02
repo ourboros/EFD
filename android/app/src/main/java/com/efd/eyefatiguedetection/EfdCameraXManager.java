@@ -2,7 +2,8 @@ package com.efd.eyefatiguedetection;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Matrix;
+import android.graphics.ImageFormat;
+import android.graphics.PixelFormat;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.Size;
@@ -26,8 +27,9 @@ import java.util.concurrent.Executors;
 public class EfdCameraXManager {
     private static final String TAG = "EFD_CameraXManager";
 
-    // 分析頻率上限 15 FPS：每 67 ms 一張仍能抓到一般 100~400 ms 的眨眼，耗電約為 30 FPS 的一半
-    private static final long MIN_FRAME_INTERVAL_MS = 66;
+    // 分析頻率上限 10 FPS：每 100 ms 一張仍能抓到一般 100~400 ms 的眨眼。
+    // 三星 A71 實測 MediaPipe 每幀約 55 ms (GPU)，15 FPS 時本 App 佔一顆核心約 94%，降頻以控制發熱與耗電
+    private static final long MIN_FRAME_INTERVAL_MS = 100;
     private static final long INFERENCE_LOG_INTERVAL_MS = 30_000;
 
     private final Context mContext;
@@ -36,12 +38,14 @@ public class EfdCameraXManager {
     private ProcessCameraProvider mCameraProvider;
     private boolean mIsRunning = false;
 
-    // MediaPipe 偵測器 (只在相機執行緒存取)；載入失敗時為 null，改送 NV21 給 C++ 啟發式偵測
+    // MediaPipe 偵測器 (在相機執行緒載入與使用)；載入失敗時為 null，改送 NV21 給 C++ 啟發式偵測
     private EfdFaceLandmarkerHelper mFaceLandmarker;
-    private boolean mFaceLandmarkerTried = false;
+    private volatile boolean mMediaPipeUnavailable = false;
     private long mLastAnalyzedMs = 0;
     private long mInferenceSumMs = 0;
+    private long mConvertSumMs = 0;
     private int mInferenceCount = 0;
+    private int mFaceFrameCount = 0;
     private long mLastInferenceLogMs = 0;
 
     // 省電暫停 (螢幕關閉、冷卻或快篩非採樣時段)：暫停期間的開啟要求只記住預覽畫面，恢復時再綁定
@@ -52,6 +56,20 @@ public class EfdCameraXManager {
         this.mContext = context.getApplicationContext();
         this.mLifecycleOwner = lifecycleOwner;
         this.mCameraExecutor = Executors.newSingleThreadExecutor();
+        // 先在相機執行緒載入模型 (GPU 約 2 秒)，期間送來的畫面排在後面等候
+        mCameraExecutor.execute(() -> {
+            mFaceLandmarker = EfdFaceLandmarkerHelper.create(mContext);
+            if (mFaceLandmarker == null) {
+                mMediaPipeUnavailable = true;
+                // 已用 RGBA 綁定的相機改回 YUV，交給啟發式偵測
+                ContextCompat.getMainExecutor(mContext).execute(() -> {
+                    if (mIsRunning && !mPowerPaused) {
+                        androidx.camera.view.PreviewView preview = (mPreviewView != null) ? mPreviewView.get() : null;
+                        bindWithProvider(preview);
+                    }
+                });
+            }
+        });
     }
 
     public void startCamera() {
@@ -122,10 +140,15 @@ public class EfdCameraXManager {
                 .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
                 .build();
 
+        // MediaPipe：CameraX 直接輸出 RGBA (在原生層轉換)，toBitmap 只是複製像素；
+        // 原本 YUV -> Bitmap -> 旋轉在三星 A71 每幀約 35 ms。MediaPipe 載入失敗時改回 YUV 給啟發式偵測
+        final boolean useMediaPipe = !mMediaPipeUnavailable;
         ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                 .setTargetResolution(new Size(640, 480))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                .setOutputImageFormat(useMediaPipe
+                        ? ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888
+                        : ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .build();
 
         imageAnalysis.setAnalyzer(mCameraExecutor, new ImageAnalysis.Analyzer() {
@@ -136,13 +159,9 @@ public class EfdCameraXManager {
                     if (now - mLastAnalyzedMs < MIN_FRAME_INTERVAL_MS) return;
                     mLastAnalyzedMs = now;
 
-                    if (!mFaceLandmarkerTried) {
-                        mFaceLandmarkerTried = true;
-                        mFaceLandmarker = EfdFaceLandmarkerHelper.create(mContext);
-                    }
-                    if (mFaceLandmarker != null) {
+                    if (mFaceLandmarker != null && image.getFormat() == PixelFormat.RGBA_8888) {
                         analyzeWithMediaPipe(image);
-                    } else {
+                    } else if (mMediaPipeUnavailable && image.getFormat() == ImageFormat.YUV_420_888) {
                         byte[] nv21 = imageToNv21(image);
                         EfdNativeBridge.sendFrame(nv21, image.getWidth(), image.getHeight(),
                                 image.getImageInfo().getRotationDegrees());
@@ -171,42 +190,44 @@ public class EfdCameraXManager {
     }
 
     /**
-     * MediaPipe 路徑：轉正畫面 → 偵測 478 點 → 只把特徵點送給 C++ (影像不離開這個函式)。
-     * 轉正角度 = CameraX 回報角度 + C++ 自動方向搜尋的額外角度 (部分手機在背景服務回報的角度不正確)。
+     * MediaPipe 路徑：偵測 478 點 → 只把特徵點送給 C++ (影像不離開這個函式)。
+     * 不轉正畫面：MediaPipe 依兩眼連線把臉部裁切轉正，A71 實測 0° / 90° / 270° 都偵測得到，
+     * EAR 只取決於點與點的距離，與畫面方向無關；省下旋轉的時間 (診斷擷取的畫面因此可能是橫的)。
      */
     private void analyzeWithMediaPipe(@NonNull ImageProxy image) {
         int reported = image.getImageInfo().getRotationDegrees();
-        int rotation = (reported + EfdNativeBridge.getExtraRotation()) % 360;
+        long convertStart = SystemClock.elapsedRealtime();
         Bitmap frame = image.toBitmap();
-        Bitmap upright = frame;
-        if (rotation != 0) {
-            Matrix matrix = new Matrix();
-            matrix.postRotate(rotation);
-            upright = Bitmap.createBitmap(frame, 0, 0, frame.getWidth(), frame.getHeight(), matrix, true);
-            frame.recycle();
-        }
+        long convertMs = SystemClock.elapsedRealtime() - convertStart;
         try {
-            EfdFaceLandmarkerHelper.Result result = mFaceLandmarker.detect(upright);
-            byte[] rgb = EfdNativeBridge.isDebugCaptureRequested() ? bitmapToRgb(upright) : null;
-            EfdNativeBridge.sendLandmarks(result.normalizedXyz, upright.getWidth(), upright.getHeight(), reported,
-                    result.blinkLeft, result.blinkRight, rgb);
-            logInferenceTime(result.inferenceMs);
+            EfdFaceLandmarkerHelper.Result result = mFaceLandmarker.detect(frame);
+            byte[] rgb = EfdNativeBridge.isDebugCaptureRequested() ? bitmapToRgb(frame) : null;
+            EfdNativeBridge.sendLandmarks(result.normalizedXyz, frame.getWidth(), frame.getHeight(), reported,
+                    result.blinkLeft, result.blinkRight, result.lookDown, rgb);
+            logInferenceTime(result.inferenceMs, convertMs, result.normalizedXyz != null);
         } finally {
-            upright.recycle();
+            frame.recycle();
         }
     }
 
-    // 每 30 秒記錄平均推論時間，供耗電與發熱評估
-    private void logInferenceTime(long inferenceMs) {
+    // 每 30 秒記錄平均推論與影像轉換時間、有臉的幀比例，供耗電與發熱評估
+    private void logInferenceTime(long inferenceMs, long convertMs, boolean hasFace) {
         mInferenceSumMs += inferenceMs;
+        mConvertSumMs += convertMs;
         mInferenceCount++;
+        if (hasFace) mFaceFrameCount++;
         long now = SystemClock.elapsedRealtime();
         if (mLastInferenceLogMs == 0) mLastInferenceLogMs = now;
         if (now - mLastInferenceLogMs >= INFERENCE_LOG_INTERVAL_MS) {
-            Log.i(TAG, String.format(java.util.Locale.US, "MediaPipe 平均推論 %.1f ms (%d 幀 / %.0f 秒)",
-                    (double) mInferenceSumMs / mInferenceCount, mInferenceCount, (now - mLastInferenceLogMs) / 1000.0));
+            Log.i(TAG, String.format(java.util.Locale.US,
+                    "MediaPipe(%s) 平均推論 %.1f ms、影像轉換 %.1f ms，有臉 %d/%d 幀 (%.0f 秒)",
+                    mFaceLandmarker.delegate(), (double) mInferenceSumMs / mInferenceCount,
+                    (double) mConvertSumMs / mInferenceCount, mFaceFrameCount, mInferenceCount,
+                    (now - mLastInferenceLogMs) / 1000.0));
             mInferenceSumMs = 0;
+            mConvertSumMs = 0;
             mInferenceCount = 0;
+            mFaceFrameCount = 0;
             mLastInferenceLogMs = now;
         }
     }

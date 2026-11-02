@@ -35,48 +35,66 @@ final class EfdFaceLandmarkerHelper {
         /** blendshape 眨眼分數 (0 睜 ~ 1 閉)；-1 代表未提供。 */
         final float blinkLeft;
         final float blinkRight;
+        /** blendshape 眼球往下看 (兩眼平均)；低頭看手機時眼瞼下垂，用來與閉眼區分；-1 代表未提供。 */
+        final float lookDown;
         final long inferenceMs;
 
-        Result(@Nullable float[] normalizedXyz, float blinkLeft, float blinkRight, long inferenceMs) {
+        Result(@Nullable float[] normalizedXyz, float blinkLeft, float blinkRight, float lookDown, long inferenceMs) {
             this.normalizedXyz = normalizedXyz;
             this.blinkLeft = blinkLeft;
             this.blinkRight = blinkRight;
+            this.lookDown = lookDown;
             this.inferenceMs = inferenceMs;
         }
     }
 
     private final FaceLandmarker mLandmarker;
+    private final Delegate mDelegate;
     private long mLastTimestampMs = -1;
 
-    private EfdFaceLandmarkerHelper(FaceLandmarker landmarker) {
+    private EfdFaceLandmarkerHelper(FaceLandmarker landmarker, Delegate delegate) {
         mLandmarker = landmarker;
+        mDelegate = delegate;
     }
 
-    /** 載入模型；失敗 (模型缺少、原生程式庫無法載入) 時回傳 null，呼叫端改用啟發式偵測。 */
+    /**
+     * 載入模型：優先用 CPU，無法使用時改用 GPU；兩者都失敗 (模型缺少、原生程式庫無法載入) 時回傳 null，
+     * 呼叫端改用啟發式偵測。三星 A71 實測 (10 FPS)：CPU 每幀 51~74 ms、本 App 佔一顆核心 83~100%；
+     * GPU 每幀 64~66 ms、87~113%，沒有比較省，且載入慢 (1.8~4.7 秒 vs 0.5 秒)、記憶體多約 30 MB。
+     */
     @Nullable
     static EfdFaceLandmarkerHelper create(@NonNull Context context) {
-        try {
-            long start = SystemClock.elapsedRealtime();
-            FaceLandmarker.FaceLandmarkerOptions options = FaceLandmarker.FaceLandmarkerOptions.builder()
-                    .setBaseOptions(BaseOptions.builder()
-                            .setModelAssetPath(MODEL_ASSET)
-                            // 背景前景服務長時間執行：CPU 比 GPU 穩定，也不受螢幕關閉影響
-                            .setDelegate(Delegate.CPU)
-                            .build())
-                    .setRunningMode(RunningMode.VIDEO)
-                    .setNumFaces(1)
-                    .setMinFaceDetectionConfidence(0.5f)
-                    .setMinFacePresenceConfidence(0.5f)
-                    .setMinTrackingConfidence(0.5f)
-                    .setOutputFaceBlendshapes(true)
-                    .build();
-            FaceLandmarker landmarker = FaceLandmarker.createFromOptions(context.getApplicationContext(), options);
-            Log.i(TAG, "MediaPipe FaceLandmarker 載入完成 (" + (SystemClock.elapsedRealtime() - start) + " ms)");
-            return new EfdFaceLandmarkerHelper(landmarker);
-        } catch (Throwable t) {
-            Log.e(TAG, "MediaPipe FaceLandmarker 載入失敗，改用啟發式偵測: " + t.getMessage(), t);
-            return null;
+        for (Delegate delegate : new Delegate[] {Delegate.CPU, Delegate.GPU}) {
+            try {
+                long start = SystemClock.elapsedRealtime();
+                FaceLandmarker landmarker = FaceLandmarker.createFromOptions(context.getApplicationContext(), buildOptions(delegate));
+                Log.i(TAG, "MediaPipe FaceLandmarker 載入完成 (" + delegate + "，" + (SystemClock.elapsedRealtime() - start) + " ms)");
+                return new EfdFaceLandmarkerHelper(landmarker, delegate);
+            } catch (Throwable t) {
+                Log.w(TAG, "MediaPipe FaceLandmarker 以 " + delegate + " 載入失敗: " + t.getMessage());
+            }
         }
+        Log.e(TAG, "MediaPipe FaceLandmarker 無法載入，改用啟發式偵測");
+        return null;
+    }
+
+    private static FaceLandmarker.FaceLandmarkerOptions buildOptions(Delegate delegate) {
+        return FaceLandmarker.FaceLandmarkerOptions.builder()
+                .setBaseOptions(BaseOptions.builder()
+                        .setModelAssetPath(MODEL_ASSET)
+                        .setDelegate(delegate)
+                        .build())
+                .setRunningMode(RunningMode.VIDEO)
+                .setNumFaces(1)
+                .setMinFaceDetectionConfidence(0.5f)
+                .setMinFacePresenceConfidence(0.5f)
+                .setMinTrackingConfidence(0.5f)
+                .setOutputFaceBlendshapes(true)
+                .build();
+    }
+
+    Delegate delegate() {
+        return mDelegate;
     }
 
     /** 分析一張已轉正的畫面。VIDEO 模式要求時間戳嚴格遞增，鎖定臉部後只追蹤不重新偵測。 */
@@ -93,7 +111,7 @@ final class EfdFaceLandmarkerHelper {
 
         List<List<NormalizedLandmark>> faces = result.faceLandmarks();
         if (faces == null || faces.isEmpty()) {
-            return new Result(null, -1f, -1f, inferenceMs);
+            return new Result(null, -1f, -1f, -1f, inferenceMs);
         }
         List<NormalizedLandmark> points = faces.get(0);
         float[] xyz = new float[points.size() * 3];
@@ -106,13 +124,21 @@ final class EfdFaceLandmarkerHelper {
 
         float blinkLeft = -1f;
         float blinkRight = -1f;
+        float lookDownSum = 0f;
+        int lookDownCount = 0;
         if (result.faceBlendshapes().isPresent() && !result.faceBlendshapes().get().isEmpty()) {
             for (Category c : result.faceBlendshapes().get().get(0)) {
-                if ("eyeBlinkLeft".equals(c.categoryName())) blinkLeft = c.score();
-                else if ("eyeBlinkRight".equals(c.categoryName())) blinkRight = c.score();
+                String name = c.categoryName();
+                if ("eyeBlinkLeft".equals(name)) blinkLeft = c.score();
+                else if ("eyeBlinkRight".equals(name)) blinkRight = c.score();
+                else if ("eyeLookDownLeft".equals(name) || "eyeLookDownRight".equals(name)) {
+                    lookDownSum += c.score();
+                    lookDownCount++;
+                }
             }
         }
-        return new Result(xyz, blinkLeft, blinkRight, inferenceMs);
+        float lookDown = lookDownCount > 0 ? lookDownSum / lookDownCount : -1f;
+        return new Result(xyz, blinkLeft, blinkRight, lookDown, inferenceMs);
     }
 
     void close() {

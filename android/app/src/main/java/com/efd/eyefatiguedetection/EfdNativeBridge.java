@@ -218,10 +218,10 @@ public class EfdNativeBridge {
      * rgb 只在診斷擷取時提供 (RGB888，同尺寸)，平常傳 null，影像不會離開 C++ 記憶體。
      */
     public static void sendLandmarks(float[] normalizedXyz, int width, int height, int rotation,
-                                     float blinkLeft, float blinkRight, byte[] rgb) {
+                                     float blinkLeft, float blinkRight, float lookDown, byte[] rgb) {
         if (!sLibraryLoaded) return;
         try {
-            nativeSendLandmarks(normalizedXyz, width, height, rotation, blinkLeft, blinkRight, rgb);
+            nativeSendLandmarks(normalizedXyz, width, height, rotation, blinkLeft, blinkRight, lookDown, rgb);
         } catch (Throwable t) {
             Log.e(TAG, "nativeSendLandmarks failed: " + t.getMessage(), t);
         }
@@ -328,7 +328,7 @@ public class EfdNativeBridge {
     private static native void nativeSetSimulatedEyeOpenness(float openness);
     private static native void nativeSendFrame(byte[] frameData, int width, int height, int rotation);
     private static native void nativeSendLandmarks(float[] normalizedXyz, int width, int height, int rotation,
-                                                   float blinkLeft, float blinkRight, byte[] rgb);
+                                                   float blinkLeft, float blinkRight, float lookDown, byte[] rgb);
     private static native int nativeGetExtraRotation();
     private static native boolean nativeIsDebugCaptureRequested();
     private static native void nativePauseEngine();

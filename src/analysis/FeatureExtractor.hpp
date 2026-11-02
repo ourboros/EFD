@@ -27,9 +27,14 @@ public:
     // 處理手動輸入的 EAR 值 (用於測試與模擬串流)
     EyeMetrics processEar(float earLeft, float earRight, float fps = 30.0f);
 
-    // 設定 EAR 閉眼判斷閾值
+    // 設定 EAR 閉眼判斷閾值 (PERCLOS 用)
     void setEyeClosedThreshold(float threshold);
     float getEyeClosedThreshold() const;
+
+    // 眨眼判斷另用較寬的閾值 (模型偵測器：閉合 50% 即算眨眼，PERCLOS 則需 80%)；
+    // 負值代表與閉眼閾值相同 (啟發式偵測器沿用單一閾值)
+    void setBlinkThreshold(float threshold);
+    float getBlinkThreshold() const;
 
     // 取得窗口內 EAR 序列
     std::vector<float> getEarHistory() const;
@@ -49,11 +54,13 @@ public:
 private:
     struct Sample {
         float ear = 0.0f;
-        bool closed = false;
+        bool closed = false;        // PERCLOS 閉眼
+        bool blinkClosed = false;   // 眨眼判斷用的閉眼
         float durationMs = 0.0f;
     };
 
     float m_threshold = 0.21f;
+    float m_blinkThreshold = -1.0f;
     float m_windowMs = 60000.0f;
 
     std::deque<Sample> m_samples;

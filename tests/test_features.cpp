@@ -26,6 +26,7 @@
 #include "vision/FaceLandmarker.hpp"
 #include "vision/ExternalLandmarks.hpp"
 #include "vision/OnnxFaceLandmarker.hpp"
+#include "analysis/RollingOpenBaseline.hpp"
 #include "vision/CameraService.hpp"
 #include "vision/VisionPipeline.hpp"
 #include "vision/drivers/SyntheticCameraDriver.hpp"
@@ -1088,6 +1089,43 @@ void testOnnxFaceLandmarkerMatchesMediaPipe() {
 #endif
 }
 
+void testRollingOpenBaselineP80() {
+    std::cout << "[TEST] 36. 模型偵測器閉眼門檻：PERCLOS 用 P80、眨眼用 P50，睜眼基準跟隨最近 2 分鐘...";
+    efd::RollingOpenBaseline baseline(0.26f);
+    // 累積不足前沿用校準值：P80 = 0.05 + 0.2 x 0.21，P50 = 0.05 + 0.5 x 0.21
+    assert(std::abs(baseline.perclosThreshold() - 0.092f) < 1e-3f);
+    assert(std::abs(baseline.blinkThreshold() - 0.155f) < 1e-3f);
+
+    // 60 秒一般看螢幕 (EAR 0.25，5% 為眨眼谷底 0.06)：睜眼基準 0.25，眨眼不拉低基準
+    for (int i = 0; i < 600; ++i) baseline.add((i % 20 == 0) ? 0.06f : 0.25f, 0.1f);
+    assert(std::abs(baseline.openEar() - 0.25f) < 0.005f);
+    const float normalPerclosThr = baseline.perclosThreshold();
+    assert(normalPerclosThr > 0.085f && normalPerclosThr < 0.095f);
+
+    // 持續低頭 2.5 分鐘 (EAR 0.17)：基準跟著下降，低頭時的眼瞼位置不再被當成閉眼
+    for (int i = 0; i < 1500; ++i) baseline.add(0.17f, 0.1f);
+    assert(std::abs(baseline.openEar() - 0.17f) < 0.005f);
+    assert(baseline.perclosThreshold() < 0.17f * 0.5f);
+
+    // 眨眼與 PERCLOS 分開判斷：EAR 0.12 持續 200 ms 算一次眨眼，但未達 P80 不計入閉眼時間
+    efd::FeatureExtractor extractor(60.0f, 0.092f);
+    extractor.setBlinkThreshold(0.155f);
+    efd::EyeMetrics m;
+    for (int i = 0; i < 10; ++i) m = extractor.processEar(0.25f, 0.25f, 10.0f);
+    for (int i = 0; i < 2; ++i) m = extractor.processEar(0.12f, 0.12f, 10.0f);
+    assert(!m.isEyeClosed);
+    for (int i = 0; i < 3; ++i) m = extractor.processEar(0.25f, 0.25f, 10.0f);
+    assert(m.blinkCount == 1);
+    assert(m.perclos == 0.0f);
+    // 真正閉眼 (EAR 0.06) 才計入 PERCLOS
+    for (int i = 0; i < 5; ++i) m = extractor.processEar(0.06f, 0.06f, 10.0f);
+    assert(m.isEyeClosed && m.perclos > 0.0f);
+    // 未設定眨眼門檻時與閉眼門檻相同 (啟發式偵測器的舊行為)
+    extractor.setBlinkThreshold(-1.0f);
+    assert(extractor.getBlinkThreshold() == extractor.getEyeClosedThreshold());
+    std::cout << std::setprecision(3) << " [PASS] (一般看螢幕 P80 門檻 " << normalPerclosThr << "，低頭 2.5 分鐘後 " << baseline.perclosThreshold() << ")\n";
+}
+
 void testAdvanceWithoutObservationKeepsCooldown() {
     std::cout << "[TEST] 32. 相機關閉時只推進倒數：冷卻 20 分鐘與快篩 4+1 分鐘排程、不算離座...";
     efd::FatigueStateMachine fsm(1200, 300, 300);
@@ -1242,6 +1280,10 @@ void testEngineSuspendsCameraDuringCooldown() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     assert(engine.isCameraSuspended());
+    // 引擎先設定關閉旗標 (之後的幀不再分析) 再停止相機服務，稍等停止完成
+    for (int i = 0; i < 40 && engine.getCameraService().isRunning(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
     assert(!engine.getCameraService().isRunning());
 
     // 相機關閉期間：外部偵測結果被忽略，遙測仍每 0.5 秒更新冷卻倒數
@@ -1731,7 +1773,8 @@ int main() {
     testExternalLandmarksConversion();
     testEngineSuspendsCameraDuringCooldown();
     testOnnxFaceLandmarkerMatchesMediaPipe();
+    testRollingOpenBaselineP80();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 35 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 36 項測試順利通過！\n";
     return 0;
 }
