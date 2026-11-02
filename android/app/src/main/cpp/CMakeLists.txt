@@ -22,6 +22,7 @@ add_library(efd_jni SHARED
     ${EFD_ROOT_DIR}/src/analysis/AdaptiveBaseline.cpp
     ${EFD_ROOT_DIR}/src/state/FatigueStateMachine.cpp
     ${EFD_ROOT_DIR}/src/vision/FaceLandmarker.cpp
+    ${EFD_ROOT_DIR}/src/vision/ExternalLandmarks.cpp
     ${EFD_ROOT_DIR}/src/vision/CameraService.cpp
     ${EFD_ROOT_DIR}/src/vision/VisionPipeline.cpp
     ${EFD_ROOT_DIR}/src/vision/drivers/SyntheticCameraDriver.cpp

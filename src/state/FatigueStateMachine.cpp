@@ -215,6 +215,75 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
     return snapshot;
 }
 
+SystemState FatigueStateMachine::advanceWithoutObservation(float deltaSeconds) {
+    bool fireAlert = false;
+    float alertScore = 0.0f;
+    SystemState snapshot;
+    AlertCallback callback;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const float dt = std::max(0.0f, deltaSeconds);
+        m_severeHoldTimer = 0.0f;
+
+        if (m_cooldownState == CooldownState::InCooldown) {
+            m_cooldownTimer -= dt;
+            if (m_cooldownTimer <= 0.0f) {
+                m_cooldownTimer = 0.0f;
+                m_cooldownState = CooldownState::FastScreening;
+                m_screeningTimer = static_cast<float>(m_screeningInterval);
+                m_screeningScoreSum = 0.0f;
+                m_screeningSampleSeconds = 0.0f;
+            }
+        } else if (m_cooldownState == CooldownState::FastScreening) {
+            m_screeningTimer -= dt;
+            if (m_screeningTimer <= 0.0f) {
+                m_screeningTimer = 0.0f;
+                float avg = (m_screeningSampleSeconds > 0.0f)
+                    ? (m_screeningScoreSum / m_screeningSampleSeconds) : 0.0f;
+                if (m_screeningSampleSeconds > 0.0f && avg >= m_severeThreshold) {
+                    fireAlert = true;
+                    alertScore = avg;
+                    enterCooldownUnlocked();
+                } else if (m_screeningSampleSeconds > 0.0f && avg < kAttentionThreshold) {
+                    clearCooldownUnlocked();
+                } else {
+                    // 重置進入下一輪 5 分鐘快篩
+                    m_screeningTimer = static_cast<float>(m_screeningInterval);
+                    m_screeningScoreSum = 0.0f;
+                    m_screeningSampleSeconds = 0.0f;
+                }
+            }
+        }
+        snapshot = getStateUnlocked();
+        if (fireAlert) {
+            callback = m_alertCallback;
+        }
+    }
+
+    if (fireAlert && callback) {
+        callback(FatigueLevel::SevereWarning, alertScore, kAlertMessage);
+    }
+    return snapshot;
+}
+
+bool FatigueStateMachine::shouldCameraRun() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return shouldCameraRunUnlocked();
+}
+
+bool FatigueStateMachine::shouldCameraRunUnlocked() const {
+    if (m_cooldownState == CooldownState::InCooldown) {
+        return false;
+    }
+    if (m_cooldownState == CooldownState::FastScreening) {
+        // 在 5 分鐘快篩期中，僅在最後 60 秒 (窗口後端採樣) 需要啟動相機
+        const float sampleWindow = std::min(static_cast<float>(m_screeningInterval), kScreeningSampleSeconds);
+        return m_screeningTimer <= sampleWindow;
+    }
+    return true; // NormalTracking 需要相機
+}
+
 void FatigueStateMachine::setAlertCallback(AlertCallback cb) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_alertCallback = std::move(cb);
@@ -238,6 +307,7 @@ SystemState FatigueStateMachine::getStateUnlocked() const {
     state.studyDay = m_studyDay;
     state.isStudyLocked = m_isStudyLocked;
     state.userPresent = m_userPresent;
+    state.shouldCameraRun = shouldCameraRunUnlocked();
     state.timestamp = std::chrono::system_clock::now();
     return state;
 }

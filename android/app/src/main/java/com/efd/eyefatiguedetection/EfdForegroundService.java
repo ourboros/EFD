@@ -56,6 +56,10 @@ public class EfdForegroundService extends LifecycleService {
     private Runnable mTelemetryRunnable;
     private long mLastSyncCheckMs = 0L;
 
+    // 相機省電：螢幕關閉，或引擎要求關閉 (冷卻、快篩非採樣時段) 時暫停相機
+    private EfdScreenStateReceiver mScreenStateReceiver;
+    private boolean mScreenOn = true;
+
     private static EfdForegroundService sInstance = null;
 
     public static EfdForegroundService getInstance() {
@@ -93,6 +97,7 @@ public class EfdForegroundService extends LifecycleService {
 
         mCameraManager = new EfdCameraXManager(this, this);
         mCameraManager.startCamera();
+        registerScreenStateReceiver();
 
         scheduleNightlySyncAlarm();
 
@@ -119,6 +124,47 @@ public class EfdForegroundService extends LifecycleService {
             // 例如 Android 14+ 從背景 (開機廣播) 啟動相機類型前景服務
             Log.e(TAG, "startForeground 失敗: " + t.getMessage(), t);
             return false;
+        }
+    }
+
+    private void registerScreenStateReceiver() {
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        mScreenOn = pm == null || pm.isInteractive();
+        mScreenStateReceiver = new EfdScreenStateReceiver(new EfdScreenStateReceiver.Listener() {
+            @Override
+            public void onScreenOff() {
+                mScreenOn = false;
+                EfdNativeBridge.pauseEngine();
+                updateCameraPower();
+            }
+
+            @Override
+            public void onUserPresent() {
+                if (mScreenOn) return;
+                mScreenOn = true;
+                EfdNativeBridge.resumeEngine();
+                updateCameraPower();
+            }
+        });
+        try {
+            mScreenStateReceiver.register(this);
+        } catch (Throwable t) {
+            Log.w(TAG, "註冊螢幕開關監聽失敗: " + t.getMessage());
+        }
+        if (!mScreenOn) {
+            EfdNativeBridge.pauseEngine();
+            updateCameraPower();
+        }
+    }
+
+    /** 相機只在螢幕開啟、且引擎需要畫面 (非冷卻、非快篩等待) 時開啟。 */
+    private void updateCameraPower() {
+        if (mCameraManager == null) return;
+        boolean shouldRun = mScreenOn && !EfdNativeBridge.isCameraSuspended();
+        if (shouldRun && mCameraManager.isPowerPaused()) {
+            mCameraManager.resumeCamera();
+        } else if (!shouldRun && !mCameraManager.isPowerPaused()) {
+            mCameraManager.pauseCamera();
         }
     }
 
@@ -209,6 +255,8 @@ public class EfdForegroundService extends LifecycleService {
                         }
                     }
 
+                    updateCameraPower();
+
                     long now = System.currentTimeMillis();
                     if (now - mLastSyncCheckMs >= SYNC_CHECK_INTERVAL_MS) {
                         mLastSyncCheckMs = now;
@@ -243,6 +291,9 @@ public class EfdForegroundService extends LifecycleService {
         }
         if (mHandler != null && mTelemetryRunnable != null) {
             mHandler.removeCallbacks(mTelemetryRunnable);
+        }
+        if (mScreenStateReceiver != null) {
+            mScreenStateReceiver.unregister(this);
         }
         if (mCameraManager != null) {
             mCameraManager.stopCamera();

@@ -14,6 +14,7 @@
 #include "efd/version.hpp"
 #include "efd/types.hpp"
 #include "engine/AsyncPipelineEngine.hpp"
+#include "vision/ExternalLandmarks.hpp"
 
 #define TAG "EFD_Native_JNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -39,6 +40,11 @@ static std::atomic<bool> g_debugCaptureRequested{false};
 static std::vector<uint8_t> g_debugRgb;
 static std::string g_debugInfoJson;
 static std::mutex g_debugMutex;
+
+// Java 端 MediaPipe 偵測：送進來的是特徵點而非影像 (只在相機執行緒呼叫)
+static std::atomic<bool> g_externalDetector{false};
+static efd::ExternalPresenceFilter g_presenceFilter;
+static std::atomic<bool> g_presenceFilterResetRequested{false};  // 其他執行緒要求重置，由相機執行緒執行
 
 // -----------------------------------------------------------------------------
 // 自動畫面方向：部分手機 (例如三星 A71) 由背景服務開相機時，CameraX 回報的旋轉角與實際不符，
@@ -268,8 +274,12 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
             LOGI("配置 C++ NDK 內部持久化儲存路徑: %s", pathStr.c_str());
         }
         loadOrientationLock(pathStr);
+        g_presenceFilterResetRequested.store(true);
         // Android 的每日上傳由 Java EfdSyncManager 統一負責，關閉 C++ 端避免重複上傳
         engine->setAutoNightlySyncEnabled(false);
+        // 冷卻與快篩非採樣時段關閉相機 (前景服務依 cameraSuspended 開關 CameraX，引擎不自行開啟模擬相機)
+        engine->setCameraPowerSaving(true);
+        engine->setExternalCameraControl(true);
 
         engine->setAlertCallback([](efd::FatigueLevel level, float score, const std::string& msg) {
             std::lock_guard<std::mutex> alertLock(g_alertMutex);
@@ -280,7 +290,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
         });
 
         engine->setTelemetryCallback([](const efd::EngineTelemetry& telemetry) {
-            if (!telemetry.latestFrame.isSynthetic) {
+            // 相機關閉期間沒有畫面，不可當成「這個方向找不到臉」
+            if (!telemetry.latestFrame.isSynthetic && !telemetry.cameraSuspended) {
                 const auto& pd = telemetry.presenceDiagnostic;
                 updateOrientationSearch(pd.rawPersonInFrame && pd.rawFacingCamera && !pd.presenceByTracking,
                                         telemetry.detection.hasFace);
@@ -311,6 +322,10 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
             slim.latestFrame.isSynthetic = telemetry.latestFrame.isSynthetic;
             slim.presenceDiagnostic = telemetry.presenceDiagnostic;
             slim.detection.hasFace = telemetry.detection.hasFace;
+            slim.detection.landmarksMeasured = telemetry.detection.landmarksMeasured;
+            slim.detection.eyeBlinkLeft = telemetry.detection.eyeBlinkLeft;
+            slim.detection.eyeBlinkRight = telemetry.detection.eyeBlinkRight;
+            slim.cameraSuspended = telemetry.cameraSuspended;
             slim.eyeMetrics = telemetry.eyeMetrics;
             slim.complexityMetrics = telemetry.complexityMetrics;
             slim.systemState = telemetry.systemState;
@@ -454,6 +469,89 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
     engine->getCameraService().onDriverFrame(frame);
 }
 
+// Java 端 MediaPipe 已完成偵測：送入 0~1 正規化特徵點 (沒有臉時為 null)，由 C++ 換算成像素並交給訊號執行緒
+// width / height 為 MediaPipe 實際分析 (已轉正) 的畫面尺寸；rgb 只在診斷擷取時提供 (RGB888，同尺寸)
+JNIEXPORT void JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendLandmarks(JNIEnv* env, jclass /*clazz*/, jfloatArray normalizedXyz,
+                                                                    jint width, jint height, jint rotation,
+                                                                    jfloat blinkLeft, jfloat blinkRight, jbyteArray rgb) {
+    auto engine = currentEngine();
+    if (!engine || width <= 0 || height <= 0) return;
+
+    g_externalDetector.store(true);
+    engine->getCameraService().stopSyntheticIfRunning();
+    g_lastReportedRotation.store((rotation % 360 + 360) % 360);
+    g_lastSensorWidth.store(width);
+    g_lastSensorHeight.store(height);
+
+    std::vector<float> xyz;
+    if (normalizedXyz) {
+        const jsize len = env->GetArrayLength(normalizedXyz);
+        xyz.resize(static_cast<size_t>(len));
+        env->GetFloatArrayRegion(normalizedXyz, 0, len, xyz.data());
+    }
+    efd::LandmarkDetectionResult detection = efd::buildExternalDetection(
+        xyz.empty() ? nullptr : xyz.data(), xyz.size() / 3, width, height, blinkLeft, blinkRight);
+
+    const int64_t now = steadyNowMsJni();
+    if (g_presenceFilterResetRequested.exchange(false)) g_presenceFilter.reset();
+    if (!g_presenceFilter.shouldSubmit(detection.hasFace, now)) return;
+
+    efd::PresenceDiagnostic diagnostic = efd::buildExternalDiagnostic(detection, width, height);
+    efd::RawFrame frameInfo;
+    frameInfo.width = width;
+    frameInfo.height = height;
+    frameInfo.channels = 3;
+    frameInfo.format = efd::PixelFormat::RGB888;
+    frameInfo.isSynthetic = false;
+    frameInfo.timestampMs = now;
+    if (rgb) {
+        const jsize len = env->GetArrayLength(rgb);
+        if (static_cast<size_t>(len) == static_cast<size_t>(width) * height * 3) {
+            frameInfo.data.resize(static_cast<size_t>(len));
+            env->GetByteArrayRegion(rgb, 0, len, reinterpret_cast<jbyte*>(frameInfo.data.data()));
+        }
+    }
+    engine->submitExternalDetection(std::move(frameInfo), std::move(detection), std::move(diagnostic));
+}
+
+// 自動畫面方向搜尋目前要額外旋轉的角度 (0 / 90 / 270)，MediaPipe 路徑在 Java 端旋轉畫面時使用
+JNIEXPORT jint JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetExtraRotation(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return static_cast<jint>(g_orientationOffset.load());
+}
+
+// 是否有待處理的診斷擷取 (Java 端只在此時把畫面像素一併送入，平常只送特徵點)
+JNIEXPORT jboolean JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeIsDebugCaptureRequested(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return g_debugCaptureRequested.load() ? JNI_TRUE : JNI_FALSE;
+}
+
+// 螢幕關閉：暫停引擎 (期間視同離座，滿 5 分鐘清除冷卻)；螢幕開啟後恢復
+JNIEXPORT void JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativePauseEngine(JNIEnv* /*env*/, jclass /*clazz*/) {
+    if (auto engine = currentEngine()) {
+        engine->pause();
+        LOGI("螢幕關閉，暫停偵測引擎");
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeResumeEngine(JNIEnv* /*env*/, jclass /*clazz*/) {
+    if (auto engine = currentEngine()) {
+        g_presenceFilterResetRequested.store(true);
+        engine->resume();
+        LOGI("螢幕開啟，恢復偵測引擎");
+    }
+}
+
+// 相機是否因冷卻或快篩非採樣時段而應關閉
+JNIEXPORT jboolean JNICALL
+Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeIsCameraSuspended(JNIEnv* /*env*/, jclass /*clazz*/) {
+    auto engine = currentEngine();
+    return (engine && engine->isCameraSuspended()) ? JNI_TRUE : JNI_FALSE;
+}
+
 // 讀取最新狀態 (不會清除警報，Activity 與 Service 可同時呼叫)
 JNIEXPORT jstring JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* env, jobject /*thiz*/) {
@@ -498,7 +596,10 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetTelemetryJson(JNIEnv* 
         << "\"stale\":" << (isStale ? "true" : "false") << ","
         << "\"synthetic\":" << (telemetry.latestFrame.isSynthetic ? "true" : "false") << ","
         << "\"frameW\":" << telemetry.latestFrame.width << ","
-        << "\"frameH\":" << telemetry.latestFrame.height << ",";
+        << "\"frameH\":" << telemetry.latestFrame.height << ","
+        << "\"cameraSuspended\":" << (telemetry.cameraSuspended ? "true" : "false") << ","
+        << "\"detector\":\"" << (g_externalDetector.load() ? "mediapipe" : "heuristic") << "\","
+        << "\"eyeBlink\":[" << telemetry.detection.eyeBlinkLeft << "," << telemetry.detection.eyeBlinkRight << "],";
     size_t calibSamples = 0;
     size_t calibFrames = 0;
     engine->getCalibrationProgress(calibSamples, calibFrames);

@@ -1,6 +1,9 @@
 package com.efd.eyefatiguedetection;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Matrix;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.Size;
 
@@ -15,6 +18,7 @@ import androidx.lifecycle.LifecycleOwner;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
+import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,11 +26,27 @@ import java.util.concurrent.Executors;
 public class EfdCameraXManager {
     private static final String TAG = "EFD_CameraXManager";
 
+    // 分析頻率上限 15 FPS：每 67 ms 一張仍能抓到一般 100~400 ms 的眨眼，耗電約為 30 FPS 的一半
+    private static final long MIN_FRAME_INTERVAL_MS = 66;
+    private static final long INFERENCE_LOG_INTERVAL_MS = 30_000;
+
     private final Context mContext;
     private final LifecycleOwner mLifecycleOwner;
     private ExecutorService mCameraExecutor;
     private ProcessCameraProvider mCameraProvider;
     private boolean mIsRunning = false;
+
+    // MediaPipe 偵測器 (只在相機執行緒存取)；載入失敗時為 null，改送 NV21 給 C++ 啟發式偵測
+    private EfdFaceLandmarkerHelper mFaceLandmarker;
+    private boolean mFaceLandmarkerTried = false;
+    private long mLastAnalyzedMs = 0;
+    private long mInferenceSumMs = 0;
+    private int mInferenceCount = 0;
+    private long mLastInferenceLogMs = 0;
+
+    // 省電暫停 (螢幕關閉、冷卻或快篩非採樣時段)：暫停期間的開啟要求只記住預覽畫面，恢復時再綁定
+    private boolean mPowerPaused = false;
+    @Nullable private WeakReference<androidx.camera.view.PreviewView> mPreviewView;
 
     public EfdCameraXManager(@NonNull Context context, @NonNull LifecycleOwner lifecycleOwner) {
         this.mContext = context.getApplicationContext();
@@ -39,17 +59,58 @@ public class EfdCameraXManager {
     }
 
     public void startCameraWithPreview(@Nullable androidx.camera.view.PreviewView previewView) {
+        mPreviewView = (previewView != null) ? new WeakReference<>(previewView) : null;
+        if (mPowerPaused) {
+            Log.i(TAG, "相機省電暫停中，恢復時再開啟");
+            return;
+        }
+        bindWithProvider(previewView);
+    }
+
+    private void bindWithProvider(@Nullable androidx.camera.view.PreviewView previewView) {
         ListenableFuture<ProcessCameraProvider> future = ProcessCameraProvider.getInstance(mContext);
         future.addListener(() -> {
             try {
                 mCameraProvider = future.get();
+                if (mPowerPaused) return;
                 bindCombinedUseCases(previewView);
                 mIsRunning = true;
-                Log.i(TAG, "CameraX 前置鏡頭全彩 NV21 串流與即時預覽雙合一綁定成功 (30 FPS)");
+                Log.i(TAG, "CameraX 前置鏡頭影像分析" + (previewView != null ? "與預覽" : "") + "綁定成功");
             } catch (Throwable t) {
                 Log.e(TAG, "開啟 CameraX 失敗: " + t.getMessage(), t);
             }
         }, ContextCompat.getMainExecutor(mContext));
+    }
+
+    /** 省電暫停：解除相機綁定 (保留分析執行緒與 MediaPipe 模型，恢復時不必重新載入)。 */
+    public void pauseCamera() {
+        if (mPowerPaused) return;
+        mPowerPaused = true;
+        mIsRunning = false;
+        try {
+            if (mCameraProvider != null) {
+                mCameraProvider.unbindAll();
+            }
+            Log.i(TAG, "相機省電暫停");
+        } catch (Throwable t) {
+            Log.w(TAG, "暫停相機失敗: " + t.getMessage());
+        }
+    }
+
+    /** 從省電暫停恢復：沿用暫停前 (或暫停期間要求) 的預覽畫面。 */
+    public void resumeCamera() {
+        if (!mPowerPaused) return;
+        mPowerPaused = false;
+        androidx.camera.view.PreviewView preview = (mPreviewView != null) ? mPreviewView.get() : null;
+        if (preview != null && !preview.isAttachedToWindow()) {
+            preview = null;
+        }
+        Log.i(TAG, "相機從省電暫停恢復");
+        bindWithProvider(preview);
+    }
+
+    public boolean isPowerPaused() {
+        return mPowerPaused;
     }
 
     private void bindCombinedUseCases(@Nullable androidx.camera.view.PreviewView previewView) {
@@ -71,12 +132,21 @@ public class EfdCameraXManager {
             @Override
             public void analyze(@NonNull ImageProxy image) {
                 try {
-                    byte[] nv21 = imageToNv21(image);
-                    int width = image.getWidth();
-                    int height = image.getHeight();
-                    int rotation = image.getImageInfo().getRotationDegrees();
+                    long now = SystemClock.elapsedRealtime();
+                    if (now - mLastAnalyzedMs < MIN_FRAME_INTERVAL_MS) return;
+                    mLastAnalyzedMs = now;
 
-                    EfdNativeBridge.sendFrame(nv21, width, height, rotation);
+                    if (!mFaceLandmarkerTried) {
+                        mFaceLandmarkerTried = true;
+                        mFaceLandmarker = EfdFaceLandmarkerHelper.create(mContext);
+                    }
+                    if (mFaceLandmarker != null) {
+                        analyzeWithMediaPipe(image);
+                    } else {
+                        byte[] nv21 = imageToNv21(image);
+                        EfdNativeBridge.sendFrame(nv21, image.getWidth(), image.getHeight(),
+                                image.getImageInfo().getRotationDegrees());
+                    }
                 } catch (Throwable t) {
                     Log.w(TAG, "Frame processing error: " + t.getMessage());
                 } finally {
@@ -98,6 +168,63 @@ public class EfdCameraXManager {
         } catch (Throwable t) {
             Log.e(TAG, "Bind CameraX to lifecycle failed: " + t.getMessage(), t);
         }
+    }
+
+    /**
+     * MediaPipe 路徑：轉正畫面 → 偵測 478 點 → 只把特徵點送給 C++ (影像不離開這個函式)。
+     * 轉正角度 = CameraX 回報角度 + C++ 自動方向搜尋的額外角度 (部分手機在背景服務回報的角度不正確)。
+     */
+    private void analyzeWithMediaPipe(@NonNull ImageProxy image) {
+        int reported = image.getImageInfo().getRotationDegrees();
+        int rotation = (reported + EfdNativeBridge.getExtraRotation()) % 360;
+        Bitmap frame = image.toBitmap();
+        Bitmap upright = frame;
+        if (rotation != 0) {
+            Matrix matrix = new Matrix();
+            matrix.postRotate(rotation);
+            upright = Bitmap.createBitmap(frame, 0, 0, frame.getWidth(), frame.getHeight(), matrix, true);
+            frame.recycle();
+        }
+        try {
+            EfdFaceLandmarkerHelper.Result result = mFaceLandmarker.detect(upright);
+            byte[] rgb = EfdNativeBridge.isDebugCaptureRequested() ? bitmapToRgb(upright) : null;
+            EfdNativeBridge.sendLandmarks(result.normalizedXyz, upright.getWidth(), upright.getHeight(), reported,
+                    result.blinkLeft, result.blinkRight, rgb);
+            logInferenceTime(result.inferenceMs);
+        } finally {
+            upright.recycle();
+        }
+    }
+
+    // 每 30 秒記錄平均推論時間，供耗電與發熱評估
+    private void logInferenceTime(long inferenceMs) {
+        mInferenceSumMs += inferenceMs;
+        mInferenceCount++;
+        long now = SystemClock.elapsedRealtime();
+        if (mLastInferenceLogMs == 0) mLastInferenceLogMs = now;
+        if (now - mLastInferenceLogMs >= INFERENCE_LOG_INTERVAL_MS) {
+            Log.i(TAG, String.format(java.util.Locale.US, "MediaPipe 平均推論 %.1f ms (%d 幀 / %.0f 秒)",
+                    (double) mInferenceSumMs / mInferenceCount, mInferenceCount, (now - mLastInferenceLogMs) / 1000.0));
+            mInferenceSumMs = 0;
+            mInferenceCount = 0;
+            mLastInferenceLogMs = now;
+        }
+    }
+
+    // 診斷擷取用：ARGB 像素轉成 C++ 使用的 RGB888
+    private static byte[] bitmapToRgb(@NonNull Bitmap bitmap) {
+        int w = bitmap.getWidth();
+        int h = bitmap.getHeight();
+        int[] argb = new int[w * h];
+        bitmap.getPixels(argb, 0, w, 0, 0, w, h);
+        byte[] rgb = new byte[w * h * 3];
+        for (int i = 0; i < argb.length; i++) {
+            int c = argb[i];
+            rgb[i * 3] = (byte) ((c >> 16) & 0xFF);
+            rgb[i * 3 + 1] = (byte) ((c >> 8) & 0xFF);
+            rgb[i * 3 + 2] = (byte) (c & 0xFF);
+        }
+        return rgb;
     }
 
     /**
@@ -190,7 +317,14 @@ public class EfdCameraXManager {
         }
         try {
             if (mCameraExecutor != null && !mCameraExecutor.isShutdown()) {
-                mCameraExecutor.shutdownNow();
+                // 模型只在相機執行緒使用，排在最後關閉，等進行中的分析完成
+                mCameraExecutor.execute(() -> {
+                    if (mFaceLandmarker != null) {
+                        mFaceLandmarker.close();
+                        mFaceLandmarker = null;
+                    }
+                });
+                mCameraExecutor.shutdown();
             }
         } catch (Throwable t) {
             Log.w(TAG, "Error shutting down executor: " + t.getMessage());

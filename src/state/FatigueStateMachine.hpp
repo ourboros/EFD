@@ -23,6 +23,8 @@ public:
     static constexpr float kAttentionThreshold = 45.0f;
     static constexpr float kSevereHoldSeconds = 10.0f;
     static constexpr float kSmoothingTauSeconds = 60.0f;
+    // 快篩窗口後端採樣時間 (最後 60 秒)：5 分鐘快篩期間，前 4 分鐘相機關閉休眠，最後 1 分鐘啟動相機採樣
+    static constexpr float kScreeningSampleSeconds = 60.0f;
 
     static constexpr int kSensitivityLow = 0;
     static constexpr int kSensitivityStandard = 1;
@@ -41,11 +43,18 @@ public:
     // 每次特徵更新時呼叫 (deltaSeconds 為距上次呼叫的真實經過時間)
     SystemState update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds = 1.0f);
 
+    // 冷卻期間相機關閉、無法觀察使用者時呼叫：只推進冷卻倒數，不累計離座時間
+    // (看不到使用者，不能當成已休息而清除冷卻)；冷卻期滿照常進入快篩
+    SystemState advanceWithoutObservation(float deltaSeconds);
+
     // 註冊警報通知回呼函式 (於呼叫 update 的執行緒觸發，且不持有內部鎖)
     void setAlertCallback(AlertCallback cb);
 
     // 取得當前系統完整狀態
     SystemState getState() const;
+
+    // 查詢當前狀態是否需要開啟攝影機 (節能與降溫調度：冷卻與快篩非採樣間隔回傳 false)
+    bool shouldCameraRun() const;
 
     // 手動重置狀態機
     void reset();
@@ -67,6 +76,7 @@ public:
 
 private:
     SystemState getStateUnlocked() const;
+    bool shouldCameraRunUnlocked() const;
     void enterCooldownUnlocked();
     void clearCooldownUnlocked();
 

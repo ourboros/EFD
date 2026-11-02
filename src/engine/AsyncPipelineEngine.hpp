@@ -21,6 +21,7 @@
 #include <thread>
 #include <atomic>
 #include <functional>
+#include <chrono>
 
 namespace efd {
 
@@ -32,6 +33,8 @@ struct EngineTelemetry {
     ComplexityMetrics complexityMetrics;
     SystemState systemState;
     float currentThreshold = 0.21f;
+    // 冷卻期間相機已關閉 (此時沒有影像與偵測結果，只有冷卻倒數)
+    bool cameraSuspended = false;
     float measuredFps = 30.0f;
     int64_t totalFramesProcessed = 0;
     std::string lifecycleSummary;
@@ -74,6 +77,7 @@ public:
     // 查詢狀態
     bool isRunning() const;
     bool isPaused() const;
+    bool isCameraSleeping() const { return isCameraSuspended(); }
 
     // 註冊即時遙測回呼 (UI Thread 安全接收)
     void setTelemetryCallback(TelemetryCallback callback);
@@ -108,6 +112,18 @@ public:
     // frameInfo 只需填寫寬高與時間戳 (可不含像素)；暫停中或未啟動時忽略
     void submitExternalDetection(RawFrame frameInfo, LandmarkDetectionResult detection,
                                  PresenceDiagnostic diagnostic = {});
+
+    // 相機省電 (預設關閉，由平台開啟)：依狀態機 shouldCameraRun 開關相機
+    // - 提醒後 20 分鐘冷卻：相機關閉
+    // - 冷卻後每輪 5 分鐘快篩：前 4 分鐘關閉，最後 1 分鐘開啟採樣
+    // 相機關閉時看不到使用者：倒數照常進行，但不算離座 (不能當成已休息而清除冷卻)
+    // 引擎擁有相機的平台 (Windows) 由引擎直接開關；Android 由前景服務依 isCameraSuspended() 開關 CameraX
+    void setCameraPowerSaving(bool enabled);
+    bool isCameraSuspended() const;
+
+    // 相機由平台層開關 (Android CameraX)：恢復時引擎不啟動 CameraService
+    // (Android 的 CameraService 找不到原生相機會改用模擬相機，模擬畫面會混進快篩採樣)
+    void setExternalCameraControl(bool external);
 
     // 執行手動觸發當日眼動數據落盤與雲端同步
     bool triggerManualDataSync();
@@ -154,6 +170,7 @@ private:
     std::atomic<bool> m_isRunning{false};
     std::atomic<bool> m_isPaused{false};
 
+
     // Thread 2: 視覺推論執行緒
     std::thread m_inferenceThread;
     // Thread 3: 訊號與複雜度計算執行緒
@@ -198,12 +215,23 @@ private:
     float m_persistTimer = 0.0f;
     float m_syncCheckTimer = 0.0f;
 
+    // 相機省電 (只由訊號執行緒切換相機狀態)
+    std::atomic<bool> m_cameraPowerSaving{false};
+    std::atomic<bool> m_externalCameraControl{false};
+    std::atomic<bool> m_cameraSuspended{false};
+    std::chrono::steady_clock::time_point m_lastSuspendedTick{};
+
     void inferenceWorkerLoop();
     void signalProcessingWorkerLoop();
     void handleLifecycleEvent(const LifecycleEvent& event);
     void restoreFromStorage();
     void persistStateMachine();
     void updateComplexityUnlocked();
+    void suspendCamera();
+    void resumeCamera();
+    void tickWhileCameraSuspended();
+    void publishTelemetry(InferencePackage& package, const EyeMetrics& eyeMetrics, const ComplexityMetrics& complexity,
+                          const SystemState& state, float currentThreshold, int64_t count);
 };
 
 } // namespace efd

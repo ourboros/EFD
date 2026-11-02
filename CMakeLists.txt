@@ -56,6 +56,7 @@ set(EFD_CORE_HEADERS
     src/vision/RawFrame.hpp
     src/vision/ILandmarkDetector.hpp
     src/vision/FaceLandmarker.hpp
+    src/vision/ExternalLandmarks.hpp
     src/vision/CameraService.hpp
     src/vision/VisionPipeline.hpp
     src/vision/drivers/ICameraDriver.hpp
@@ -79,6 +80,7 @@ set(EFD_CORE_SOURCES
     src/analysis/AdaptiveBaseline.cpp
     src/state/FatigueStateMachine.cpp
     src/vision/FaceLandmarker.cpp
+    src/vision/ExternalLandmarks.cpp
     src/vision/CameraService.cpp
     src/vision/VisionPipeline.cpp
     src/vision/drivers/SyntheticCameraDriver.cpp

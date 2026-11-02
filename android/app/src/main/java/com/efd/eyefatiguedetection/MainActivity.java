@@ -75,7 +75,6 @@ public class MainActivity extends AppCompatActivity {
     private float mLastThreshold = 0.0f;
     private boolean mLastCalibrationOk = false;
     private boolean mIsResumed = false;
-    private EfdScreenStateReceiver mScreenStateReceiver;
 
     private static final String CHANNEL_ID = "efd_fatigue_alerts";
     private static final int PERMISSION_REQ_CODE = 1001;
@@ -107,13 +106,7 @@ public class MainActivity extends AppCompatActivity {
         // 4. 延遲 500ms 請求權限，避免阻礙主視窗渲染啟動
         mHandler.postDelayed(this::requestAppPermissions, 500);
 
-        // 5. 註冊螢幕鎖屏與解鎖廣播監聽器
-        try {
-            mScreenStateReceiver = new EfdScreenStateReceiver();
-            mScreenStateReceiver.register(this);
-        } catch (Throwable t) {
-            Log.w(TAG, "Failed to register screen state receiver: " + t.getMessage());
-        }
+        // 5. 螢幕鎖屏與解鎖由前景服務監聽 (App 介面被劃掉後仍需暫停相機省電)
 
         // 5.5 已有相機權限時立即啟動前景監控服務 (否則等權限授予後再啟動)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -1315,9 +1308,30 @@ public class MainActivity extends AppCompatActivity {
                         int blinkRate = obj.optInt("blinkRate", 0);
                         float complexityCI = (float) obj.optDouble("complexityCI", 0.0);
 
+                        // 冷卻或快篩非採樣時段相機關閉：沒有畫面不是離座，改顯示何時重新開啟
+                        boolean cameraSuspended = obj.optBoolean("cameraSuspended", false);
+                        if (cameraSuspended) mNoFaceSinceMs = 0;
+
                         mLastTelemetryJson = obj.toString();
                         if (mCurrentStage == UIStage.MainDashboard && mDashScoreText != null) {
-                            if (!hasFace) {
+                            if (cameraSuspended) {
+                                if (cooldownState == 1) {
+                                    mDashStatusText.setText(String.format(java.util.Locale.getDefault(),
+                                            "提醒冷卻中，相機暫停以省電（剩餘 %d分%d秒）", cooldownRemaining / 60, cooldownRemaining % 60));
+                                } else {
+                                    int untilSample = Math.max(0, obj.optInt("screeningRemaining", 0) - 60);
+                                    mDashStatusText.setText(String.format(java.util.Locale.getDefault(),
+                                            "冷卻後快篩：相機將在 %d分%d秒後開啟採樣 1 分鐘", untilSample / 60, untilSample % 60));
+                                }
+                                mDashStatusText.setTextColor(Color.parseColor("#C98A12"));
+                                mDashScoreText.setText(String.format(java.util.Locale.getDefault(),
+                                        "疲勞評分：%.1f（相機關閉前）", mCurrentScore));
+                                mDashMetricsText.setText("相機已關閉，不分析任何畫面");
+                                mDashEarValue.setText("--");
+                                mDashPerclosValue.setText("相機休眠");
+                                mDashCiValue.setText("--");
+                                mDashScoreValue.setText(String.format(java.util.Locale.getDefault(), "%.1f", mCurrentScore));
+                            } else if (!hasFace) {
                                 // 顯示未偵測到臉的原因、相機畫面與臉框尺寸，只看截圖也能判斷是太大、太小或其他原因
                                 mDashStatusText.setText("未偵測到臉：" + presenceReasonText(obj));
                                 mDashStatusText.setTextColor(Color.parseColor(C_CORAL));
@@ -1387,6 +1401,7 @@ public class MainActivity extends AppCompatActivity {
             case "fill":     return "臉部區域不連續（可能有遮擋或強烈陰影）";
             case "eyes":     return "找不到眼睛特徵（請正視鏡頭、避免反光或太暗）";
             case "symmetry": return "臉偏向一側（請正對鏡頭）";
+            case "model":    return "沒有偵測到臉部（請正對鏡頭、讓整張臉在畫面中）";
             default:         return "臉部追蹤中斷（請保持臉部穩定）";
         }
     }
@@ -1635,13 +1650,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (mScreenStateReceiver != null) {
-            try {
-                mScreenStateReceiver.unregister(this);
-            } catch (Throwable t) {
-                // ignore
-            }
-        }
         if (mHandler != null && mTelemetryRunnable != null) {
             mHandler.removeCallbacks(mTelemetryRunnable);
         }

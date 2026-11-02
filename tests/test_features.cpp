@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <tuple>
+#include <limits>
 
 #include "efd/types.hpp"
 #include "analysis/FeatureExtractor.hpp"
@@ -18,6 +19,7 @@
 #include "state/FatigueStateMachine.hpp"
 #include "vision/RawFrame.hpp"
 #include "vision/FaceLandmarker.hpp"
+#include "vision/ExternalLandmarks.hpp"
 #include "vision/CameraService.hpp"
 #include "vision/VisionPipeline.hpp"
 #include "vision/drivers/SyntheticCameraDriver.hpp"
@@ -1014,6 +1016,232 @@ void testLandmarkDetectorInjectionAndExternalDetection() {
     std::cout << " [PASS] (外部遞交 " << externalWhileRunning << " 幀，相機影格改由注入的偵測器處理)\n";
 }
 
+void testAdvanceWithoutObservationKeepsCooldown() {
+    std::cout << "[TEST] 32. 相機關閉時只推進倒數：冷卻 20 分鐘與快篩 4+1 分鐘排程、不算離座...";
+    efd::FatigueStateMachine fsm(1200, 300, 300);
+    int alertCount = 0;
+    fsm.setAlertCallback([&](efd::FatigueLevel, float, const std::string&) { alertCount++; });
+    efd::SystemState s;
+    assert(feedFsm(fsm, kSevereInput, 150, alertCount, &s) == 1);
+    assert(s.cooldownState == efd::CooldownState::InCooldown);
+    const float scoreAtAlert = s.smoothedFatigueScore;
+
+    // 10 分鐘看不到使用者：若當成離座，5 分鐘就會清除冷卻並把分數歸零
+    for (int i = 0; i < 1200; ++i) s = fsm.advanceWithoutObservation(0.5f);
+    assert(s.cooldownState == efd::CooldownState::InCooldown);
+    assert(s.awaySeconds == 0);
+    assert(s.smoothedFatigueScore == scoreAtAlert);
+    assert(s.cooldownRemainingSeconds > 0 && s.cooldownRemainingSeconds <= 600);
+
+    assert(!s.shouldCameraRun);
+
+    // 冷卻期滿進入快篩 (不是回到常態追蹤)
+    while (s.cooldownState == efd::CooldownState::InCooldown) s = fsm.advanceWithoutObservation(0.5f);
+    assert(s.cooldownState == efd::CooldownState::FastScreening);
+    assert(s.screeningRemainingSeconds == 300);
+
+    // 快篩 5 分鐘：前 4 分鐘相機關閉，最後 1 分鐘開啟採樣
+    for (int i = 0; i < 470; ++i) s = fsm.advanceWithoutObservation(0.5f);   // 經過 235 秒
+    assert(!s.shouldCameraRun && !fsm.shouldCameraRun());
+    for (int i = 0; i < 20; ++i) s = fsm.advanceWithoutObservation(0.5f);    // 經過 245 秒
+    assert(s.shouldCameraRun && fsm.shouldCameraRun());
+
+    // 採樣時段完全沒有樣本 (例如相機沒開成)：不提醒、不清除，再快篩一輪
+    for (int i = 0; i < 120; ++i) s = fsm.advanceWithoutObservation(0.5f);
+    assert(s.cooldownState == efd::CooldownState::FastScreening);
+    assert(!s.shouldCameraRun);
+    assert(alertCount == 1);
+
+    // 採樣時段持續疲勞 -> 再次提醒並重新冷卻；採樣時段清醒 -> 回到常態追蹤
+    while (!s.shouldCameraRun) s = fsm.advanceWithoutObservation(0.5f);
+    assert(feedFsm(fsm, kSevereInput, 60, alertCount, &s) == 1);
+    assert(s.cooldownState == efd::CooldownState::InCooldown);
+    while (s.cooldownState == efd::CooldownState::InCooldown) s = fsm.advanceWithoutObservation(0.5f);
+    while (!s.shouldCameraRun) s = fsm.advanceWithoutObservation(0.5f);
+    feedFsm(fsm, kRelaxedInput, 60, alertCount, &s);
+    assert(s.cooldownState == efd::CooldownState::NormalTracking);
+    assert(s.shouldCameraRun);
+
+    // 常態追蹤中呼叫不改變狀態，相機持續開啟
+    efd::FatigueStateMachine idle(1200, 300, 300);
+    efd::SystemState idleState = idle.advanceWithoutObservation(5.0f);
+    assert(idleState.cooldownState == efd::CooldownState::NormalTracking && idleState.shouldCameraRun);
+    std::cout << " [PASS] (冷卻 20 分關閉、快篩前 4 分關閉 / 最後 1 分採樣)\n";
+}
+
+void testExternalLandmarksConversion() {
+    std::cout << "[TEST] 33. MediaPipe 正規化座標換算成像素後 EAR 不失真、臉部短暫遺失 1 秒內不判定離座...";
+    // 直向 480x640 畫面中，一隻寬 60、高 18 像素的眼睛：EAR = (18 + 18) / (2 x 60) = 0.30
+    const int w = 480, h = 640;
+    std::vector<float> xyz(efd::kMediaPipeLandmarkCount * 3, 0.5f);
+    auto setPoint = [&](int idx, float px, float py) {
+        xyz[idx * 3 + 0] = px / w;
+        xyz[idx * 3 + 1] = py / h;
+        xyz[idx * 3 + 2] = 0.0f;
+    };
+    for (const auto* eye : {&efd::EyeLandmarkIndices::LEFT_EYE, &efd::EyeLandmarkIndices::RIGHT_EYE}) {
+        const float cx = (eye == &efd::EyeLandmarkIndices::LEFT_EYE) ? 180.0f : 300.0f, cy = 250.0f;
+        setPoint((*eye)[0], cx - 30.0f, cy);        // p1 眼角
+        setPoint((*eye)[1], cx - 15.0f, cy - 9.0f); // p2
+        setPoint((*eye)[2], cx + 15.0f, cy - 9.0f); // p3
+        setPoint((*eye)[3], cx + 30.0f, cy);        // p4 眼角
+        setPoint((*eye)[4], cx + 15.0f, cy + 9.0f); // p5
+        setPoint((*eye)[5], cx - 15.0f, cy + 9.0f); // p6
+    }
+
+    efd::LandmarkDetectionResult det = efd::buildExternalDetection(xyz.data(), efd::kMediaPipeLandmarkCount, w, h, 0.1f, 0.3f);
+    assert(det.hasFace && det.landmarksMeasured);
+    assert(det.landmarks.size() == efd::kMediaPipeLandmarkCount);
+    efd::FeatureExtractor extractor(60.0f, 0.21f);
+    efd::EyeMetrics m = extractor.processFrame(det.landmarks, 15.0f);
+    assert(std::abs(m.earLeft - 0.30f) < 0.001f && std::abs(m.earRight - 0.30f) < 0.001f);
+
+    // 若直接用正規化座標，同一隻眼睛的 EAR 會被算成 0.225
+    efd::LandmarkDetectionResult raw = efd::buildExternalDetection(xyz.data(), efd::kMediaPipeLandmarkCount, 1, 1);
+    efd::FeatureExtractor rawExtractor(60.0f, 0.21f);
+    assert(std::abs(rawExtractor.processFrame(raw.landmarks, 15.0f).earLeft - 0.225f) < 0.001f);
+
+    efd::PresenceDiagnostic diag = efd::buildExternalDiagnostic(det, w, h);
+    assert(diag.failStage.empty() && diag.rawPersonInFrame && diag.isFaceConfirmed);
+    assert(diag.faceBoxW > 0 && diag.faceBoxH > 0);
+    assert(std::abs(diag.eyeOpenness - 0.8f) < 0.001f);
+
+    // 沒有臉、點數不足、數值異常都視為沒有臉
+    assert(!efd::buildExternalDetection(nullptr, 0, w, h).hasFace);
+    assert(!efd::buildExternalDetection(xyz.data(), 400, w, h).hasFace);
+    std::vector<float> bad = xyz;
+    bad[10] = std::numeric_limits<float>::quiet_NaN();
+    assert(!efd::buildExternalDetection(bad.data(), efd::kMediaPipeLandmarkCount, w, h).hasFace);
+    efd::LandmarkDetectionResult none = efd::buildExternalDetection(nullptr, 0, w, h);
+    assert(efd::buildExternalDiagnostic(none, w, h).failStage == "model");
+
+    // 遺失緩衝：未曾看到臉直接回報；看到後遺失未滿 1 秒不遞交，滿 1 秒才回報離座
+    efd::ExternalPresenceFilter filter;
+    assert(filter.shouldSubmit(false, 0));
+    assert(filter.shouldSubmit(true, 100));
+    assert(!filter.shouldSubmit(false, 600));
+    assert(!filter.shouldSubmit(false, 1099));
+    assert(filter.shouldSubmit(false, 1100));
+    assert(filter.shouldSubmit(true, 1200));
+    filter.reset();
+    assert(filter.shouldSubmit(false, 1300));
+    std::cout << " [PASS] (EAR 0.300，未換算時為 0.225)\n";
+}
+
+void testEngineSuspendsCameraDuringCooldown() {
+    std::cout << "[TEST] 34. 相機省電：冷卻期間引擎關閉相機、忽略外部偵測結果，關閉省電後重新開啟...";
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "efd_test_cooldown_camera";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    // 以存檔還原「剛提醒、冷卻中」的狀態，不必等疲勞分數爬升
+    {
+        efd::FatigueStateMachine fsm(1200, 300, 300);
+        int alerts = 0;
+        fsm.setAlertCallback([&](efd::FatigueLevel, float, const std::string&) { alerts++; });
+        assert(feedFsm(fsm, kSevereInput, 150, alerts) == 1);
+        const int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        std::ofstream out(dir / "efd_fsm_state.txt", std::ios::trunc);
+        out << fsm.serialize(nowSec);
+    }
+
+    efd::AsyncPipelineEngine engine(efd::PlatformType::Windows);
+    engine.setAutoNightlySyncEnabled(false);
+    engine.setDataDirectory(dir.string());
+    assert(engine.getStateMachine().getState().cooldownState == efd::CooldownState::InCooldown);
+    engine.setCameraPowerSaving(true);
+
+    std::atomic<int> suspendedTelemetry{0};
+    std::atomic<int> externalWhileSuspended{0};
+    engine.setTelemetryCallback([&](const efd::EngineTelemetry& t) {
+        if (t.cameraSuspended) {
+            suspendedTelemetry++;
+            if (t.detection.landmarksMeasured) externalWhileSuspended++;
+        }
+    });
+
+    engine.getCameraService().setForceSynthetic(true);
+    engine.getCameraService().startSynthetic();
+    assert(engine.start());
+
+    // 第一幀處理後即進入關閉狀態
+    for (int i = 0; i < 40 && !engine.isCameraSuspended(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    assert(engine.isCameraSuspended());
+    assert(!engine.getCameraService().isRunning());
+
+    // 相機關閉期間：外部偵測結果被忽略，遙測仍每 0.5 秒更新冷卻倒數
+    efd::LandmarkDetectionResult external;
+    external.hasFace = true;
+    external.landmarksMeasured = true;
+    external.landmarks.assign(468, efd::Point3D{});
+    efd::RawFrame info;
+    info.width = 480;
+    info.height = 640;
+    engine.submitExternalDetection(info, external);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    assert(suspendedTelemetry.load() >= 2);
+    assert(externalWhileSuspended.load() == 0);
+    assert(engine.getStateMachine().getState().cooldownState == efd::CooldownState::InCooldown);
+
+    // 冷卻中重新校準：需要畫面，相機重新開啟且校準期間不再關閉
+    engine.beginCalibration();
+    for (int i = 0; i < 40 && engine.isCameraSuspended(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    assert(!engine.isCameraSuspended());
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    assert(!engine.isCameraSuspended());
+    engine.finishCalibration();
+    for (int i = 0; i < 40 && !engine.isCameraSuspended(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    assert(engine.isCameraSuspended());
+
+    // 關閉此功能：下一次倒數時重新開啟相機
+    engine.setCameraPowerSaving(false);
+    for (int i = 0; i < 40 && engine.isCameraSuspended(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    assert(!engine.isCameraSuspended());
+    assert(engine.getCameraService().isRunning());   // 引擎擁有相機 (Windows)：由引擎重新開啟
+    engine.stop();
+
+    // 相機由平台層開關 (Android)：恢復時引擎不可自行開啟 CameraService (會改用模擬相機)
+    {
+        efd::FatigueStateMachine fsm(1200, 300, 300);
+        int alerts = 0;
+        fsm.setAlertCallback([&](efd::FatigueLevel, float, const std::string&) { alerts++; });
+        feedFsm(fsm, kSevereInput, 150, alerts);
+        const int64_t nowSec = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        std::ofstream out(dir / "efd_fsm_state.txt", std::ios::trunc);
+        out << fsm.serialize(nowSec);
+    }
+    efd::AsyncPipelineEngine androidEngine(efd::PlatformType::Android);
+    androidEngine.setAutoNightlySyncEnabled(false);
+    androidEngine.setDataDirectory(dir.string());
+    androidEngine.setCameraPowerSaving(true);
+    androidEngine.setExternalCameraControl(true);
+    androidEngine.getCameraService().setForceSynthetic(true);
+    androidEngine.getCameraService().startSynthetic();
+    assert(androidEngine.start());
+    for (int i = 0; i < 40 && !androidEngine.isCameraSuspended(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    assert(androidEngine.isCameraSuspended());
+    androidEngine.setCameraPowerSaving(false);
+    for (int i = 0; i < 40 && androidEngine.isCameraSuspended(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    assert(!androidEngine.isCameraSuspended());
+    assert(!androidEngine.getCameraService().isRunning());
+    androidEngine.stop();
+    std::cout << " [PASS] (關閉期間遙測 " << suspendedTelemetry.load() << " 次；平台層控制時引擎不開啟模擬相機)\n";
+}
+
 void testCameraDriversAndHal() {
     std::cout << "[TEST] 8. 測試跨平台相機硬體抽象層 (Camera HAL & Drivers)...";
     efd::CameraService cameraService(640, 480, 30.0f);
@@ -1427,7 +1655,10 @@ int main() {
     testFaceFillingFrameNeedsBothEyes();
     testOpennessRobustToMeasurementNoise();
     testLandmarkDetectorInjectionAndExternalDetection();
+    testAdvanceWithoutObservationKeepsCooldown();
+    testExternalLandmarksConversion();
+    testEngineSuspendsCameraDuringCooldown();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 31 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 34 項測試順利通過！\n";
     return 0;
 }

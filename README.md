@@ -359,6 +359,8 @@ cmake --build build/vs-x64 --config Release
 # 於 android/ 目錄建置 Debug APK (需 Android Studio 的 JDK 與 Android SDK / NDK)
 cd android
 gradle assembleDebug
-# 產出：android/app/build/outputs/apk/debug/app-debug.apk
+# 依 CPU 分包產出：android/app/build/outputs/apk/debug/app-<CPU>-debug.apk
+#   一般手機：app-arm64-v8a-debug.apk；32 位元舊手機：app-armeabi-v7a；電腦模擬器：app-x86_64
+# 正式版 (gradle assembleRelease，R8 精簡)：app-arm64-v8a-release.apk 約 16 MB
 ```
 安裝後首次開啟請允許相機與通知權限，並依「設定 > 通知與背景執行設定」的廠牌說明開啟自動啟動與電池不受限制，App 被劃掉後才能持續偵測與提醒。

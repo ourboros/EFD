@@ -123,6 +123,7 @@ bool AsyncPipelineEngine::start() {
     m_isPaused.store(false);
     m_processedFrameCount.store(0);
     m_resetFrameTiming.store(true);
+    m_cameraSuspended.store(false);
 
     // 啟動 Thread 2: 視覺推論執行緒
     m_inferenceThread = std::thread(&AsyncPipelineEngine::inferenceWorkerLoop, this);
@@ -164,7 +165,8 @@ void AsyncPipelineEngine::resume() {
     if (m_isRunning.load() && m_isPaused.load()) {
         m_resetFrameTiming.store(true);
         m_isPaused.store(false);
-        if (m_camera) {
+        // 冷卻中關閉的相機維持關閉，冷卻結束時由訊號執行緒開啟
+        if (m_camera && !m_cameraSuspended.load() && !m_externalCameraControl.load()) {
             m_camera->start();
         }
         m_lifecycle.transitionTo(AppLifecycleState::Resumed, "Engine resumed (Hot-Resume)");
@@ -317,7 +319,7 @@ bool AsyncPipelineEngine::setLandmarkDetector(std::unique_ptr<ILandmarkDetector>
 
 void AsyncPipelineEngine::submitExternalDetection(RawFrame frameInfo, LandmarkDetectionResult detection,
                                                   PresenceDiagnostic diagnostic) {
-    if (!m_isRunning.load() || m_isPaused.load()) return;
+    if (!m_isRunning.load() || m_isPaused.load() || m_cameraSuspended.load()) return;
 
     std::lock_guard<std::mutex> lock(m_inferenceQueueMutex);
     while (m_inferenceQueue.size() >= MAX_INFERENCE_QUEUE) {
@@ -498,17 +500,31 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
 
     while (m_isRunning.load()) {
         InferencePackage package;
+        bool hasPackage = false;
         {
+            // 相機因冷卻關閉時沒有影格，每 0.5 秒醒來推進冷卻倒數
             std::unique_lock<std::mutex> lock(m_inferenceQueueMutex);
-            m_inferenceQueueCv.wait(lock, [this]() {
+            m_inferenceQueueCv.wait_for(lock, std::chrono::milliseconds(500), [this]() {
                 return !m_inferenceQueue.empty() || !m_isRunning.load();
             });
 
             if (!m_isRunning.load()) break;
 
-            package = std::move(m_inferenceQueue.front());
-            m_inferenceQueue.pop();
+            if (!m_inferenceQueue.empty()) {
+                package = std::move(m_inferenceQueue.front());
+                m_inferenceQueue.pop();
+                hasPackage = true;
+            }
         }
+
+        if (m_cameraSuspended.load()) {
+            // 關閉相機前已在佇列中的幀不再分析
+            if (!hasPackage && !m_isPaused.load()) {
+                tickWhileCameraSuspended();
+            }
+            continue;
+        }
+        if (!hasPackage) continue;
 
         // 真實經過時間：啟動或暫停恢復後的第一幀以實測幀率估算，避免把暫停時間算進樣本
         auto nowFrameTime = std::chrono::steady_clock::now();
@@ -615,33 +631,121 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             checkAndTriggerNightlySync();
         }
 
-        // 6. 分發遙測至 UI Thread
-        if (m_telemetryCallback) {
-            EngineTelemetry telemetry;
-            telemetry.latestFrame = std::move(package.frame);
-            telemetry.detection = std::move(package.detection);
-            telemetry.presenceDiagnostic = std::move(package.presenceDiagnostic);
-            telemetry.eyeMetrics = eyeMetrics;
-            telemetry.complexityMetrics = complexity;
-            telemetry.systemState = state;
-            telemetry.currentThreshold = currentThreshold;
-            telemetry.measuredFps = m_measuredFps;
-            telemetry.totalFramesProcessed = count;
-            telemetry.currentStudyDay = m_studyTracker.getCurrentDay();
-            telemetry.studyStatus = m_studyTracker.getStatus();
-            telemetry.subjectUuid = m_studyTracker.getSubjectUuid();
-
-            std::string driverName = m_camera->getActiveDriverName();
-            bool isSynthetic = m_camera->isUsingSyntheticFallback();
-            std::string statusLabel = isSynthetic ? "模擬測試相機 (Synthetic)" : driverName;
-            std::ostringstream summary;
-            summary << "相機狀態: " << statusLabel << " | 實測 " << static_cast<int>(m_measuredFps + 0.5f)
-                    << " FPS (累計 " << count << " 幀)";
-            telemetry.lifecycleSummary = summary.str();
-
-            m_telemetryCallback(telemetry);
+        // 5.2 相機省電：提醒後的冷卻、快篩的非採樣時段關閉相機，需要採樣時再開啟
+        if (m_cameraPowerSaving.load() && !state.shouldCameraRun && !isCalibrating()) {
+            suspendCamera();
         }
+
+        // 6. 分發遙測至 UI Thread
+        publishTelemetry(package, eyeMetrics, complexity, state, currentThreshold, count);
     }
+}
+
+void AsyncPipelineEngine::publishTelemetry(InferencePackage& package, const EyeMetrics& eyeMetrics,
+                                           const ComplexityMetrics& complexity, const SystemState& state,
+                                           float currentThreshold, int64_t count) {
+    if (!m_telemetryCallback) return;
+
+    EngineTelemetry telemetry;
+    telemetry.latestFrame = std::move(package.frame);
+    telemetry.detection = std::move(package.detection);
+    telemetry.presenceDiagnostic = std::move(package.presenceDiagnostic);
+    telemetry.eyeMetrics = eyeMetrics;
+    telemetry.complexityMetrics = complexity;
+    telemetry.systemState = state;
+    telemetry.currentThreshold = currentThreshold;
+    telemetry.cameraSuspended = m_cameraSuspended.load();
+    telemetry.measuredFps = m_measuredFps;
+    telemetry.totalFramesProcessed = count;
+    telemetry.currentStudyDay = m_studyTracker.getCurrentDay();
+    telemetry.studyStatus = m_studyTracker.getStatus();
+    telemetry.subjectUuid = m_studyTracker.getSubjectUuid();
+
+    std::string statusLabel;
+    if (telemetry.cameraSuspended) {
+        statusLabel = "冷卻中已關閉";
+    } else {
+        statusLabel = m_camera->isUsingSyntheticFallback() ? "模擬測試相機 (Synthetic)" : m_camera->getActiveDriverName();
+    }
+    std::ostringstream summary;
+    summary << "相機狀態: " << statusLabel << " | 實測 " << static_cast<int>(m_measuredFps + 0.5f)
+            << " FPS (累計 " << count << " 幀)";
+    telemetry.lifecycleSummary = summary.str();
+
+    m_telemetryCallback(telemetry);
+}
+
+void AsyncPipelineEngine::setCameraPowerSaving(bool enabled) {
+    // 關閉此功能時，若相機正處於關閉狀態，由訊號執行緒在下一次倒數時重新開啟
+    m_cameraPowerSaving.store(enabled);
+}
+
+bool AsyncPipelineEngine::isCameraSuspended() const {
+    return m_cameraSuspended.load();
+}
+
+void AsyncPipelineEngine::suspendCamera() {
+    if (m_cameraSuspended.exchange(true)) return;
+    m_lastSuspendedTick = std::chrono::steady_clock::now();
+    if (m_camera) {
+        m_camera->stop();
+    }
+    {
+        // 關閉前已送出的影格不再分析
+        std::lock_guard<std::mutex> lock(m_frameQueueMutex);
+        while (!m_frameQueue.empty()) m_frameQueue.pop();
+    }
+    std::cout << "[省電] 冷卻或快篩非採樣時段，關閉相機\n";
+}
+
+void AsyncPipelineEngine::resumeCamera() {
+    if (!m_cameraSuspended.load()) return;
+    {
+        // 關閉前的眼動歷史已過時 (至少相隔數分鐘)，重新累積窗口
+        std::lock_guard<std::mutex> lock(m_analysisMutex);
+        m_extractor.reset();
+        m_absentSeconds = 0.0f;
+        m_complexityTimer = 0.0f;
+    }
+    m_resetFrameTiming.store(true);
+    m_cameraSuspended.store(false);
+    if (m_camera && !m_isPaused.load() && !m_externalCameraControl.load()) {
+        m_camera->start();
+    }
+    std::cout << "[省電] 需要採樣，重新開啟相機\n";
+}
+
+void AsyncPipelineEngine::setExternalCameraControl(bool external) {
+    m_externalCameraControl.store(external);
+}
+
+void AsyncPipelineEngine::tickWhileCameraSuspended() {
+    const auto now = std::chrono::steady_clock::now();
+    // 正常間隔約 0.5 秒；較長的間隔是引擎暫停 (鎖屏、休眠)，該段時間已由恢復時的生命週期事件計入
+    const float dt = std::clamp(std::chrono::duration<float>(now - m_lastSuspendedTick).count(), 0.0f, 1.0f);
+    m_lastSuspendedTick = now;
+
+    SystemState state = m_stateMachine.advanceWithoutObservation(dt);
+    // 使用者重新校準時需要畫面，即使仍在冷卻中也開啟相機
+    if (!m_cameraPowerSaving.load() || state.shouldCameraRun || isCalibrating()) {
+        resumeCamera();
+    }
+
+    m_persistTimer += dt;
+    if (m_persistTimer >= 10.0f) {
+        m_persistTimer = 0.0f;
+        persistStateMachine();
+    }
+
+    InferencePackage idle;
+    float threshold;
+    ComplexityMetrics complexity;
+    {
+        std::lock_guard<std::mutex> lock(m_analysisMutex);
+        threshold = m_baseline.getCurrentThreshold();
+        complexity = m_cachedComplexity;
+    }
+    publishTelemetry(idle, EyeMetrics{}, complexity, state, threshold, m_processedFrameCount.load());
 }
 
 } // namespace efd

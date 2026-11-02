@@ -49,11 +49,19 @@ android {
             cmake {
                 cppFlags += "-std=c++20"
                 arguments += listOf("-DANDROID_STL=c++_static")
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
             }
         }
-        
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+    }
+
+    // 依 CPU 分包：每支手機只安裝自己 CPU 的原生程式庫 (MediaPipe 每種 CPU 約 7~12 MB)
+    // 受試者主要發 app-arm64-v8a-*.apk；32 位元舊手機用 armeabi-v7a；x86_64 只給電腦上的模擬器
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
         }
     }
 
@@ -71,7 +79,8 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("release")
-            isMinifyEnabled = false
+            // R8 精簡未使用的 Java 程式碼 (MediaPipe 的 Guava、Protobuf 等)；保留規則見 proguard-rules.pro
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -123,6 +132,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-common-java8:2.8.5")
     implementation("androidx.cardview:cardview:1.0.0")
     // 臉部 478 點特徵點與眨眼 blendshape (模型檔：src/main/assets/face_landmarker.task)
+    // MediaPipe 內建的 Google 使用統計上傳後端已在 AndroidManifest.xml 移除 (統計事件不會送出)；
+    // 函式庫本身無法排除：排除後 FaceLandmarker 建立時 NoClassDefFoundError (TransportRuntime)
     implementation("com.google.mediapipe:tasks-vision:0.10.35")
 }
 

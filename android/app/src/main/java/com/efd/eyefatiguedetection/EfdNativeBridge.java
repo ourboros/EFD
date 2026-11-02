@@ -212,6 +212,72 @@ public class EfdNativeBridge {
         }
     }
 
+    /**
+     * MediaPipe 偵測結果：normalizedXyz 為 0~1 正規化特徵點 (x, y, z) 依序排列，沒有臉時傳 null；
+     * width / height 為實際分析 (已轉正) 的畫面尺寸；blink 分數 0 睜 ~ 1 閉，未提供時傳負值；
+     * rgb 只在診斷擷取時提供 (RGB888，同尺寸)，平常傳 null，影像不會離開 C++ 記憶體。
+     */
+    public static void sendLandmarks(float[] normalizedXyz, int width, int height, int rotation,
+                                     float blinkLeft, float blinkRight, byte[] rgb) {
+        if (!sLibraryLoaded) return;
+        try {
+            nativeSendLandmarks(normalizedXyz, width, height, rotation, blinkLeft, blinkRight, rgb);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeSendLandmarks failed: " + t.getMessage(), t);
+        }
+    }
+
+    // 自動畫面方向搜尋目前要額外旋轉的角度 (0 / 90 / 270)
+    public static int getExtraRotation() {
+        if (!sLibraryLoaded) return 0;
+        try {
+            return nativeGetExtraRotation();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeGetExtraRotation failed: " + t.getMessage(), t);
+            return 0;
+        }
+    }
+
+    public static boolean isDebugCaptureRequested() {
+        if (!sLibraryLoaded) return false;
+        try {
+            return nativeIsDebugCaptureRequested();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeIsDebugCaptureRequested failed: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    // 螢幕關閉時暫停引擎 (期間視同離座)，螢幕開啟後恢復
+    public static void pauseEngine() {
+        if (!sLibraryLoaded) return;
+        try {
+            nativePauseEngine();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativePauseEngine failed: " + t.getMessage(), t);
+        }
+    }
+
+    public static void resumeEngine() {
+        if (!sLibraryLoaded) return;
+        try {
+            nativeResumeEngine();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeResumeEngine failed: " + t.getMessage(), t);
+        }
+    }
+
+    // 冷卻或快篩非採樣時段，相機應關閉
+    public static boolean isCameraSuspended() {
+        if (!sLibraryLoaded) return false;
+        try {
+            return nativeIsCameraSuspended();
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeIsCameraSuspended failed: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
     // 引擎未啟動時回傳空字串，由 UI 顯示「--」
     public static String getSubjectUuid() {
         if (!sLibraryLoaded) return "";
@@ -261,6 +327,13 @@ public class EfdNativeBridge {
     private static native boolean nativeHasSavedCalibration();
     private static native void nativeSetSimulatedEyeOpenness(float openness);
     private static native void nativeSendFrame(byte[] frameData, int width, int height, int rotation);
+    private static native void nativeSendLandmarks(float[] normalizedXyz, int width, int height, int rotation,
+                                                   float blinkLeft, float blinkRight, byte[] rgb);
+    private static native int nativeGetExtraRotation();
+    private static native boolean nativeIsDebugCaptureRequested();
+    private static native void nativePauseEngine();
+    private static native void nativeResumeEngine();
+    private static native boolean nativeIsCameraSuspended();
     private static native String nativeGetTelemetryJson();
     private static native String nativeConsumeAlertJson();
     private static native String nativeGetSubjectUuid();

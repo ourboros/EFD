@@ -74,6 +74,7 @@ struct SystemState {
     int           studyDay                 = 1;    // 1 ~ 14
     bool          isStudyLocked            = false;// 14 天實驗期滿鎖定
     bool          userPresent              = true; // 使用者是否在螢幕前（人臉偵測）
+    bool          shouldCameraRun          = true; // 20/5/5 節能狀態：當前是否需要開啟相機 (冷卻與快篩間隔為 false)
     std::chrono::system_clock::time_point timestamp;
 };
 
