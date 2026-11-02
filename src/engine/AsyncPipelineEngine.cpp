@@ -456,6 +456,12 @@ void AsyncPipelineEngine::inferenceWorkerLoop() {
         // 臉部定位與眼部開合推論
         LandmarkDetectionResult detection = m_landmarker->detect(frame);
 
+        // 模型偵測器 (ONNX) 沒有內建遺失緩衝：臉部短暫遺失未滿 1 秒的幀不送出，滿 1 秒才判定離座
+        // (啟發式偵測器自行處理，Android MediaPipe 在 JNI 處理)
+        if (detection.landmarksMeasured && !m_modelPresenceFilter.shouldSubmit(detection.hasFace, steadyNowMs())) {
+            continue;
+        }
+
         // 將結果遞交至 Thread 3 佇列
         {
             std::lock_guard<std::mutex> lock(m_inferenceQueueMutex);

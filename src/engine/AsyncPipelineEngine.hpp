@@ -4,6 +4,7 @@
 #include "vision/RawFrame.hpp"
 #include "vision/CameraService.hpp"
 #include "vision/ILandmarkDetector.hpp"
+#include "vision/ExternalLandmarks.hpp"
 #include "analysis/FeatureExtractor.hpp"
 #include "analysis/AdaptiveBaseline.hpp"
 #include "analysis/EmdCalculator.hpp"
@@ -203,6 +204,7 @@ private:
     size_t m_calibrationTotalFrames = 0;   // 第一次偵測到臉之後才開始累計
     float m_lastCalibrationValidRatio = 0.0f;
     std::atomic<bool> m_requestEyeBaselineReset{false};
+    ExternalPresenceFilter m_modelPresenceFilter;   // 只在推論執行緒 (Thread 2) 使用
 
     TelemetryCallback m_telemetryCallback;
     std::atomic<int64_t> m_processedFrameCount{0};

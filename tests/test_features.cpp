@@ -1,3 +1,8 @@
+// 測試一律啟用 assert：Release 建置定義 NDEBUG 會整行移除 assert 內的呼叫 (例如讀圖、偵測、餵資料)，測試會空轉通過
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -20,6 +25,7 @@
 #include "vision/RawFrame.hpp"
 #include "vision/FaceLandmarker.hpp"
 #include "vision/ExternalLandmarks.hpp"
+#include "vision/OnnxFaceLandmarker.hpp"
 #include "vision/CameraService.hpp"
 #include "vision/VisionPipeline.hpp"
 #include "vision/drivers/SyntheticCameraDriver.hpp"
@@ -1016,6 +1022,72 @@ void testLandmarkDetectorInjectionAndExternalDetection() {
     std::cout << " [PASS] (外部遞交 " << externalWhileRunning << " 幀，相機影格改由注入的偵測器處理)\n";
 }
 
+// 讀取二進位 PPM (P6, maxval 255) 測試影像
+static bool readPpmFixture(const std::filesystem::path& path, efd::RawFrame& frame) {
+    std::ifstream in(path, std::ios::binary);
+    std::string magic;
+    int w = 0, h = 0, maxval = 0;
+    if (!(in >> magic >> w >> h >> maxval) || magic != "P6" || maxval != 255) return false;
+    in.get();
+    frame.width = w;
+    frame.height = h;
+    frame.channels = 3;
+    frame.format = efd::PixelFormat::RGB888;
+    frame.data.resize(static_cast<size_t>(w) * h * 3);
+    in.read(reinterpret_cast<char*>(frame.data.data()), static_cast<std::streamsize>(frame.data.size()));
+    return static_cast<bool>(in);
+}
+
+void testOnnxFaceLandmarkerMatchesMediaPipe() {
+    std::cout << "[TEST] 35. ONNX 臉部模型 (Windows) 與 MediaPipe 官方結果一致...";
+#ifdef EFD_HAS_ONNX
+    auto detector = efd::createModelLandmarkDetector(efd::defaultModelDirectory());
+    assert(detector && std::string(detector->name()) == "onnx");
+
+    efd::RawFrame frame;
+    assert(readPpmFixture(std::filesystem::path(EFD_TEST_FIXTURE_DIR) / "portrait_480.ppm", frame));
+
+    // MediaPipe 官方 FaceLandmarker (Python, IMAGE 模式) 在同一張圖的結果
+    const float refEarLeft = 0.2060f, refEarRight = 0.2000f;
+    const efd::Point3D ref33{203.8f, 103.9f, 0.0f}, ref263{272.1f, 102.9f, 0.0f}, ref1{237.7f, 135.7f, 0.0f};
+    auto dist = [](const efd::Point3D& a, const efd::Point3D& b) { return std::hypot(a.x - b.x, a.y - b.y); };
+
+    // 第一次：臉部偵測 + 特徵點；第二次：以上一幀特徵點追蹤 (不重新偵測)
+    float earL = 0.0f, earR = 0.0f;
+    for (int pass = 0; pass < 2; ++pass) {
+        efd::LandmarkDetectionResult r = detector->detect(frame);
+        assert(r.hasFace && r.landmarksMeasured);
+        assert(r.landmarks.size() == efd::kMediaPipeLandmarkCount);
+        assert(dist(r.landmarks[33], ref33) < 4.0f);
+        assert(dist(r.landmarks[263], ref263) < 4.0f);
+        assert(dist(r.landmarks[1], ref1) < 4.0f);
+        efd::FeatureExtractor extractor(60.0f, 0.21f);
+        efd::EyeMetrics m = extractor.processFrame(r.landmarks, 15.0f);
+        assert(std::abs(m.earLeft - refEarLeft) < 0.03f && std::abs(m.earRight - refEarRight) < 0.03f);
+        earL = m.earLeft;
+        earR = m.earRight;
+        assert(detector->getLatestPresenceDiagnostic().failStage.empty());
+    }
+
+    // 全黑畫面：沒有臉，追蹤也應放掉
+    efd::RawFrame black = frame;
+    std::fill(black.data.begin(), black.data.end(), static_cast<uint8_t>(0));
+    efd::LandmarkDetectionResult none = detector->detect(black);
+    assert(!none.hasFace && none.landmarksMeasured);
+    assert(detector->getLatestPresenceDiagnostic().failStage == "model");
+    assert(detector->detect(frame).hasFace);
+
+    // 追蹤狀態下的單幀耗時 (前處理 + 特徵點推論)，供 Windows 耗電評估
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 10; ++i) assert(detector->detect(frame).hasFace);
+    const double perFrameMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 10.0;
+    std::cout << " [PASS] (EAR 左 " << earL << " 右 " << earR << "，官方 " << refEarLeft << " / " << refEarRight
+              << "；追蹤每幀 " << std::setprecision(1) << std::fixed << perFrameMs << " ms)\n";
+#else
+    std::cout << " [SKIP] (未以 ONNX Runtime 建置)\n";
+#endif
+}
+
 void testAdvanceWithoutObservationKeepsCooldown() {
     std::cout << "[TEST] 32. 相機關閉時只推進倒數：冷卻 20 分鐘與快篩 4+1 分鐘排程、不算離座...";
     efd::FatigueStateMachine fsm(1200, 300, 300);
@@ -1658,7 +1730,8 @@ int main() {
     testAdvanceWithoutObservationKeepsCooldown();
     testExternalLandmarksConversion();
     testEngineSuspendsCameraDuringCooldown();
+    testOnnxFaceLandmarkerMatchesMediaPipe();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 34 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 35 項測試順利通過！\n";
     return 0;
 }

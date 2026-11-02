@@ -1,4 +1,5 @@
 #include "NativeWelcomeWindow.hpp"
+#include "vision/OnnxFaceLandmarker.hpp"
 #include <iostream>
 #include <cmath>
 #include <sstream>
@@ -210,7 +211,8 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         // 監控畫面的離座提示需連續 3 秒未偵測到臉才顯示：引擎丟失臉部 1 秒即暫停計算，
         // 但轉頭、低頭、光線瞬間變化造成的短暫丟失不必讓使用者看到離座提示
         {
-            const bool rawPresent = t.detection.hasFace && t.systemState.userPresent;
+            // 冷卻或快篩非採樣時段相機關閉：沒有畫面不是離座
+            const bool rawPresent = (t.detection.hasFace && t.systemState.userPresent) || t.cameraSuspended;
             const auto now = std::chrono::steady_clock::now();
             if (rawPresent) {
                 this->m_noFaceTiming = false;
@@ -401,6 +403,13 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         }
     }
     
+    // 臉部特徵點改用 MediaPipe 模型 (ONNX Runtime)；模型或 onnxruntime.dll 缺少時沿用啟發式偵測
+    if (auto detector = createModelLandmarkDetector(defaultModelDirectory())) {
+        m_engine.setLandmarkDetector(std::move(detector));
+    }
+    // 提醒後的冷卻、快篩非採樣時段關閉相機以省電
+    m_engine.setCameraPowerSaving(true);
+
     // 無條件立即啟動核心引擎，確保背景追蹤與離座判定立刻生效
     m_engine.start();
 
@@ -1604,9 +1613,19 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
     const wchar_t* statusText = L"生理狀態：正常清醒 (Relaxed)";
     wchar_t statusBuf[128];
 
+    const bool cameraSleeping = m_latestTelemetry.cameraSuspended;
     if (!isPresent) {
         statusColor = Gdiplus::Color(255, 70, 80, 70); // 離座深灰
         statusText = L"生理狀態：未偵測到人臉 / 離座中 (暫停計算)";
+    } else if (cameraSleeping && m_latestTelemetry.systemState.cooldownState == CooldownState::InCooldown) {
+        statusColor = Gdiplus::Color(255, 60, 115, 145); // 舒緩冷卻藍
+        swprintf_s(statusBuf, 128, L"生理狀態：疲勞提醒冷卻中 (%d分%02d秒)\n相機已暫停以省電", cdMins, cdSecs);
+        statusText = statusBuf;
+    } else if (cameraSleeping) {
+        const int untilSample = std::max(0, m_latestTelemetry.systemState.screeningRemainingSeconds - 60);
+        statusColor = Gdiplus::Color(255, 120, 170, 200); // 快篩藍
+        swprintf_s(statusBuf, 128, L"生理狀態：冷卻後快篩\n相機將在 %d分%02d秒後開啟採樣 1 分鐘", untilSample / 60, untilSample % 60);
+        statusText = statusBuf;
     } else if (m_latestTelemetry.systemState.cooldownState == CooldownState::InCooldown) {
         statusColor = Gdiplus::Color(255, 60, 115, 145); // 舒緩冷卻藍
         swprintf_s(statusBuf, 128, L"生理狀態：疲勞提醒冷卻中 (%d分%02d秒)\n20分鐘智能靜默暫停提醒", cdMins, cdSecs);
@@ -1631,11 +1650,11 @@ void NativeWelcomeWindow::drawMainDashboard(Gdiplus::Graphics& g, int w, int h) 
 
     // 4 數值格式化字串
     wchar_t b1[32], b2[32], b3[32], b4[32];
-    if (!isPresent) {
+    if (!isPresent || cameraSleeping) {
         swprintf_s(b1, 32, L"--");
         swprintf_s(b2, 32, L"--");
         swprintf_s(b3, 32, L"--");
-        swprintf_s(b4, 32, L"暫停中");
+        swprintf_s(b4, 32, cameraSleeping ? L"相機休眠" : L"暫停中");
     } else {
         swprintf_s(b1, 32, L"%.3f", static_cast<double>(m_latestTelemetry.eyeMetrics.earAvg));
         swprintf_s(b2, 32, L"%.1f%%", static_cast<double>(m_latestTelemetry.eyeMetrics.perclos * 100.0f));

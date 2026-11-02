@@ -42,6 +42,22 @@ if (Test-Path $redistDir) {
     Copy-Item (Join-Path $redistDir "vcruntime140_1.dll") $DistDir -Force
 }
 
+# 4.1 臉部特徵點模型 (MediaPipe → ONNX) 與 ONNX Runtime：
+#     onnxruntime.dll 必須放在 EFD.exe 旁 (Windows 系統資料夾內建舊版，放旁邊才會優先載入)；缺少時程式改用啟發式偵測
+Write-Host " -> 複製臉部模型與 ONNX Runtime (onnxruntime.dll, models\*.onnx)..." -ForegroundColor Green
+$ortDll = Join-Path $BuildDir "onnxruntime.dll"
+if (Test-Path $ortDll) {
+    Copy-Item $ortDll $DistDir -Force
+    New-Item -ItemType Directory -Path (Join-Path $DistDir "models") -Force | Out-Null
+    Copy-Item (Join-Path $ProjectRoot "models\face_detector.onnx") (Join-Path $DistDir "models") -Force
+    Copy-Item (Join-Path $ProjectRoot "models\face_landmarks.onnx") (Join-Path $DistDir "models") -Force
+    New-Item -ItemType Directory -Path (Join-Path $DistDir "licenses") -Force | Out-Null
+    Copy-Item (Join-Path $ProjectRoot "third_party\onnxruntime\LICENSE") (Join-Path $DistDir "licenses\onnxruntime-LICENSE.txt") -Force
+    Copy-Item (Join-Path $ProjectRoot "third_party\onnxruntime\ThirdPartyNotices.txt") (Join-Path $DistDir "licenses\onnxruntime-ThirdPartyNotices.txt") -Force
+} else {
+    Write-Host "    [警告] 找不到 onnxruntime.dll (未以 ONNX Runtime 建置)，安裝包將使用啟發式臉部偵測" -ForegroundColor Yellow
+}
+
 # 5. 複製資源檔案
 Write-Host " -> 複製圖形資產 (assets / design)..." -ForegroundColor Green
 Copy-Item (Join-Path $ProjectRoot "assets\*") (Join-Path $DistDir "assets") -Recurse -Force
