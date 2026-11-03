@@ -14,10 +14,10 @@
 
 - **核心開發語言:** **Modern C++ (C++20)**（涵蓋 90% 以上業務邏輯、演算法、多執行緒管線、資料庫與平台抽象）
 - **跨平台 GUI 框架:** **Qt 6 (C++ / QML)**（支援 Desktop Windows/macOS 與 Mobile Android/iOS 原生渲染）
-- **視覺推論引擎:** **ONNX Runtime C++ / MediaPipe C++ Core**
-  - _Windows 加速:_ DirectML / CPU (AVX2/AVX-512)
-  - _macOS / iOS 加速:_ CoreML / Metal Execution Provider
-  - _Android 加速:_ NNAPI / Vulkan Execution Provider
+- **視覺推論引擎 (實作現況):** 兩個平台使用同一份 MediaPipe Face Landmarker 模型 (`models/face_landmarker.task`，478 點臉部特徵點)
+  - _Android:_ **MediaPipe Tasks Vision 0.10.35** (Java API)，CPU 優先、GPU 備援；只把特徵點經 JNI 傳給 C++，影像不離開 Java 層
+  - _Windows:_ **ONNX Runtime 1.31.0** (CPU)，執行由同一份模型轉出的 `face_detector.onnx` (BlazeFace 128×128) 與 `face_landmarks.onnx` (256×256)
+  - 模型載入失敗時退回啟發式偵測器 (`FaceLandmarker`，膚色與眼部暗點規則)
 - **非線性訊號處理:** 原生 C++ 演算法庫（結合 **Eigen** 與 SIMD 指令集加速 EMD 與 MSE 運算）
 - **本機結構化儲存:** **原生 SQLite3 (C++ API)** + **WAL (Write-Ahead Logging)** 模式（零資料遺失）
 - **網路同步傳輸:** **libcurl / Qt Network (C++)**（安全傳輸科研數據與問卷 Token）
@@ -43,7 +43,7 @@ graph TB
 
     subgraph Engine_Layer ["3. 感知與運算引擎層 (C++ Pipeline Engine)"]
         Cam[CameraCaptureService 跨平台視訊擷取]
-        Vision[VisionInferenceWorker 人臉 468 點特徵定位]
+        Vision[VisionInferenceWorker 臉部 478 點特徵點 MediaPipe / ONNX]
         Signals[FeatureExtractor & ComplexityEngine EMD/MSE/CI 運算]
     end
 
@@ -78,7 +78,7 @@ graph TB
 ### 3.3 運算與感知引擎層 (Computation Engine Layer)
 
 - **CameraCaptureService:** 封裝 Qt Multimedia (`QCamera`) / 原生平台 API，提供穩定 30 FPS 的 YUV/RGB 影像串流。
-- **VisionInferenceWorker:** 透過 ONNX Runtime C++ 加載 Face Mesh 模型，即時輸出 468 點 3D 臉部特徵座標。
+- **VisionInferenceWorker:** 透過 `ILandmarkDetector` 介面取得臉部特徵點：Android 由 MediaPipe 偵測後經 `submitExternalDetection` 遞交，Windows 由 `OnnxFaceLandmarker` 在推論執行緒執行；兩者都輸出 478 點實際量測的 3D 座標 (`landmarksMeasured = true`)。
 - **ComplexityEngine (C++ 核心):**
   - 幾何特徵：計算雙眼 $\text{EAR}$ (Eye Aspect Ratio)、$\text{PERCLOS}$、眨眼頻率。
   - 非線性特徵：利用 C++ 高效實作 **EMD (經驗模態分解)** 分離瞬態特徵，並透過 **MSE (多尺度熵)** 計算信號複雜度指數（$\text{CI}$）。
@@ -103,7 +103,7 @@ graph TB
 [Thread 1: Video Capture Thread] ──── (Lock-free Ring Buffer)
        │
        ▼ (Frame Buffer)
-[Thread 2: Vision & Inference Worker] ─── (468 Landmarks)
+[Thread 2: Vision & Inference Worker] ─── (478 Landmarks)
        │
        ▼ (Time-Series Features)
 [Thread 3: Signal Processing & State Worker] (EMD / MSE / 20-5-5 FSM)
@@ -133,6 +133,13 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 - $\alpha \in [0.6, 0.8]$: 動態衰減權重，自動抵消光線漸變引起的特徵漂移。
 - **生理安全硬下限保護 (Physiological Clamp):** 閉眼狀態下停止侵蝕基準，且自適應動態閾值設有剛性安全下限 $\text{EAR}_{\text{threshold}} \ge 0.180$（上限 $\le 0.350$），杜絕閾值因長時間微閉眼單調下沉至 0.103 等不可達水平，確保閉眼與眨眼事件隨時可被靈敏捕捉。
 
+上式為啟發式偵測器的門檻。模型偵測器 (MediaPipe / ONNX) 量到的是真實 EAR，改用 `RollingOpenBaseline`：
+
+- **睜眼基準:** 最近 120 秒 EAR 去掉最低 20% 後的中位數 (累積不足 10 秒時用校準值)；已達閉眼門檻的幀不納入，避免長時間閉眼把基準往下拉 (A71 實測曾從 0.093 掉到 0.054)。
+- **PERCLOS 門檻 (P80):** 眼瞼閉合 80% 以上才算閉眼：$\text{EAR}_{\text{closed}} + 0.2 \times (\text{EAR}_{\text{open}} - \text{EAR}_{\text{closed}})$，$\text{EAR}_{\text{closed}} = 0.05$ (A71 實測閉眼 0.03~0.06)。
+- **眨眼門檻 (P50):** 閉合 50% 即算眨眼的開始：$\text{EAR}_{\text{closed}} + 0.5 \times (\text{EAR}_{\text{open}} - \text{EAR}_{\text{closed}})$。
+- 基準跟隨最近 2 分鐘，低頭看手機時 (EAR 0.14~0.17) 不會被當成閉眼；舊門檻曾讓低頭 30 秒觸發假提醒。
+
 ### 5.2 20/5/5 防打擾與算力節能狀態機
 
 本節為 20/5/5 的唯一規格來源，實作位於 `src/state/FatigueStateMachine.cpp`，並由 `tests/test_features.cpp` 第 5、13 項測試驗證。
@@ -160,12 +167,34 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 
 ### 5.3 眼睛特徵萃取與滑動窗口計算規範 (Eye Feature Extraction Pipeline)
 
-- **目前的臉部與眼部偵測方式 (實作現況):** 尚未整合 MediaPipe / ONNX 特徵點模型。`FaceLandmarker` 以膚色網格密度聚類定位臉部；膚色衣服或脖子與臉連成一塊時，逐列量測膚色寬度 (每列取最長連續段、上下 13 列中位數)，在「臉 → 脖子變窄 → 衣服變寬」處切開，只保留頭部 (第 23 項測試)；依面積最多檢查 3 塊膚色區域，臉被下巴陰影與較大的衣服分開時仍可偵測 (第 24 項)；膚色需 R−G ≥ 15，排除暖光下的米白牆面 (第 25 項)。**在座 ≠ 看得到眼睛**：PERCLOS 統計的正是閉眼時間，因此第一次鎖定臉部需要眼睛特徵 (排除膚色物體)，鎖定後只要同一位置 (距離 < 0.5 臉寬、大小 0.6~1.6 倍) 仍有符合臉形的膚色區域，閉眼、眨眼、低頭仍判定在座並計入 PERCLOS；該區域消失滿 1 秒才判定離座 (第 26 項)。眼部需同時具備明顯暗點 (瞳孔/睫毛，亮度 < 膚色 60% 的像素 ≥ 4%)、反差 ≥ 20 與垂直梯度 ≥ 3 才判定為真人；連續 1 秒未偵測到才判定離座。此為啟發式方法，光線過暗或深色鏡框可能影響準確度。
+- **目前的臉部與眼部偵測方式 (實作現況):** Android 以 MediaPipe Face Landmarker、Windows 以 ONNX Runtime 執行同一份模型，量測 478 點特徵點 (EAR 取 MediaPipe 索引 左眼 33/160/158/133/153/144、右眼 362/385/387/263/373/380)。Windows ONNX 流程：BlazeFace 找臉 (896 個錨點) → 依兩眼連線轉正、放大 1.5 倍裁切 256×256 → 特徵點模型 → 座標換回原圖；鎖定後沿用上一幀位置追蹤。在座判定：模型找不到臉滿 1 秒才判定離座。手機實測要點：MediaPipe 不受畫面方向影響 (0°/90°/270° 都偵測得到)；手機拿得很低、由下往上拍時，閉眼與低頭在畫面上難以區分，受試者應把手機拿到與眼睛同高。
+- **啟發式備援偵測器 (模型無法載入時):** `FaceLandmarker` 以膚色網格密度聚類定位臉部；膚色衣服或脖子與臉連成一塊時，逐列量測膚色寬度 (每列取最長連續段、上下 13 列中位數)，在「臉 → 脖子變窄 → 衣服變寬」處切開，只保留頭部 (第 23 項測試)；依面積最多檢查 3 塊膚色區域，臉被下巴陰影與較大的衣服分開時仍可偵測 (第 24 項)；膚色需 R−G ≥ 15，排除暖光下的米白牆面 (第 25 項)。**在座 ≠ 看得到眼睛**：PERCLOS 統計的正是閉眼時間，因此第一次鎖定臉部需要眼睛特徵 (排除膚色物體)，鎖定後只要同一位置 (距離 < 0.5 臉寬、大小 0.6~1.6 倍) 仍有符合臉形的膚色區域，閉眼、眨眼、低頭仍判定在座並計入 PERCLOS；該區域消失滿 1 秒才判定離座 (第 26 項)。眼部需同時具備明顯暗點 (瞳孔/睫毛，亮度 < 膚色 60% 的像素 ≥ 4%)、反差 ≥ 20 與垂直梯度 ≥ 3 才判定為真人；連續 1 秒未偵測到才判定離座。此為啟發式方法，光線過暗或深色鏡框可能影響準確度。
 - **AOI 二值化與瞳孔/睫毛黑色像素比例 (Black Pixels Ratio):** 在雙眼感興趣區域 (AOI) 計算黑色像素佔比 $P_{\text{black}}$；睜眼基準取最近 60 秒暗部比例的第 90 百分位 (可隨光線上下調整)，透過動態範圍映射獲得連續開闔度。
 - **校準 (Calibration):** 兩段式收集，只採用校準期間偵測到人臉的幀；有效幀不足 60% 或少於 20 幀即校準失敗並保留原基準。閉眼閾值限制在清醒基準的 65%~85%，之後的自動調整只能在校準閾值 ±15% 內浮動。校準結果保存於設定檔，重啟後自動還原。
-- **時間窗口 PERCLOS (Time-based PERCLOS):** 以**時間**定義的 60 秒窗口 (非固定幀數)，PERCLOS = 窗口內閉眼時間 / 窗口總時間；每個樣本代表的時間依實測幀率計算，手機 10~15 FPS 與桌機 30 FPS 結果一致。
-- **生理有效眨眼檢驗 (Physiological Blink Validation):** 眨眼判定要求閉眼持續 60 ~ 800 ms (以時間判斷，與幀率無關)；窗口累積 30 秒前不輸出眨眼率 (不計分)；每分鐘眨眼率設置生理硬上限（[0.0, 60.0] 次/分）。
-- **複雜度 (EMD + MSE):** 每秒一次，將 60 秒 EAR 序列依時間重新取樣為 10 Hz，以 EMD 去除最高頻 IMF 後計算 MSE (尺度 1~5)；資料不足 30 秒時使用清醒先驗值 CI = 4.5 (不計分)。
+- **時間窗口 PERCLOS (Time-based PERCLOS):** 以**時間**定義的 60 秒窗口 (非固定幀數)，PERCLOS = 窗口內閉眼 (P80) 時間 / 窗口總時間；每個樣本代表的時間依實測幀率計算，手機 10 FPS 與桌機 30 FPS 結果一致。
+- **生理有效眨眼檢驗 (Physiological Blink Validation):** 眨眼 (P50) 判定要求閉眼持續 60 ~ 800 ms (以時間判斷，與幀率無關)；超過 800 ms 的閉眼不算眨眼，另計為**長閉眼次數/分** (含尚未睜開的這一次)；窗口累積 30 秒前不輸出眨眼率、眨眼平均時長與長閉眼次數 (不計分)；每分鐘眨眼率設置生理硬上限（[0.0, 60.0] 次/分）。手機每秒分析 10 張，短於 0.1 秒的眨眼可能漏掉，眨眼率可能偏低。
+- **複雜度 (EMD + MSE):** 每秒一次，將 60 秒 EAR 序列依時間重新取樣為 10 Hz，以 EMD 去除最高頻 IMF 後計算 MSE (尺度 1~5, m = 2)。容許誤差 $r$ **固定為個人睜眼 EAR 範圍的 15%** ($0.15 \times (\text{EAR}_{\text{open}} - 0.05)$)，不隨窗口標準差縮放：若 $r$ 隨標準差縮放，長時間閉眼時 EAR 近乎平線，$r$ 縮到雜訊大小，雜訊反而被算成高複雜度 (實測半閉眼時 CI 升到 7~8.7)。A71 實測清醒看螢幕 CI 約 1.3~2.2、長時間閉眼 0.35~0.65；資料不足 30 秒時使用清醒先驗值 CI = 2.0 (不計分)。半閉眼並維持注意時 CI 不一定下降 (眼瞼仍有細微動作)，此時主要由 PERCLOS 與眨眼判斷。
+
+### 5.4 疲勞分數 (Fatigue Score)
+
+實作位於 `FatigueStateMachine::computeFatigueScore`，由第 36 項測試驗證：
+
+$$\text{Score} = \max\big(0.55\,S_{\text{PERCLOS}} + 0.25\,S_{\text{blink}} + 0.20\,S_{\text{CI}},\; 0.9\,S_{\text{PERCLOS}}\big)$$
+
+| 分項 | 0 分 | 計分方式 |
+| :--- | :--- | :--- |
+| $S_{\text{PERCLOS}}$ | PERCLOS 0% | 分段線性：4% → 15 分、10% → 50 分、18% → 85 分、28% 以上 100 分 |
+| $S_{\text{blink}}$ | 眨眼率 10~22 次/分、眨眼 ≤ 250 ms、無長閉眼 | 取三者最高：眨眼率 < 10 或 > 22 次/分 (2 次/分以下或 36 次/分以上達 85 分)；眨眼平均時長 > 250 ms (450 ms 約 85 分)；長閉眼每分鐘 3 次約 85 分 |
+| $S_{\text{CI}}$ | CI ≥ 1.0 | CI 1.0 → 0.3 線性升到 80 分 |
+
+- **PERCLOS 單項觸發:** 權重 55% 時單靠閉眼最多 55 分，到不了提醒門檻 65 (A71 實測 PERCLOS 69% 只有 62 分)。PERCLOS 是文獻中最可靠的單一指標，因此「PERCLOS 單項 × 0.9」也能觸發提醒，約 PERCLOS 15% 以上 (平滑後需持續)。
+- **實測 (A71):** 清醒時段 25 分以下；刻意閉眼 / 半閉眼約 2 分鐘後觸發提醒，提醒當分鐘 CI 0.69、長閉眼 3 次/分。
+
+### 5.5 交叉設計、每分鐘摘要與提醒自評
+
+- **A/B 分組:** 歡迎頁之後由研究人員選組，選定後鎖定 (設定檔 `studyGroup`)。A 組第 1~7 天只收數據、第 8~14 天提醒；B 組相反。不提醒的那一週照常判定、冷卻並關閉相機，只是不顯示提醒，記錄為 `suppressed`。
+- **提醒時的眼睛疲勞自評:** 每次顯示提醒時詢問一題「眼睛疲勞程度 0 (完全不累) ~ 10 (非常疲勞)」，點一下即完成，可略過，30 秒未作答記為略過；App 在背景時改發通知，30 分鐘內開啟 App 補問。因為只在判定疲勞時詢問，無法估計漏報率。
+- **每分鐘摘要:** `StudyDataLog` 每分鐘寫一列 (`efd_minute_summary.csv`)：在座秒數、相機開啟秒數、EAR 平均與第 10 百分位、PERCLOS、眨眼次數與平均時長、CI、平滑分數、冷卻狀態、提醒 (`none` / `shown` / `suppressed`)、偵測器、平台、App 版本、長閉眼次數；自評寫入 `efd_eye_fatigue.csv`。每日上傳時附上最近 3 天的資料 (Apps Script 依受試者與時間去重)。
 - **量表範圍與日誌一致性:** 疲勞評分統一採用標準 0.0 ~ 100.0 分制（注意閾值 45.0，警報閾值 65.0）；人臉在場診斷日誌使用動態符號（`>=` 或 `<` 及追蹤寬限標籤），杜絕日誌條件與數值矛盾。
 
 ---
@@ -193,12 +222,13 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 | 平台        | 常駐機制 (Background Mode)                                            | 視訊擷取 (Camera Input)                   | 資料目錄 / 每日同步                               |
 | :---------- | :-------------------------------------------------------------------- | :---------------------------------------- | :------------------------------------------------ |
 | **Windows** | 最小化至系統托盤 (System Tray)，背景持續偵測                          | Media Foundation：選最接近 640x480 的原生格式，請系統轉 RGB32/RGB24，失敗時自行解碼 NV12 / YUY2 / UYVY；依實際解析度、stride (含行尾補齊、由下而上) 讀取，720p 以上整數倍縮到寬約 640 (第 27 項測試) | 執行檔工作目錄；C++ 引擎 21:00 同步 + 補傳 (PowerShell) |
-| **Android** | **前景服務 (camera 類型)** 擁有偵測引擎，App 介面被劃掉後仍持續偵測與提醒；首次進入監控頁引導加入電池最佳化白名單。Android 14+ 不允許開機自動開相機，改發「點此開始今日偵測」通知 | CameraX (ImageAnalysis) → JNI | `filesDir`；Java `EfdSyncManager` 21:00 鬧鐘 + 補傳 + 失敗 10 分鐘重試 (C++ 端同步關閉) |
+| **Android** | **前景服務 (camera 類型)** 擁有偵測引擎，App 介面被劃掉後仍持續偵測與提醒；首次進入監控頁引導加入電池最佳化白名單。Android 14+ 不允許開機自動開相機，改發「點此開始今日偵測」通知 | CameraX (ImageAnalysis，RGBA) → MediaPipe → 特徵點經 JNI 傳給 C++；前鏡頭輸出取手機支援範圍中「最低 ≥ 10 FPS、上限最小」的一組 (A71 為 15/15)，分析 10 FPS，連續 10 秒無臉降為 2 FPS | `filesDir`；Java `EfdSyncManager` 21:00 鬧鐘 + 補傳 + 失敗 10 分鐘重試 (C++ 端同步關閉) |
 
-- **每日同步共同規則:** 上傳成功才標記已同步；失敗 10 分鐘後重試；21:00 前若發現昨天 (含) 以前的資料尚未上傳，立即補傳。
+- **每日同步共同規則:** 上傳成功才標記已同步；失敗 10 分鐘後重試；21:00 前若發現昨天 (含) 以前的資料尚未上傳，立即補傳。伺服器回傳 HTML (要求登入或 Apps Script 出錯) 時判定為失敗。開發用設定項目「立即上傳數據」可隨時上傳，不影響每晚的自動上傳。
+- **相機省電:** 20 分鐘冷卻期間關閉相機；快篩 5 分鐘只在最後 1 分鐘開相機取樣；螢幕關閉時暫停 (Android)；連續 10 秒沒有臉時降低偵測頻率 (兩平台)。A71 實測無臉時 CPU 由約 98% 降到 39% (App 在背景)，螢幕關閉時約 0.2%。
 - **模擬相機:** 實體鏡頭無畫面時會切換為模擬相機以維持管線運作，但模擬影格不寫入研究資料庫。
-- **Android 診斷與錯誤回報:** 監控中心未偵測到臉時顯示原因 (卡在哪一關) 與相機畫面尺寸、fps；設定頁「匯出診斷畫面」擷取 5 張 C++ 實際分析的 RGB 畫面存到相簿 Pictures/EFD，並把每張的偵測數值與裝置資訊複製成文字 (LINE 一次分享多個檔案時常只傳出一個，因此用相簿照片 + 貼上文字)；「測試背景通知」10 秒後送出「【測試通知】」，與真實疲勞提醒文字區隔；服務被廠商系統關閉時，看門狗 (每 15 分鐘，07:00~23:00) 發出「EFD 疲勞偵測已停止」。Windows 以 `efd_diag_replay --capture` 擷取相機畫面檢查格式。電腦端以 `tests/convert_to_ppm.ps1` 把傳回的 JPG/PNG 轉成 PPM，再以 `efd_diag_replay <資料夾>` 重播同一套判斷。匯出的畫面含臉部影像，只在使用者按下匯出時產生，`debug_frames/` 不進版本庫。
-- **上傳 JSON 格式 (四平台共用):** 由 `NetworkSyncWorker::buildPayloadJson()` 產生，Android 經 JNI 呼叫同一函式 (不附逐筆 `records`)。`metrics` 的 EAR、PERCLOS、CI 與 `fatigue_score` 為資料庫紀錄的實際平均；`blink_rate` 為有效眨眼率的平均 (窗口未滿 30 秒的 0 值不計入)；無紀錄時上述欄位為 `null`、`record_count` 為 0。`status` 為研究流程狀態 (`Active` / `Locked` / `Completed`)；`checksum` 由紀錄內容計算；`token` 為填寫後測問卷後產生的解鎖憑證，未取得時為空字串。資料庫每列新增第 8 欄 `BlinkRatePerMin`，讀取時相容舊版 7 欄資料。
+- **Android 診斷與錯誤回報:** 監控中心未偵測到臉時顯示原因 (卡在哪一關) 與相機畫面尺寸、fps；設定頁「匯出診斷畫面」擷取 5 張 C++ 實際分析的 RGB 畫面存到相簿 Pictures/EFD，並把每張的偵測數值與裝置資訊複製成文字 (LINE 一次分享多個檔案時常只傳出一個，因此用相簿照片 + 貼上文字)；「測試背景通知」10 秒後送出「【測試通知】」，與真實疲勞提醒文字區隔；服務被廠商系統關閉時，看門狗 (每 15 分鐘，07:00~23:00) 發出「EFD 疲勞偵測已停止」。Windows 以 `efd_diag_replay --capture` 擷取相機畫面檢查格式。電腦端以 `tests/convert_to_ppm.ps1` 把傳回的 JPG/PNG 轉成 PPM，再以 `efd_diag_replay <資料夾>` 重播同一套判斷；`--engine` 同時比較啟發式與 ONNX 模型；`--csv` 把手機 debug 版 logcat 的 `EFD_Frame` 記錄 (或「秒,EAR」CSV) 依 App 相同流程重算疲勞分數與提醒時間。匯出的畫面含臉部影像，只在使用者按下匯出時產生，`debug_frames/` 不進版本庫。
+- **上傳 JSON 格式 (四平台共用):** 由 `NetworkSyncWorker::buildPayloadJson()` 產生，Android 經 JNI 呼叫同一函式 (不附逐筆 `records`)。`metrics` 的 EAR、PERCLOS、CI 與 `fatigue_score` 為資料庫紀錄的實際平均；`blink_rate` 為有效眨眼率的平均 (窗口未滿 30 秒的 0 值不計入)；無紀錄時上述欄位為 `null`、`record_count` 為 0。`status` 為研究流程狀態 (`Active` / `Locked` / `Completed`)；`checksum` 由紀錄內容計算；`token` 為填寫後測問卷後產生的解鎖憑證，未取得時為空字串。資料庫每列新增第 8 欄 `BlinkRatePerMin`，讀取時相容舊版 7 欄資料。另附 `minute_summaries` (每分鐘摘要) 與 `kss_responses` (提醒自評) 兩個陣列；上傳內容只有數值，不含任何影像。
 - **開機自動啟動:** Windows 寫入 `HKCU\...\Run` (舊版另建的「啟動」資料夾捷徑會被清除，避免開機啟動兩次)；Android 14+ 以開機通知代替。
 
 ---
@@ -220,6 +250,8 @@ $$\text{EAR}_{\text{threshold}}(t) = \alpha \cdot \text{EAR}_{\text{baseline}} +
 
 ## 8. 模組代碼架構規劃 (Recommended Code Structure)
 
+> 註：本節為原始規劃，實際目錄見 README 第 6 節。
+
 ```
 efd-core/
 ├── CMakeLists.txt                # 跨平台 CMake 建置腳本 (支援 Desktop / Android NDK / iOS)
@@ -227,7 +259,7 @@ efd-core/
 │   ├── main.cpp                  # 應用程式進入點與 Qt 實例化
 │   ├── vision/                   # 視覺與特徵偵測
 │   │   ├── CameraService.hpp/cpp # 跨平台相機串流封裝
-│   │   └── FaceLandmarker.hpp/cpp# ONNX Runtime 人臉特徵推論
+│   │   └── FaceLandmarker.hpp/cpp# 人臉特徵推論 (實作：OnnxFaceLandmarker 與啟發式 FaceLandmarker)
 │   ├── analysis/                 # 訊號與數學運算
 │   │   ├── FeatureExtractor.hpp  # EAR / PERCLOS / 眨眼特徵
 │   │   ├── EmdCalculator.hpp/cpp # C++ 經驗模態分解
@@ -259,7 +291,7 @@ efd-core/
 
 - **階段一：C++ 原生運算核心與管線 (Core Pipeline MVP)**
   - 搭建 CMake 跨平台建置系統（支援 MSVC/Clang/Android NDK/Xcode）。
-  - 整合 ONNX Runtime C++，完成相機取幀到 468 點特徵定位。
+  - 整合 ONNX Runtime C++，完成相機取幀到 478 點特徵定位。
   - 實作 EAR、EMD、MSE 演算法，建立獨立單元測試 (Unit Tests)。
 - **階段二：狀態機與多執行緒整合 (Multithreaded Engine)**
   - 建立 5 執行緒非同步管線（Ring Buffer）。

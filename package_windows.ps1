@@ -5,9 +5,9 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
 $BuildDir = if (Test-Path (Join-Path $ProjectRoot "build\Release\efd_gui.exe")) { Join-Path $ProjectRoot "build\Release" } else { Join-Path $ProjectRoot "build\vs-x64\Release" }
-$DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v2.0.0-Windows"
-$ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.0.0-Windows.zip"
-$ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.0.0-Windows.zip"
+$DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v2.1.0-Windows"
+$ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.1.0-Windows.zip"
+$ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.1.0-Windows.zip"
 
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "  [EFD] 開始打包 Windows 桌面端分發套件..." -ForegroundColor Cyan
@@ -54,6 +54,8 @@ if (Test-Path $ortDll) {
     New-Item -ItemType Directory -Path (Join-Path $DistDir "licenses") -Force | Out-Null
     Copy-Item (Join-Path $ProjectRoot "third_party\onnxruntime\LICENSE") (Join-Path $DistDir "licenses\onnxruntime-LICENSE.txt") -Force
     Copy-Item (Join-Path $ProjectRoot "third_party\onnxruntime\ThirdPartyNotices.txt") (Join-Path $DistDir "licenses\onnxruntime-ThirdPartyNotices.txt") -Force
+    # 臉部模型 (MediaPipe Face Landmarker) 為 Apache 2.0，附上本專案的第三方元件清單
+    Copy-Item (Join-Path $ProjectRoot "THIRD_PARTY_NOTICES.md") (Join-Path $DistDir "licenses\THIRD_PARTY_NOTICES.md") -Force
 } else {
     Write-Host "    [警告] 找不到 onnxruntime.dll (未以 ONNX Runtime 建置)，安裝包將使用啟發式臉部偵測" -ForegroundColor Yellow
 }
@@ -146,7 +148,7 @@ Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "READ
 Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "使用說明.txt") -Force
 
 # 8. 壓縮打包為 ZIP
-Write-Host " -> 正在壓縮封裝為 EFD-v2.0.0-Windows.zip..." -ForegroundColor Green
+Write-Host " -> 正在壓縮封裝為 EFD-v2.1.0-Windows.zip..." -ForegroundColor Green
 if (Test-Path $ZipRootOutput) { Remove-Item -Force $ZipRootOutput }
 Compress-Archive -Path "$DistDir\*" -DestinationPath $ZipRootOutput -Force
 Copy-Item $ZipRootOutput $ZipBuildOutput -Force

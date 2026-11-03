@@ -1247,6 +1247,11 @@ public class MainActivity extends AppCompatActivity {
                 "馬上把目前的數值資料傳到 Google 試算表，不影響每晚 21:00 的自動上傳",
                 "›", true, v -> onUploadNowClicked());
 
+        // 6. 關於與第三方授權 (MediaPipe：Apache 2.0；ONNX Runtime 僅電腦版使用)
+        addSettingsCard(layout, "關於與第三方授權",
+                "隱私說明，以及 MediaPipe 等開放原始碼元件的授權",
+                "›", true, v -> showAboutDialog());
+
         // 底部返回按鈕
         Button returnBtn = dashButton("返回監控中心", C_WHITE, C_MINT, 20);
         returnBtn.getLayoutParams().height = dp(48);
@@ -1534,6 +1539,26 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private static final int DIAGNOSTIC_FRAMES = 5;
+
+    private void showAboutDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("關於 EFD " + versionLabel())
+                .setMessage("EFD 眼睛疲勞偵測研究系統\n\n"
+                        + "隱私：鏡頭畫面只在這支手機的記憶體中分析，不儲存也不上傳；"
+                        + "上傳到研究試算表的只有疲勞相關數值。\n\n"
+                        + "第三方元件與授權：\n"
+                        + "• MediaPipe Tasks Vision 0.10.35 與 Face Landmarker 模型\n"
+                        + "  Apache License 2.0，Copyright Google LLC\n"
+                        + "• AndroidX / CameraX、Guava、Flogger、Google datatransport\n"
+                        + "  Apache License 2.0\n"
+                        + "• Protocol Buffers\n"
+                        + "  BSD 3-Clause License，Copyright Google Inc.\n"
+                        + "• Kotlin 標準函式庫  Apache License 2.0\n\n"
+                        + "授權全文：https://www.apache.org/licenses/LICENSE-2.0\n"
+                        + "https://opensource.org/license/bsd-3-clause")
+                .setPositiveButton("確定", null)
+                .show();
+    }
 
     private void onUploadNowClicked() {
         if (!EfdNativeBridge.isEngineRunning()) {
