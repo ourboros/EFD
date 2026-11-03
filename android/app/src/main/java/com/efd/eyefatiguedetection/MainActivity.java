@@ -1242,6 +1242,11 @@ public class MainActivity extends AppCompatActivity {
                 "擷取 5 張偵測畫面存到相簿「EFD」，並複製偵測狀態與手機資訊（含臉部影像）",
                 "›", true, v -> onExportDiagnosticClicked());
 
+        // 5. 開發用：立即上傳 (不必等到 21:00 才能確認試算表收到資料)，正式版移除
+        addSettingsCard(layout, "立即上傳數據（開發用）",
+                "馬上把目前的數值資料傳到 Google 試算表，不影響每晚 21:00 的自動上傳",
+                "›", true, v -> onUploadNowClicked());
+
         // 底部返回按鈕
         Button returnBtn = dashButton("返回監控中心", C_WHITE, C_MINT, 20);
         returnBtn.getLayoutParams().height = dp(48);
@@ -1529,6 +1534,25 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private static final int DIAGNOSTIC_FRAMES = 5;
+
+    private void onUploadNowClicked() {
+        if (!EfdNativeBridge.isEngineRunning()) {
+            Toast.makeText(this, "偵測引擎尚未啟動，請先回到監控中心", Toast.LENGTH_LONG).show();
+            return;
+        }
+        Toast.makeText(this, "上傳中...", Toast.LENGTH_SHORT).show();
+        EfdHttpSyncBridge.uploadFullPayloadAsync(null, (success, response) -> mHandler.post(() -> {
+            if (isActivityDestroyed()) return;
+            String detail = response == null ? "" : response;
+            if (detail.length() > 120) detail = detail.substring(0, 120) + "...";
+            new AlertDialog.Builder(this)
+                    .setTitle(success ? "上傳成功" : "上傳失敗")
+                    .setMessage(success ? "試算表已收到資料。\n\n伺服器回應：" + detail
+                            : "資料沒有寫入試算表。若 Apps Script 要求登入，請把部署的「誰可以存取」設為「任何人」。\n\n伺服器回應：" + detail)
+                    .setPositiveButton("確定", null)
+                    .show();
+        }));
+    }
 
     private void onExportDiagnosticClicked() {
         new AlertDialog.Builder(this)

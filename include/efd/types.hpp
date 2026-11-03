@@ -89,7 +89,7 @@ struct CalibrationData {
 // 科研資料上傳端點 (Google Apps Script Web App)，C++ 端唯一定義
 // Android Java 端的同一網址位於 EfdHttpSyncBridge.GOOGLE_SHEETS_ENDPOINT
 inline constexpr const char* kDefaultCloudSyncEndpoint =
-    "https://script.google.com/macros/s/AKfycbzwniwhgb6exjMC67tb_QMNOmp5xDCKKaS7aQs99bXmFv-qFY-U1ZhXcHLUFrJIFvyb5Q/exec";
+    "https://script.google.com/macros/s/AKfycbwEE6CBbS9jt1TPi8Fb1kc18QCZz4EAqf8AuA0rozD_8E3PVOzoFjXSCWVX8agHX-P_/exec";
 
 } // namespace efd
 
