@@ -31,6 +31,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -260,7 +261,10 @@ public class MainActivity extends AppCompatActivity {
         updateNavBarHighlight();
         renderCurrentStage();
         if (stage == UIStage.MainDashboard) {
-            requestIgnoreBatteryOptimizationsOnce();
+            // 電池最佳化說明會開啟系統設定；回到 App (onResume) 時再顯示廠牌背景執行設定，避免兩個對話框疊在一起
+            if (!requestIgnoreBatteryOptimizationsOnce()) {
+                showBackgroundSetupOnce();
+            }
             checkNotificationsEnabledOnce();
         }
     }
@@ -270,22 +274,43 @@ public class MainActivity extends AppCompatActivity {
      * 說明後開啟系統的電池最佳化清單，由使用者自行將 EFD 設為不受限制 (只詢問一次)。
      * 不使用 ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS：它需要敏感權限，會讓 Play Protect 視為可疑。
      */
-    private void requestIgnoreBatteryOptimizationsOnce() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+    /** @return 是否顯示了說明 (顯示時，回到 App 的 onResume 再接著顯示廠牌背景執行設定) */
+    private boolean requestIgnoreBatteryOptimizationsOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false;
         SharedPreferences prefs = getSharedPreferences("efd_prefs", MODE_PRIVATE);
-        if (prefs.getBoolean("asked_battery_optimization", false)) return;
+        if (prefs.getBoolean("asked_battery_optimization", false)) return false;
         prefs.edit().putBoolean("asked_battery_optimization", true).apply();
         try {
             android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (pm == null || pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+            if (pm == null || pm.isIgnoringBatteryOptimizations(getPackageName())) return false;
         } catch (Throwable t) {
-            return;
+            return false;
         }
         new AlertDialog.Builder(this)
                 .setTitle("讓背景偵測不被系統中斷")
                 .setMessage("部分手機會為了省電關閉背景執行的 App，導致把 EFD 劃掉後就不再提醒。\n\n"
                         + "接下來會開啟「電池最佳化」清單，請找到「EFD 疲勞檢測」並設為「不最佳化」或「不受限制」。")
                 .setPositiveButton("前往設定", (d, w) -> openBatteryOptimizationSettings())
+                .setNegativeButton("稍後", (d, w) -> showBackgroundSetupOnce())
+                .show();
+        return true;
+    }
+
+    /**
+     * 第一次進入監控中心：小米、OPPO、vivo、華為、三星在電池最佳化之外還有各自的背景限制
+     * (OPPO Reno13 Pro 實測需另外選「完全允許背景行為」)，說明位置並可直接開啟 App 設定 (只顯示一次)。
+     */
+    private void showBackgroundSetupOnce() {
+        SharedPreferences prefs = getSharedPreferences("efd_prefs", MODE_PRIVATE);
+        if (prefs.getBoolean("asked_background_setup", false)) return;
+        prefs.edit().putBoolean("asked_background_setup", true).apply();
+        String tip = brandBackgroundTip();
+        if (tip == null || isActivityDestroyed()) return;
+        new AlertDialog.Builder(this)
+                .setTitle("允許 EFD 在背景執行")
+                .setMessage("這支手機的系統會自動關閉背景的 App，研究期間 EFD 需要持續偵測，請再完成一項設定：\n\n"
+                        + tip + "\n\n之後可在「系統參數設定 → 通知與背景執行設定」再次查看。")
+                .setPositiveButton("App 設定", (d, w) -> openAppDetailsSettings())
                 .setNegativeButton("稍後", null)
                 .show();
     }
@@ -884,7 +909,6 @@ public class MainActivity extends AppCompatActivity {
     private TextView mDashPerclosValue;
     private TextView mDashCiValue;
     private TextView mDashScoreValue;
-    private String mLastTelemetryJson = "";
 
     private int dp(float value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
@@ -957,7 +981,7 @@ public class MainActivity extends AppCompatActivity {
         header.setPadding(0, 0, 0, dp(10));
         layout.addView(header);
 
-        // 1. 4:3 相機預覽卡片 (圓角、白色細邊框，右上角「回報問題」)
+        // 1. 4:3 相機預覽卡片 (圓角、白色細邊框)
         try {
             int screenW = getResources().getDisplayMetrics().widthPixels;
             int camW = screenW - dp(40);
@@ -976,19 +1000,6 @@ public class MainActivity extends AppCompatActivity {
             previewView.setScaleType(androidx.camera.view.PreviewView.ScaleType.FILL_CENTER);
             cardView.addView(previewView, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-            TextView reportBtn = new TextView(this);
-            reportBtn.setText("回報問題");
-            reportBtn.setTextSize(12);
-            reportBtn.setTypeface(null, android.graphics.Typeface.BOLD);
-            reportBtn.setTextColor(Color.WHITE);
-            reportBtn.setBackground(roundedBg(C_CORAL, 12));
-            reportBtn.setPadding(dp(12), dp(4), dp(12), dp(4));
-            FrameLayout.LayoutParams reportLp = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
-            reportLp.setMargins(0, dp(8), dp(8), 0);
-            reportBtn.setOnClickListener(v -> copyDiagnosticReport());
-            cardView.addView(reportBtn, reportLp);
 
             layout.addView(cardView);
 
@@ -1098,23 +1109,6 @@ public class MainActivity extends AppCompatActivity {
     /** 版本字串 (建置時間版號 + git commit)，用來確認回報來自哪一版 APK。 */
     private static String versionLabel() {
         return BuildConfig.VERSION_NAME + " (" + BuildConfig.GIT_COMMIT + ")";
-    }
-
-    /** 監控中心「回報問題」：把目前偵測狀態與裝置資訊複製成文字 (不含影像)。 */
-    private void copyDiagnosticReport() {
-        String text = "[EFD Android 錯誤回報]\n"
-                + "版本: " + versionLabel() + "\n"
-                + "裝置: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android " + Build.VERSION.RELEASE
-                + " (SDK " + Build.VERSION.SDK_INT + ")\n"
-                + "通知: " + (EfdNotificationHudManager.canPostFatigueAlerts(this) ? "開啟" : "關閉")
-                + " / 背景偵測: " + (EfdForegroundService.getInstance() != null ? "執行中" : "未執行") + "\n"
-                + "目前偵測: " + mLastTelemetryJson;
-        android.content.ClipboardManager clipboard =
-                (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        if (clipboard != null) {
-            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("EFD 錯誤回報", text));
-        }
-        Toast.makeText(this, "已複製錯誤資訊，請貼到 LINE 傳給研究人員", Toast.LENGTH_LONG).show();
     }
 
     /** 舊的校準結果無法沿用 (未量到眼睛開合) 時，提醒使用者重新校準。 */
@@ -1423,7 +1417,6 @@ public class MainActivity extends AppCompatActivity {
                         boolean cameraSuspended = obj.optBoolean("cameraSuspended", false);
                         if (cameraSuspended) mNoFaceSinceMs = 0;
 
-                        mLastTelemetryJson = obj.toString();
                         if (mCurrentStage == UIStage.MainDashboard && mDashScoreText != null) {
                             if (cameraSuspended) {
                                 if (cooldownState == 1) {
@@ -1589,21 +1582,8 @@ public class MainActivity extends AppCompatActivity {
 
     /** 不同廠牌關閉背景服務的設定位置不同，依 Build.MANUFACTURER 顯示對應說明。 */
     private void showBackgroundSettingsGuide() {
-        String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT);
-        String brandTip;
-        if (maker.contains("xiaomi") || maker.contains("redmi") || maker.contains("poco")) {
-            brandTip = "小米：設定 > 應用程式 > EFD > 自動啟動 開啟；省電策略 選「無限制」。\n最近使用清單中長按 EFD 選「鎖定」。";
-        } else if (maker.contains("oppo") || maker.contains("realme") || maker.contains("oneplus")) {
-            // ColorOS 15 以後 (OPPO Reno13 Pro / Android 16 實測)：自動啟動併入「完全允許背景行為」
-            brandTip = "OPPO / realme / 一加：按下方「App 設定」> 耗電管理 > 選「完全允許背景行為」"
-                    + "（較舊的系統則開啟「允許背景活動」與「允許自動啟動」）。\n最近使用清單中將 EFD 往下拉「鎖定」。";
-        } else if (maker.contains("vivo") || maker.contains("iqoo")) {
-            brandTip = "vivo：設定 > 電池 > 背景耗電管理 > EFD 允許背景高耗電；i管家 > 應用程式管理 > 自動啟動 開啟。";
-        } else if (maker.contains("huawei") || maker.contains("honor")) {
-            brandTip = "華為 / 榮耀：設定 > 電池 > 啟動管理 > EFD 改為手動管理，三項全部開啟。";
-        } else if (maker.contains("samsung")) {
-            brandTip = "三星：設定 > 電池 > 背景使用限制 > 確認 EFD 不在「休眠」或「深度休眠」清單；EFD 的電池設定選「不受限制」。";
-        } else {
+        String brandTip = brandBackgroundTip();
+        if (brandTip == null) {
             brandTip = "設定 > 應用程式 > EFD > 電池：選「不受限制」或「不最佳化」。";
         }
         String status = EfdNotificationHudManager.canPostFatigueAlerts(this) ? "目前：通知已開啟" : "目前：通知已關閉（請先開啟）";
@@ -1617,6 +1597,29 @@ public class MainActivity extends AppCompatActivity {
                 .setNeutralButton("App 設定", (d, w) -> openAppDetailsSettings())
                 .setNegativeButton("關閉", null)
                 .show();
+    }
+
+    /** 各廠牌關閉背景服務的設定位置；只靠電池最佳化即可的廠牌回傳 null。 */
+    @Nullable
+    private static String brandBackgroundTip() {
+        String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT);
+        String brandTip;
+        if (maker.contains("xiaomi") || maker.contains("redmi") || maker.contains("poco")) {
+            brandTip = "小米：設定 > 應用程式 > EFD > 自動啟動 開啟；省電策略 選「無限制」。\n最近使用清單中長按 EFD 選「鎖定」。";
+        } else if (maker.contains("oppo") || maker.contains("realme") || maker.contains("oneplus")) {
+            // ColorOS 15 以後 (OPPO Reno13 Pro / Android 16 實測)：自動啟動併入「完全允許背景行為」
+            brandTip = "OPPO / realme / 一加：按「App 設定」> 耗電管理 > 選「完全允許背景行為」"
+                    + "（較舊的系統則開啟「允許背景活動」與「允許自動啟動」）。\n最近使用清單中將 EFD 往下拉「鎖定」。";
+        } else if (maker.contains("vivo") || maker.contains("iqoo")) {
+            brandTip = "vivo：設定 > 電池 > 背景耗電管理 > EFD 允許背景高耗電；i管家 > 應用程式管理 > 自動啟動 開啟。";
+        } else if (maker.contains("huawei") || maker.contains("honor")) {
+            brandTip = "華為 / 榮耀：設定 > 電池 > 啟動管理 > EFD 改為手動管理，三項全部開啟。";
+        } else if (maker.contains("samsung")) {
+            brandTip = "三星：設定 > 電池 > 背景使用限制 > 確認 EFD 不在「休眠」或「深度休眠」清單；EFD 的電池設定選「不受限制」。";
+        } else {
+            brandTip = null;
+        }
+        return brandTip;
     }
 
     @Override
@@ -1635,6 +1638,11 @@ public class MainActivity extends AppCompatActivity {
             }
         }));
         askPendingEyeFatigueQuestion();
+        // 從電池最佳化設定回來：接著顯示廠牌背景執行設定 (只顯示一次)
+        if (mCurrentStage == UIStage.MainDashboard
+                && getSharedPreferences("efd_prefs", MODE_PRIVATE).getBoolean("asked_battery_optimization", false)) {
+            showBackgroundSetupOnce();
+        }
         if (mHandler != null && mTelemetryRunnable != null) {
             mHandler.removeCallbacks(mTelemetryRunnable);
             mHandler.post(mTelemetryRunnable);
