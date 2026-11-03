@@ -4,12 +4,20 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.PixelFormat;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CaptureRequest;
 import android.os.SystemClock;
 import android.util.Log;
+import android.util.Range;
 import android.util.Size;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.OptIn;
+import androidx.camera.camera2.interop.Camera2CameraInfo;
+import androidx.camera.camera2.interop.Camera2Interop;
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop;
+import androidx.camera.core.CameraInfo;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
@@ -30,6 +38,10 @@ public class EfdCameraXManager {
     // 分析頻率上限 10 FPS：每 100 ms 一張仍能抓到一般 100~400 ms 的眨眼。
     // 三星 A71 實測 MediaPipe 每幀約 55 ms (GPU)，15 FPS 時本 App 佔一顆核心約 94%，降頻以控制發熱與耗電
     private static final long MIN_FRAME_INTERVAL_MS = 100;
+    // 連續 10 秒沒偵測到臉 (手機平放、拿去看別處) 改為每 500 ms 一張：A71 實測無臉時仍以 10 FPS
+    // 跑臉部偵測，佔一顆核心約 98%；臉一出現就恢復 10 FPS (最多延遲 0.5 秒)
+    private static final long NO_FACE_SLOWDOWN_AFTER_MS = 10_000;
+    private static final long NO_FACE_FRAME_INTERVAL_MS = 500;
     private static final long INFERENCE_LOG_INTERVAL_MS = 30_000;
 
     private final Context mContext;
@@ -42,6 +54,7 @@ public class EfdCameraXManager {
     private EfdFaceLandmarkerHelper mFaceLandmarker;
     private volatile boolean mMediaPipeUnavailable = false;
     private long mLastAnalyzedMs = 0;
+    private volatile long mLastFaceMs = 0;
     private long mInferenceSumMs = 0;
     private long mConvertSumMs = 0;
     private int mInferenceCount = 0;
@@ -143,20 +156,25 @@ public class EfdCameraXManager {
         // MediaPipe：CameraX 直接輸出 RGBA (在原生層轉換)，toBitmap 只是複製像素；
         // 原本 YUV -> Bitmap -> 旋轉在三星 A71 每幀約 35 ms。MediaPipe 載入失敗時改回 YUV 給啟發式偵測
         final boolean useMediaPipe = !mMediaPipeUnavailable;
-        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+        ImageAnalysis.Builder analysisBuilder = new ImageAnalysis.Builder()
                 .setTargetResolution(new Size(640, 480))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(useMediaPipe
                         ? ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888
-                        : ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                .build();
+                        : ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888);
+        final Range<Integer> fpsRange = pickLowPowerFpsRange();
+        if (fpsRange != null) applyFpsRange(analysisBuilder, fpsRange);
+        ImageAnalysis imageAnalysis = analysisBuilder.build();
 
+        mLastFaceMs = SystemClock.elapsedRealtime(); // 剛開相機 (含校準) 先用 10 FPS
         imageAnalysis.setAnalyzer(mCameraExecutor, new ImageAnalysis.Analyzer() {
             @Override
             public void analyze(@NonNull ImageProxy image) {
                 try {
                     long now = SystemClock.elapsedRealtime();
-                    if (now - mLastAnalyzedMs < MIN_FRAME_INTERVAL_MS) return;
+                    long interval = (now - mLastFaceMs > NO_FACE_SLOWDOWN_AFTER_MS)
+                            ? NO_FACE_FRAME_INTERVAL_MS : MIN_FRAME_INTERVAL_MS;
+                    if (now - mLastAnalyzedMs < interval) return;
                     mLastAnalyzedMs = now;
 
                     if (mFaceLandmarker != null && image.getFormat() == PixelFormat.RGBA_8888) {
@@ -177,7 +195,9 @@ public class EfdCameraXManager {
         try {
             androidx.camera.core.Camera camera;
             if (previewView != null) {
-                androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder().build();
+                androidx.camera.core.Preview.Builder previewBuilder = new androidx.camera.core.Preview.Builder();
+                if (fpsRange != null) applyFpsRange(previewBuilder, fpsRange);
+                androidx.camera.core.Preview preview = previewBuilder.build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
                 camera = mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, preview, imageAnalysis);
             } else {
@@ -187,6 +207,44 @@ public class EfdCameraXManager {
         } catch (Throwable t) {
             Log.e(TAG, "Bind CameraX to lifecycle failed: " + t.getMessage(), t);
         }
+    }
+
+    /**
+     * 相機輸出幀率：預設 30 FPS，但只分析 10 FPS，CameraX 仍會把每一張轉成 RGBA。
+     * 從手機支援的範圍中挑「最低幀率 >= 10 (暗處也不低於分析頻率)」且上限最小的一組，
+     * A71 前鏡頭為 [15,15]；找不到時維持手機預設。
+     */
+    @OptIn(markerClass = ExperimentalCamera2Interop.class)
+    @Nullable
+    private Range<Integer> pickLowPowerFpsRange() {
+        try {
+            Range<Integer> best = null;
+            for (CameraInfo info : mCameraProvider.getAvailableCameraInfos()) {
+                Camera2CameraInfo c2 = Camera2CameraInfo.from(info);
+                Integer facing = c2.getCameraCharacteristic(CameraCharacteristics.LENS_FACING);
+                if (facing == null || facing != CameraCharacteristics.LENS_FACING_FRONT) continue;
+                Range<Integer>[] ranges = c2.getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+                if (ranges == null) continue;
+                for (Range<Integer> r : ranges) {
+                    if (r.getLower() < 10) continue;
+                    if (best == null || r.getUpper() < best.getUpper()
+                            || (r.getUpper().equals(best.getUpper()) && r.getLower() > best.getLower())) {
+                        best = r;
+                    }
+                }
+                break;
+            }
+            Log.i(TAG, "前鏡頭輸出幀率範圍: " + (best != null ? best : "手機預設"));
+            return best;
+        } catch (Throwable t) {
+            Log.w(TAG, "讀取前鏡頭幀率範圍失敗，維持預設: " + t.getMessage());
+            return null;
+        }
+    }
+
+    @OptIn(markerClass = ExperimentalCamera2Interop.class)
+    private static <T> void applyFpsRange(androidx.camera.core.ExtendableBuilder<T> builder, Range<Integer> range) {
+        new Camera2Interop.Extender<>(builder).setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, range);
     }
 
     /**
@@ -204,6 +262,7 @@ public class EfdCameraXManager {
             byte[] rgb = EfdNativeBridge.isDebugCaptureRequested() ? bitmapToRgb(frame) : null;
             EfdNativeBridge.sendLandmarks(result.normalizedXyz, frame.getWidth(), frame.getHeight(), reported,
                     result.blinkLeft, result.blinkRight, result.lookDown, rgb);
+            if (result.normalizedXyz != null) mLastFaceMs = SystemClock.elapsedRealtime();
             logInferenceTime(result.inferenceMs, convertMs, result.normalizedXyz != null);
         } finally {
             frame.recycle();
