@@ -172,7 +172,11 @@ bool AsyncPipelineEngine::start() {
             this->m_frameQueueCv.notify_one();
         }
     });
-    m_camera->start();
+    // 平台自行控制相機時 (Android CameraX) 不啟動內建相機服務：Android 沒有對應驅動，會退回模擬相機，
+    // 模擬畫面再被啟發式偵測器當成有人臉 (A71 實測安裝後第一分鐘出現 1.5 秒假的在座資料)
+    if (!m_externalCameraControl.load()) {
+        m_camera->start();
+    }
 
     // 啟動時立即檢查是否有錯過的同步 (補傳)
     checkAndTriggerNightlySync();
@@ -662,7 +666,9 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             eyeMetrics.windowBlinkDurationMs,
             eyeMetrics.longClosuresPerMin
         );
-        accumulateMinute(true, hasFace, eyeMetrics, complexity.complexityIndex, state, deltaSec,
+        // 模擬相機的影格不是真實受試者資料，不計入每分鐘摘要 (與資料庫規則相同)
+        const bool realFrame = !package.frame.isSynthetic;
+        accumulateMinute(realFrame, hasFace && realFrame, eyeMetrics, complexity.complexityIndex, state, deltaSec,
                          package.detection.landmarksMeasured);
         int64_t count = ++m_processedFrameCount;
 
