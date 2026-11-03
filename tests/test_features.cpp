@@ -1250,6 +1250,22 @@ void testCrossoverGroupsAndStudyLog() {
     assert(json.find("\"subject_id\": \"SUBJ-TEST\"") != std::string::npos);
     // 時間範圍外的資料不上傳
     assert(log.buildUploadJsonFields("SUBJ-TEST", 1793700000000LL).find("\"minute\"") == std::string::npos);
+
+    // 每日摘要附上研究組別 (試算表每日摘要的 study_group 欄)；未選組時為空字串
+    {
+        std::string groupDir = makeTestDir("efd_test_study_group");
+        efd::AsyncPipelineEngine engine(efd::PlatformType::Android);
+        engine.setDataDirectory(groupDir);
+        assert(engine.buildStudyLogJson("SUBJ-TEST").find("\"study_group\": \"\"") != std::string::npos);
+        assert(engine.getStudyTracker().setStudyGroup("B"));
+        efd::PayloadHeader groupHeader;
+        groupHeader.subjectUuid = "SUBJ-TEST";
+        groupHeader.extraJsonFields = engine.buildStudyLogJson("SUBJ-TEST");
+        const std::string groupJson = efd::NetworkSyncWorker::buildPayloadJson(groupHeader, {}, false);
+        assert(groupJson.find("\"study_group\": \"B\"") != std::string::npos);
+        assert(groupJson.find("\"minute_summaries\": [") != std::string::npos);
+        std::filesystem::remove_all(groupDir);
+    }
     std::cout << " [PASS]\n";
 }
 

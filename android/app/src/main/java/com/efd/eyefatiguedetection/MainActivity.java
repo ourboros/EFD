@@ -1221,6 +1221,11 @@ public class MainActivity extends AppCompatActivity {
                 "依手機廠牌設定自動啟動與電池不受限制，劃掉 App 後仍會提醒",
                 notifyOn ? "通知開啟  ›" : "通知關閉  ›", true, v -> showBackgroundSettingsGuide());
 
+        // 2.1 測試提醒通知：不受組別影響 (只記錄數據的那一週也能確認通知收得到)，不詢問疲勞程度、不寫入研究資料
+        addSettingsCard(layout, "測試提醒通知",
+                "10 秒後送出一則測試提醒；可先回到主畫面或劃掉 App，確認背景也收得到",
+                "›", true, v -> scheduleTestNotification());
+
         // 3. 重設眼動監測
         addSettingsCard(layout, "重新校準眼動基準",
                 "換了使用環境、光線或配戴眼鏡時，重新校準可提升準確度",
@@ -1592,11 +1597,21 @@ public class MainActivity extends AppCompatActivity {
                 .setMessage(status + "\n\n"
                         + "1. 通知：開啟 EFD 通知，以及「EFD 眼睛疲勞警告提醒」類別。\n"
                         + "2. 背景執行：" + brandTip + "\n\n"
-                        + "疲勞提醒只在偵測到疲勞時發送（平滑分數達門檻並持續數秒），平常沒有通知是正常的；可用「測試背景通知」確認設定是否正確。")
+                        + "疲勞提醒只在偵測到疲勞時發送（平滑分數達門檻並持續數秒），平常沒有通知是正常的；可用設定頁的「測試提醒通知」確認設定是否正確。")
                 .setPositiveButton("通知設定", (d, w) -> openAppNotificationSettings())
                 .setNeutralButton("App 設定", (d, w) -> openAppDetailsSettings())
                 .setNegativeButton("關閉", null)
                 .show();
+    }
+
+    private void scheduleTestNotification() {
+        EfdForegroundService service = EfdForegroundService.getInstance();
+        if (service == null) {
+            Toast.makeText(this, "背景偵測尚未啟動，請先回到監控中心", Toast.LENGTH_LONG).show();
+            return;
+        }
+        service.scheduleTestAlert(10_000);
+        Toast.makeText(this, "10 秒後送出測試提醒，現在可以回到主畫面", Toast.LENGTH_LONG).show();
     }
 
     /** 各廠牌關閉背景服務的設定位置；只靠電池最佳化即可的廠牌回傳 null。 */

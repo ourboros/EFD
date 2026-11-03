@@ -897,7 +897,11 @@ void AsyncPipelineEngine::recordEyeFatigueResponse(int64_t alertTimeMs, int eyeF
 std::string AsyncPipelineEngine::buildStudyLogJson(const std::string& subjectId) const {
     const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    return m_studyLog.buildUploadJsonFields(subjectId, nowMs - kStudyLogUploadDays * 24LL * 3600 * 1000);
+    // 每日摘要那一列的研究組別 (每分鐘摘要與自評的每一列另有 group 欄位)；未選組時為空字串
+    std::string group = m_studyTracker.getStudyGroup();
+    if (group != "A" && group != "B") group.clear();
+    return "\"study_group\": \"" + group + "\",\n  "
+        + m_studyLog.buildUploadJsonFields(subjectId, nowMs - kStudyLogUploadDays * 24LL * 3600 * 1000);
 }
 
 void AsyncPipelineEngine::setExternalCameraControl(bool external) {
