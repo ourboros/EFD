@@ -6,9 +6,22 @@
 //       efd_diag_replay --capture <輸出.ppm> [相機編號，預設 0]
 //       用這台電腦的實體相機拍一張 (經過與 App 相同的驅動與色彩轉換)，存檔後一併判斷；
 //       用來檢查不同電腦的鏡頭格式 (畫面黑白條紋、偏紅等問題)
+//       efd_diag_replay --engine <目錄或 .ppm 檔> [...]
+//       同一批圖片同時用啟發式偵測器與 ONNX 模型 (models/) 判斷，比較是否找到臉與 EAR
+//       efd_diag_replay --csv <檔案> [校準睜眼 EAR，預設 0.26]
+//       把一段 EAR 時間序列依 App 相同的流程重算疲勞分數 (P80 滾動基準、眨眼與長閉眼、
+//       固定容許誤差的 MSE、20/5/5 狀態機)，每 30 秒印一列並標出提醒時間。可讀：
+//         - 手機 logcat 的 EFD_Frame 行 (debug 版 App；adb logcat -s EFD_Frame > log.txt)
+//         - CSV「秒,EAR[,有臉 0/1]」，第一列可為標題
 
 #include "vision/FaceLandmarker.hpp"
 #include "vision/CameraService.hpp"
+#include "vision/OnnxFaceLandmarker.hpp"
+#include "analysis/FeatureExtractor.hpp"
+#include "analysis/RollingOpenBaseline.hpp"
+#include "analysis/EmdCalculator.hpp"
+#include "analysis/MseCalculator.hpp"
+#include "state/FatigueStateMachine.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -16,7 +29,10 @@
 #include <thread>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <sstream>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -34,6 +50,12 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+// 命令列參數為 UTF-8 (Windows 主控台已切換為 UTF-8)
+fs::path argPath(const char* utf8) {
+    const std::string bytes(utf8);
+    return fs::path(std::u8string(bytes.begin(), bytes.end()));
+}
 
 // 讀取二進位 PPM (P6, maxval 255)
 bool readPpm(const fs::path& path, std::vector<uint8_t>& rgb, int& width, int& height) {
@@ -123,6 +145,188 @@ void collect(const fs::path& arg, std::vector<fs::path>& files) {
     }
 }
 
+// 由特徵點計算兩眼平均 EAR (與 App 相同的 MediaPipe 索引)
+float earFromLandmarks(const std::vector<efd::Point3D>& landmarks) {
+    efd::FeatureExtractor extractor;
+    return extractor.processFrame(landmarks, 30.0f).earAvg;
+}
+
+// --engine：同一張圖比較啟發式偵測器與 ONNX 模型
+int compareDetectors(const std::vector<fs::path>& files) {
+    auto model = efd::createModelLandmarkDetector(efd::defaultModelDirectory());
+    if (!model) {
+        std::cerr << "載入 ONNX 模型失敗 (需要 onnxruntime.dll 與 models/ 在執行檔旁)\n";
+        return 1;
+    }
+    int heuristicFaces = 0, modelFaces = 0, total = 0;
+    std::cout << std::fixed << std::setprecision(3)
+              << "檔案                                   啟發式(臉/EAR)    ONNX模型(臉/EAR)\n";
+    for (const auto& file : files) {
+        efd::RawFrame frame;
+        if (!readPpm(file, frame.data, frame.width, frame.height)) continue;
+        ++total;
+        efd::FaceLandmarker heuristic;
+        const auto h = heuristic.detect(frame);
+        model->resetTracking();
+        const auto m = model->detect(frame);
+        heuristicFaces += h.hasFace ? 1 : 0;
+        modelFaces += m.hasFace ? 1 : 0;
+        std::string name = file.filename().string();
+        if (name.size() > 36) name = name.substr(0, 33) + "...";
+        std::cout << std::left << std::setw(39) << name << std::right
+                  << (h.hasFace ? "有  " : "無  ") << std::setw(6) << (h.hasFace ? earFromLandmarks(h.landmarks) : 0.0f)
+                  << "        " << (m.hasFace ? "有  " : "無  ") << std::setw(6) << (m.hasFace ? earFromLandmarks(m.landmarks) : 0.0f)
+                  << "\n";
+    }
+    std::cout << "\n共 " << total << " 張：啟發式找到臉 " << heuristicFaces << " 張，ONNX 模型找到臉 " << modelFaces << " 張\n"
+              << "(啟發式的 EAR 是依開合度推算的網格，模型的 EAR 是實際量測)\n";
+    return 0;
+}
+
+struct EarSample {
+    double t = 0.0;
+    float ear = 0.0f;
+    bool face = false;
+};
+
+// 讀取 logcat 的 EFD_Frame 行或「秒,EAR[,有臉]」CSV
+std::vector<EarSample> readEarSeries(const fs::path& path) {
+    std::vector<EarSample> out;
+    std::ifstream in(path);
+    std::string line;
+    auto field = [](const std::string& l, const std::string& key) -> std::string {
+        const size_t p = l.find(key);
+        if (p == std::string::npos) return "";
+        const size_t start = p + key.size();
+        const size_t end = l.find_first_of(" \r", start);
+        return l.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    };
+    while (std::getline(in, line)) {
+        try {
+            if (line.find("EFD_Frame") != std::string::npos) {
+                // 11-03 12:33:20.123 ... EFD_Frame: face=1 ear=0.0360 ...
+                std::istringstream ss(line);
+                std::string date, time;
+                ss >> date >> time;
+                int hh = 0, mm = 0;
+                double sec = 0.0;
+                if (std::sscanf(time.c_str(), "%d:%d:%lf", &hh, &mm, &sec) != 3) continue;
+                EarSample s;
+                s.t = hh * 3600.0 + mm * 60.0 + sec;
+                s.face = field(line, "face=") == "1";
+                s.ear = std::stof(field(line, "ear="));
+                out.push_back(s);
+            } else if (!line.empty() && (std::isdigit(static_cast<unsigned char>(line[0])) || line[0] == '.')) {
+                std::istringstream ss(line);
+                std::string a, b, c;
+                std::getline(ss, a, ',');
+                std::getline(ss, b, ',');
+                std::getline(ss, c, ',');
+                // 整欄都要是數字 (logcat 其他行也以日期數字開頭，不可誤讀)
+                size_t usedT = 0, usedEar = 0;
+                EarSample s;
+                s.t = std::stod(a, &usedT);
+                s.ear = std::stof(b, &usedEar);
+                if (usedT != a.size() || usedEar != b.size()) continue;
+                s.face = c.empty() ? s.ear > 0.0f : std::stoi(c) != 0;
+                out.push_back(s);
+            }
+        } catch (const std::exception&) {
+            // 格式不符的列略過
+        }
+    }
+    return out;
+}
+
+std::string clockText(double t) {
+    const int s = static_cast<int>(t);
+    std::ostringstream o;
+    o << std::setfill('0') << std::setw(2) << (s / 3600) % 24 << ":" << std::setw(2) << (s / 60) % 60
+      << ":" << std::setw(2) << s % 60;
+    return o.str();
+}
+
+// --csv：依 AsyncPipelineEngine 的訊號流程 (模型偵測器路徑) 重算
+int replayEarSeries(const fs::path& path, float calibOpenEar) {
+    const auto samples = readEarSeries(path);
+    if (samples.size() < 2) {
+        std::cerr << "讀不到 EAR 資料: " << path.string() << "\n";
+        return 1;
+    }
+    efd::RollingOpenBaseline baseline(calibOpenEar);
+    efd::FeatureExtractor extractor(60.0f, baseline.perclosThreshold());
+    extractor.setBlinkThreshold(baseline.blinkThreshold());
+    efd::EmdCalculator emd(4, 15, 0.05f);
+    efd::MseCalculator mse(5, 2, 0.15f);
+    efd::FatigueStateMachine fsm;
+    std::vector<std::pair<double, float>> alerts;
+    double now = samples.front().t;
+    fsm.setAlertCallback([&](efd::FatigueLevel, float score, const std::string&) { alerts.emplace_back(now, score); });
+
+    float measuredFps = 30.0f, absentSec = 0.0f, ci = 2.0f, ciTimer = 0.0f;
+    double nextPrint = samples.front().t + 30.0;
+    efd::EyeMetrics m;
+    std::cout << std::fixed
+              << "時間      PERCLOS 眨眼/分 眨眼ms 長閉眼/分  CI    門檻   平滑分數 狀態\n";
+    for (size_t i = 1; i < samples.size(); ++i) {
+        const EarSample& s = samples[i];
+        now = s.t;
+        const float dt = std::clamp(static_cast<float>(s.t - samples[i - 1].t), 0.001f, 2.0f);
+        measuredFps = std::clamp(measuredFps * 0.9f + (1.0f / dt) * 0.1f, 5.0f, 60.0f);
+        if (s.face) {
+            absentSec = 0.0f;
+            m = extractor.processEar(s.ear, s.ear, measuredFps);
+            baseline.add(m.earAvg, dt);
+            extractor.setEyeClosedThreshold(baseline.perclosThreshold());
+            extractor.setBlinkThreshold(baseline.blinkThreshold());
+            ciTimer += dt;
+            if (ciTimer >= 1.0f) {
+                ciTimer = 0.0f;
+                std::vector<float> signal = extractor.getEarHistoryResampled(10.0f);
+                if (signal.size() >= 300) {
+                    efd::EmdResult r = emd.decompose(signal);
+                    if (!r.imfs.empty() && r.imfs.front().size() == signal.size()) {
+                        for (size_t k = 0; k < signal.size(); ++k) signal[k] -= r.imfs.front()[k];
+                    }
+                    const float range = std::max(0.05f, baseline.openEar() - efd::RollingOpenBaseline::kClosedEarFloor);
+                    ci = mse.calculateComplexity(signal, 0.15f * range).complexityIndex;
+                } else {
+                    ci = 2.0f;
+                }
+            }
+        } else {
+            extractor.resetTemporaryCounters();
+            absentSec += dt;
+            if (absentSec >= 3.0f) extractor.reset();
+            m = efd::EyeMetrics{};
+            ciTimer = 0.0f;
+        }
+        const efd::SystemState st = fsm.update(s.face, m.perclos, m.blinkRatePerMin, s.face ? ci : 0.0f, dt,
+                                               m.windowBlinkDurationMs, m.longClosuresPerMin);
+        if (s.t >= nextPrint) {
+            nextPrint = s.t + 30.0;
+            const char* state = !s.face ? "未偵測到臉"
+                : st.cooldownState == efd::CooldownState::InCooldown ? "冷卻中"
+                : st.cooldownState == efd::CooldownState::FastScreening ? "快篩中" : "";
+            std::cout << clockText(s.t) << "  " << std::setprecision(2) << std::setw(5) << m.perclos
+                      << std::setprecision(1) << std::setw(8) << m.blinkRatePerMin
+                      << std::setprecision(0) << std::setw(7) << m.windowBlinkDurationMs
+                      << std::setprecision(1) << std::setw(9) << m.longClosuresPerMin
+                      << std::setprecision(2) << std::setw(7) << ci
+                      << std::setprecision(3) << std::setw(7) << baseline.perclosThreshold()
+                      << std::setprecision(1) << std::setw(9) << st.smoothedFatigueScore << "  " << state << "\n";
+        }
+    }
+    std::cout << "\n共 " << samples.size() << " 筆，" << clockText(samples.front().t) << " ~ " << clockText(samples.back().t) << "\n";
+    if (alerts.empty()) {
+        std::cout << "期間沒有觸發疲勞提醒\n";
+    }
+    for (const auto& a : alerts) {
+        std::cout << "疲勞提醒: " << clockText(a.first) << " (分數 " << std::setprecision(1) << a.second << ")\n";
+    }
+    return 0;
+}
+
 } // anonymous namespace
 
 int main(int argc, char** argv) {
@@ -131,19 +335,35 @@ int main(int argc, char** argv) {
 #endif
     if (argc < 2) {
         std::cerr << "用法: efd_diag_replay <目錄或 .ppm 檔> [...]\n"
-                  << "      efd_diag_replay --capture <輸出.ppm> [相機編號]   (用這台電腦的相機拍一張並判斷)\n";
+                  << "      efd_diag_replay --capture <輸出.ppm> [相機編號]   (用這台電腦的相機拍一張並判斷)\n"
+                  << "      efd_diag_replay --engine <目錄或 .ppm 檔> [...]   (比較啟發式與 ONNX 模型)\n"
+                  << "      efd_diag_replay --csv <EFD_Frame 記錄或 CSV> [校準睜眼 EAR]   (重算疲勞分數)\n";
         return 2;
     }
 
+    const std::string mode = argv[1];
+    if (mode == "--csv") {
+        if (argc < 3) return 2;
+        const float openEar = (argc >= 4) ? std::stof(argv[3]) : 0.26f;
+        return replayEarSeries(argPath(argv[2]), openEar);
+    }
+
     std::vector<fs::path> files;
-    if (std::string(argv[1]) == "--capture") {
-        const fs::path out = fs::u8path(argc >= 3 ? argv[2] : "camera_capture.ppm");
+    if (mode == "--engine") {
+        for (int i = 2; i < argc; ++i) {
+            collect(argPath(argv[i]), files);
+        }
+        std::sort(files.begin(), files.end());
+        return compareDetectors(files);
+    }
+    if (mode == "--capture") {
+        const fs::path out = argPath(argc >= 3 ? argv[2] : "camera_capture.ppm");
         const int deviceIndex = (argc >= 4) ? std::atoi(argv[3]) : 0;
         if (!captureFromCamera(out, deviceIndex)) return 1;
         files.push_back(out);
     } else {
         for (int i = 1; i < argc; ++i) {
-            collect(fs::u8path(argv[i]), files);
+            collect(argPath(argv[i]), files);
         }
     }
     std::sort(files.begin(), files.end());
