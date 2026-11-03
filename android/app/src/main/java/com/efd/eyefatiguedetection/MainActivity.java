@@ -1201,9 +1201,9 @@ public class MainActivity extends AppCompatActivity {
         // 1. 提示靈敏度：只調整提醒門檻與持續秒數，20/5/5 冷卻規則不變 (點擊循環切換)
         final String[] sensLabels = { "低", "標準", "高" };
         final String[] sensDescs = {
-                "疲勞分數 ≥70 持續 15 秒才提醒（較少打擾）",
-                "疲勞分數 ≥65 持續 10 秒才提醒（推薦）",
-                "疲勞分數 ≥58 持續 5 秒即提醒（較敏感）" };
+                "疲勞分數 ≥70 持續 10 秒才提醒（較少打擾）",
+                "疲勞分數 ≥65 持續 5 秒才提醒（推薦）",
+                "疲勞分數 ≥58 持續 3 秒即提醒（較敏感）" };
         int savedLevel = EfdNativeBridge.getSensitivity();
         final boolean engineReady = savedLevel >= 0;
         if (engineReady) mSensitivityLevel = savedLevel;

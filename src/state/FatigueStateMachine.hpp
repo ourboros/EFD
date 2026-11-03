@@ -8,12 +8,14 @@
 namespace efd {
 
 // 20/5/5 防打擾狀態機 (規格以 System design.md 第 5.2 節為準)
-// - 觸發：60 秒平滑分數 >= 65 且持續 10 秒 -> 發送提醒並進入 20 分鐘冷卻
+// - 觸發：20 秒平滑分數 >= 65 且持續 5 秒 -> 發送提醒並進入 20 分鐘冷卻
+//   (原為 60 秒平滑、持續 10 秒：OPPO / A71 實測持續閉眼要 1.5~2 分鐘才提醒，受試者覺得像睡著了才提醒；
+//    模擬持續閉眼 69 -> 28 秒、疲倦慢眨眼 108 -> 61 秒，低頭看手機與正常使用仍不觸發)
 // - 冷卻：20 分鐘內不再提醒 (離座期間仍持續倒數)
 // - 快篩：冷卻期滿後，每 5 分鐘 (在座時間) 以該窗口平均分數判定一次
 //         >= 65 再次提醒並重新冷卻；< 45 回到常態追蹤；其餘再快篩 5 分鐘
 // - 離座：連續 5 分鐘未偵測到人臉，視為已休息，清除冷卻與平滑分數
-// - 靈敏度：只調整提醒門檻與持續秒數 (低 70/15s、標準 65/10s、高 58/5s)，20/5/5 時間規則不變
+// - 靈敏度：只調整提醒門檻與持續秒數 (低 70/10s、標準 65/5s、高 58/3s)，20/5/5 時間規則不變
 class FatigueStateMachine {
 public:
     using AlertCallback = std::function<void(FatigueLevel level, float score, const std::string& message)>;
@@ -21,8 +23,8 @@ public:
     // 標準靈敏度的預設值
     static constexpr float kSevereThreshold = 65.0f;
     static constexpr float kAttentionThreshold = 45.0f;
-    static constexpr float kSevereHoldSeconds = 10.0f;
-    static constexpr float kSmoothingTauSeconds = 60.0f;
+    static constexpr float kSevereHoldSeconds = 5.0f;
+    static constexpr float kSmoothingTauSeconds = 20.0f;
     // PERCLOS 單項換算綜合分數的比例：PERCLOS 約 15% 以上即可單獨達到 65
     static constexpr float kPerclosOnlyWeight = 0.9f;
     // 快篩窗口後端採樣時間 (最後 60 秒)：5 分鐘快篩期間，前 4 分鐘相機關閉休眠，最後 1 分鐘啟動相機採樣

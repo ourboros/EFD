@@ -2230,8 +2230,8 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
     int item1Y = startY;
     bool highSensitivity = (m_engine.getSensitivity() == FatigueStateMachine::kSensitivityHigh);
     const wchar_t* s1Desc = highSensitivity
-        ? L"高靈敏度：疲勞分數 ≥58 持續 5 秒即提醒 (20/5/5 冷卻規則不變)"
-        : L"標準靈敏度：疲勞分數 ≥65 持續 10 秒才提醒 (推薦)";
+        ? L"高靈敏度：疲勞分數 ≥58 持續 3 秒即提醒 (20/5/5 冷卻規則不變)"
+        : L"標準靈敏度：疲勞分數 ≥65 持續 5 秒才提醒 (推薦)";
     drawSettingToggleItem(item1Y, m_sensitivityBtnRect, m_isHoveringSensitivityBtn, L"高靈敏度提醒", s1Desc, highSensitivity);
 
     // 設定項目 2: 疲勞警報提示音

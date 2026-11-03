@@ -141,7 +141,7 @@ static int feedFsm(efd::FatigueStateMachine& fsm, const FsmInput& in, int second
 }
 
 void testFatigueStateMachineFullCycle() {
-    std::cout << "[TEST] 5. 測試 20/5/5 狀態機 (持續 10 秒觸發、20 分冷卻、5 分快篩、離座清零)...";
+    std::cout << "[TEST] 5. 測試 20/5/5 狀態機 (20 秒平滑、持續 5 秒觸發、20 分冷卻、5 分快篩、離座清零)...";
     efd::FatigueStateMachine fsm(1200, 300, 300);
 
     int alertCount = 0;
@@ -162,9 +162,9 @@ void testFatigueStateMachineFullCycle() {
     assert(feedFsm(fsm, kSevereInput, 5, alertCount) == 0);
     assert(feedFsm(fsm, kRelaxedInput, 60, alertCount) == 0);
 
-    // 3. 持續高分：平滑分數需爬升到 65 並維持 10 秒才提醒 (不會在第 1 秒就跳出)
-    assert(feedFsm(fsm, kSevereInput, 60, alertCount) == 0);
-    assert(feedFsm(fsm, kSevereInput, 90, alertCount, &s) == 1);
+    // 3. 持續高分：平滑分數需爬升到 65 並維持 5 秒才提醒 (約 30 多秒，不會在前 20 秒就跳出)
+    assert(feedFsm(fsm, kSevereInput, 20, alertCount) == 0);
+    assert(feedFsm(fsm, kSevereInput, 40, alertCount, &s) == 1);
     assert(lastAlertMsg == "你的眼睛處於疲勞狀態，請適當休息");
     assert(s.cooldownState == efd::CooldownState::InCooldown);
 

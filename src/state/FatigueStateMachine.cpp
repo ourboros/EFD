@@ -23,8 +23,8 @@ FatigueStateMachine::FatigueStateMachine(int cooldownSeconds, int screeningInter
 
 FatigueStateMachine::SensitivityProfile FatigueStateMachine::profileForSensitivity(int level) {
     switch (level) {
-    case kSensitivityLow:  return {70.0f, 15.0f};
-    case kSensitivityHigh: return {58.0f, 5.0f};
+    case kSensitivityLow:  return {70.0f, 10.0f};
+    case kSensitivityHigh: return {58.0f, 3.0f};
     default:               return {kSevereThreshold, kSevereHoldSeconds};
     }
 }
@@ -164,7 +164,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_awayResetApplied = false;
 
             m_lastScore = computeFatigueScore(perclos, blinkRate, complexityIndex, blinkDurationMs, longClosuresPerMin);
-            // 60 秒時間常數 EWMA (與取樣頻率無關)
+            // kSmoothingTauSeconds (20 秒) 時間常數 EWMA (與取樣頻率無關)
             float alpha = 1.0f - std::exp(-dt / kSmoothingTauSeconds);
             m_smoothedScore += alpha * (m_lastScore - m_smoothedScore);
             m_currentLevel = levelForScore(m_smoothedScore, m_severeThreshold);
