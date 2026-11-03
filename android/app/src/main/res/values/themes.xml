@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- 不可沿用 AppCompat 內建名稱 Theme.AppCompat.NoActionBar：深色模式下 DayNight.NoActionBar 的父主題正是它，
          同名會變成繼承自己，開深色模式的手機 (OPPO Reno13 Pro 實測) 一啟動就閃退。介面配色固定，深淺模式都用淺色主題 -->
     <style name="Theme.Efd" parent="Theme.AppCompat.Light.NoActionBar">
@@ -9,6 +9,9 @@
         <item name="android:windowBackground">@color/primary</item>
         <item name="android:statusBarColor">@color/primary</item>
         <item name="android:navigationBarColor">@color/primary</item>
+        <!-- Android 15 起 targetSdk 35 預設畫面延伸到狀態列底下 (OPPO Reno13 Pro 實測標題與狀態列重疊)；
+             各頁版面沒有處理系統列內距，先沿用原本「狀態列在畫面外」的配置 -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="35">true</item>
         <item name="android:textColor">#FFFFFF</item>
         <!-- 全域白色文字會讓白底對話框的按鈕與內文「白底白字」隱形，對話框改用專屬主題 -->
         <item name="alertDialogTheme">@style/EfdAlertDialog</item>
