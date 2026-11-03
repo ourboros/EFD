@@ -1124,6 +1124,19 @@ void testRollingOpenBaselineP80() {
     // 未設定眨眼門檻時與閉眼門檻相同 (啟發式偵測器的舊行為)
     extractor.setBlinkThreshold(-1.0f);
     assert(extractor.getBlinkThreshold() == extractor.getEyeClosedThreshold());
+
+    // A71 實測：連續閉眼 2 分鐘 (EAR 0.04) 不可拉低睜眼基準，否則門檻會掉到閉眼 EAR 以下
+    efd::RollingOpenBaseline closing(0.26f);
+    for (int i = 0; i < 300; ++i) closing.add(0.26f, 0.1f);
+    for (int i = 0; i < 1200; ++i) closing.add(0.04f, 0.1f);
+    assert(std::abs(closing.perclosThreshold() - 0.092f) < 2e-3f);
+
+    // PERCLOS 單項即可達到提醒門檻：實測 PERCLOS 69% 時舊公式只有 62 分
+    using Fsm = efd::FatigueStateMachine;
+    assert(Fsm::computeFatigueScore(0.69f, 15.0f, 3.0f) >= Fsm::kSevereThreshold);
+    assert(Fsm::computeFatigueScore(0.16f, 15.0f, 3.0f) >= Fsm::kSevereThreshold);
+    assert(Fsm::computeFatigueScore(0.14f, 15.0f, 3.0f) < Fsm::kSevereThreshold);
+    assert(Fsm::computeFatigueScore(0.03f, 15.0f, 3.0f) < Fsm::kAttentionThreshold);
     std::cout << std::setprecision(3) << " [PASS] (一般看螢幕 P80 門檻 " << normalPerclosThr << "，低頭 2.5 分鐘後 " << baseline.perclosThreshold() << ")\n";
 }
 

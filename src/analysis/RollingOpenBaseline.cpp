@@ -16,6 +16,9 @@ void RollingOpenBaseline::setInitialOpenEar(float ear) {
 
 void RollingOpenBaseline::add(float ear, float dtSeconds) {
     if (ear <= 0.0f || dtSeconds <= 0.0f) return;
+    // 已達閉眼門檻的幀不納入睜眼基準：A71 實測長時間閉眼 (超過窗口 20%) 會把基準拉低，
+    // 門檻從 0.093 降到 0.054，閉眼的幀反而不再被判為閉眼
+    if (ear < perclosThreshold()) return;
     m_samples.push_back({ear, dtSeconds});
     m_totalSeconds += dtSeconds;
     while (m_samples.size() > 1 && m_totalSeconds - m_samples.front().dt >= kWindowSeconds) {

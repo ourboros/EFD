@@ -86,7 +86,10 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
         complexityScore = std::clamp(((2.5f - complexityIndex) / 1.8f) * 80.0f, 0.0f, 100.0f);
     }
 
-    return std::clamp((0.55f * perclosScore) + (0.25f * blinkScore) + (0.20f * complexityScore), 0.0f, 100.0f);
+    // PERCLOS 權重 55% 時單靠閉眼最多 55 分，到不了提醒門檻 65 (A71 實測 PERCLOS 69% 只有 62 分)；
+    // PERCLOS 是文獻中最可靠的單一指標，因此單項分數乘 0.9 也可觸發提醒 (約 PERCLOS 15% 以上)
+    const float fused = (0.55f * perclosScore) + (0.25f * blinkScore) + (0.20f * complexityScore);
+    return std::clamp(std::max(fused, kPerclosOnlyWeight * perclosScore), 0.0f, 100.0f);
 }
 
 void FatigueStateMachine::enterCooldownUnlocked() {

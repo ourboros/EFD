@@ -74,7 +74,13 @@ public class EfdHttpSyncBridge {
                 String respStr = response.toString();
                 Log.i(TAG, "Google 試算表回應內容: " + respStr);
 
-                boolean success = (code == 200 || code == 302) &&
+                // Apps Script 部署成「需登入」時會被轉到 Google 登入頁 (同樣回 200)，不可當成上傳成功
+                boolean redirectedToLogin = conn.getURL().getHost().contains("accounts.google.com")
+                        || respStr.startsWith("<");
+                if (redirectedToLogin) {
+                    Log.e(TAG, "Apps Script 要求登入，資料未寫入試算表：請把部署的「誰可以存取」設為「任何人」");
+                }
+                boolean success = !redirectedToLogin && (code == 200 || code == 302) &&
                         (respStr.contains("success") || respStr.contains("OK") || respStr.contains("status"));
 
                 if (callback != null) {
