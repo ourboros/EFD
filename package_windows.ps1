@@ -150,7 +150,8 @@ Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "使�
 # 8. 壓縮打包為 ZIP
 Write-Host " -> 正在壓縮封裝為 EFD-v2.1.0-Windows.zip..." -ForegroundColor Green
 if (Test-Path $ZipRootOutput) { Remove-Item -Force $ZipRootOutput }
-Compress-Archive -Path "$DistDir\*" -DestinationPath $ZipRootOutput -Force
+# 壓縮整個資料夾 (不是資料夾內的檔案)：解壓後得到 EFD-v2.1.0-Windows\，檔案不會散落在使用者選的位置
+Compress-Archive -Path $DistDir -DestinationPath $ZipRootOutput -Force
 Copy-Item $ZipRootOutput $ZipBuildOutput -Force
 
 $zipItem = Get-Item $ZipRootOutput
