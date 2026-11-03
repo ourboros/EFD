@@ -140,39 +140,6 @@ public class EfdNativeBridge {
         }
     }
 
-    // 診斷擷取：要求下一幀 C++ 實際分析的 RGB 影像與偵測數值
-    public static void requestDebugCapture() {
-        if (!sLibraryLoaded) return;
-        try {
-            nativeRequestDebugCapture();
-        } catch (Throwable t) {
-            Log.e(TAG, "nativeRequestDebugCapture failed: " + t.getMessage(), t);
-        }
-    }
-
-    // 偵測數值 JSON (含 width/height)；尚未擷取到時為空字串
-    public static String takeDebugCaptureInfo() {
-        if (!sLibraryLoaded) return "";
-        try {
-            String info = nativeTakeDebugCaptureInfo();
-            return info == null ? "" : info;
-        } catch (Throwable t) {
-            Log.e(TAG, "nativeTakeDebugCaptureInfo failed: " + t.getMessage(), t);
-            return "";
-        }
-    }
-
-    // RGB888 影像 (取出後清除)；尚未擷取到時為 null
-    public static byte[] takeDebugCaptureRgb() {
-        if (!sLibraryLoaded) return null;
-        try {
-            return nativeTakeDebugCaptureRgb();
-        } catch (Throwable t) {
-            Log.e(TAG, "nativeTakeDebugCaptureRgb failed: " + t.getMessage(), t);
-            return null;
-        }
-    }
-
     // 提示靈敏度 (0 低 / 1 標準 / 2 高)；由 C++ 保存到設定檔
     public static void setSensitivity(int level) {
         if (!sLibraryLoaded) return;
@@ -214,14 +181,13 @@ public class EfdNativeBridge {
 
     /**
      * MediaPipe 偵測結果：normalizedXyz 為 0~1 正規化特徵點 (x, y, z) 依序排列，沒有臉時傳 null；
-     * width / height 為實際分析 (已轉正) 的畫面尺寸；blink 分數 0 睜 ~ 1 閉，未提供時傳負值；
-     * rgb 只在診斷擷取時提供 (RGB888，同尺寸)，平常傳 null，影像不會離開 C++ 記憶體。
+     * width / height 為實際分析的畫面尺寸；blink 分數 0 睜 ~ 1 閉，未提供時傳負值。只送數值，影像不送進 C++。
      */
     public static void sendLandmarks(float[] normalizedXyz, int width, int height, int rotation,
-                                     float blinkLeft, float blinkRight, float lookDown, byte[] rgb) {
+                                     float blinkLeft, float blinkRight, float lookDown) {
         if (!sLibraryLoaded) return;
         try {
-            nativeSendLandmarks(normalizedXyz, width, height, rotation, blinkLeft, blinkRight, lookDown, rgb);
+            nativeSendLandmarks(normalizedXyz, width, height, rotation, blinkLeft, blinkRight, lookDown);
         } catch (Throwable t) {
             Log.e(TAG, "nativeSendLandmarks failed: " + t.getMessage(), t);
         }
@@ -235,16 +201,6 @@ public class EfdNativeBridge {
         } catch (Throwable t) {
             Log.e(TAG, "nativeGetExtraRotation failed: " + t.getMessage(), t);
             return 0;
-        }
-    }
-
-    public static boolean isDebugCaptureRequested() {
-        if (!sLibraryLoaded) return false;
-        try {
-            return nativeIsDebugCaptureRequested();
-        } catch (Throwable t) {
-            Log.e(TAG, "nativeIsDebugCaptureRequested failed: " + t.getMessage(), t);
-            return false;
         }
     }
 
@@ -361,9 +317,8 @@ public class EfdNativeBridge {
     private static native void nativeSetSimulatedEyeOpenness(float openness);
     private static native void nativeSendFrame(byte[] frameData, int width, int height, int rotation);
     private static native void nativeSendLandmarks(float[] normalizedXyz, int width, int height, int rotation,
-                                                   float blinkLeft, float blinkRight, float lookDown, byte[] rgb);
+                                                   float blinkLeft, float blinkRight, float lookDown);
     private static native int nativeGetExtraRotation();
-    private static native boolean nativeIsDebugCaptureRequested();
     private static native void nativePauseEngine();
     private static native void nativeResumeEngine();
     private static native boolean nativeIsCameraSuspended();
@@ -377,9 +332,6 @@ public class EfdNativeBridge {
     private static native String nativeGetCloudSyncPayloadJson();
     private static native String nativeSubmitQuestionnaire(String surveyData);
     private static native String nativeGetUnlockToken();
-    private static native void nativeRequestDebugCapture();
-    private static native String nativeTakeDebugCaptureInfo();
-    private static native byte[] nativeTakeDebugCaptureRgb();
     private static native void nativeSetSensitivity(int level);
     private static native int nativeGetSensitivity();
     private static native void nativeTriggerTestAlert();

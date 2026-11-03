@@ -248,7 +248,7 @@ public class MainActivity extends AppCompatActivity {
 
     public void setStage(UIStage stage) {
         // 離開監控中心時預覽畫面會被移除；三星等手機在預覽的輸出畫面消失後整個相機串流會停住，
-        // 影像分析跟著收不到畫面 (校準倒數一直找不到臉、匯出診斷「未取得畫面」)，因此先改回只做影像分析
+        // 影像分析跟著收不到畫面 (校準倒數一直找不到臉)，因此先改回只做影像分析
         if (stage != UIStage.MainDashboard) {
             releasePreviewFromService();
         }
@@ -842,11 +842,6 @@ public class MainActivity extends AppCompatActivity {
             retryBtn.setOnClickListener(v -> setStage(UIStage.CalibrationInstruction));
             layout.addView(retryBtn);
 
-            // 失敗當下最能看出原因：直接擷取偵測畫面存到相簿，方便回傳給研究人員
-            Button exportBtn = dashButton("匯出診斷畫面 (回報問題用)", "#33FFFFFF", C_WHITE, 10);
-            exportBtn.setOnClickListener(v -> onExportDiagnosticClicked());
-            layout.addView(exportBtn);
-
             new AlertDialog.Builder(this)
                     .setTitle("未檢測到清晰人臉")
                     .setMessage("校準期間未能穩定偵測到有效人臉特徵（可能距離鏡頭太近或光線不足）。\n\n為避免後續產生假疲勞警報，請調整距離與光線後重新校準。")
@@ -1237,17 +1232,7 @@ public class MainActivity extends AppCompatActivity {
                 "換了使用環境、光線或配戴眼鏡時，重新校準可提升準確度",
                 "›", true, v -> setStage(UIStage.CalibrationInstruction));
 
-        // 4. 錯誤回報 (畫面＋偵測狀態＋手機資訊一次匯出)；自動科研同步恆定開啟，不需設定項目
-        addSettingsCard(layout, "匯出診斷畫面",
-                "擷取 5 張偵測畫面存到相簿「EFD」，並複製偵測狀態與手機資訊（含臉部影像）",
-                "›", true, v -> onExportDiagnosticClicked());
-
-        // 5. 開發用：立即上傳 (不必等到 21:00 才能確認試算表收到資料)，正式版移除
-        addSettingsCard(layout, "立即上傳數據（開發用）",
-                "馬上把目前的數值資料傳到 Google 試算表，不影響每晚 21:00 的自動上傳",
-                "›", true, v -> onUploadNowClicked());
-
-        // 6. 關於與第三方授權 (MediaPipe：Apache 2.0；ONNX Runtime 僅電腦版使用)
+        // 4. 關於與第三方授權 (MediaPipe：Apache 2.0；ONNX Runtime 僅電腦版使用)
         addSettingsCard(layout, "關於與第三方授權",
                 "隱私說明，以及 MediaPipe 等開放原始碼元件的授權",
                 "›", true, v -> showAboutDialog());
@@ -1515,7 +1500,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // -------------------------------------------------------------------------
-    // 偵測診斷：未偵測到臉的原因、匯出 C++ 實際分析的畫面
+    // 偵測診斷：未偵測到臉的原因
     // -------------------------------------------------------------------------
     private static String reasonForStage(String stage) {
         switch (stage) {
@@ -1538,8 +1523,6 @@ public class MainActivity extends AppCompatActivity {
         return reasonForStage(obj.optString("failStage", ""));
     }
 
-    private static final int DIAGNOSTIC_FRAMES = 5;
-
     private void showAboutDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("關於 EFD " + versionLabel())
@@ -1558,133 +1541,6 @@ public class MainActivity extends AppCompatActivity {
                         + "https://opensource.org/license/bsd-3-clause")
                 .setPositiveButton("確定", null)
                 .show();
-    }
-
-    private void onUploadNowClicked() {
-        if (!EfdNativeBridge.isEngineRunning()) {
-            Toast.makeText(this, "偵測引擎尚未啟動，請先回到監控中心", Toast.LENGTH_LONG).show();
-            return;
-        }
-        Toast.makeText(this, "上傳中...", Toast.LENGTH_SHORT).show();
-        EfdHttpSyncBridge.uploadFullPayloadAsync(null, (success, response) -> mHandler.post(() -> {
-            if (isActivityDestroyed()) return;
-            String detail = response == null ? "" : response;
-            if (detail.length() > 120) detail = detail.substring(0, 120) + "...";
-            new AlertDialog.Builder(this)
-                    .setTitle(success ? "上傳成功" : "上傳失敗")
-                    .setMessage(success ? "試算表已收到資料。\n\n伺服器回應：" + detail
-                            : "資料沒有寫入試算表。若 Apps Script 要求登入，請把部署的「誰可以存取」設為「任何人」。\n\n伺服器回應：" + detail)
-                    .setPositiveButton("確定", null)
-                    .show();
-        }));
-    }
-
-    private void onExportDiagnosticClicked() {
-        new AlertDialog.Builder(this)
-                .setTitle("匯出診斷畫面")
-                .setMessage("將擷取 5 張偵測程式實際分析的前鏡頭畫面（含你的臉部影像），存到相簿的「EFD」資料夾，並把偵測數值複製成文字。\n\n"
-                        + "之後在 LINE 傳送這 5 張照片、再貼上文字給研究人員即可。\n\n請按「開始」後看著前鏡頭，約 3 秒後擷取。")
-                .setNegativeButton("取消", null)
-                .setPositiveButton("開始", (d, w) -> {
-                    Toast.makeText(this, "3 秒後擷取，請看著前鏡頭…", Toast.LENGTH_LONG).show();
-                    new Thread(this::runDiagnosticExport, "EFD-DiagnosticExport").start();
-                })
-                .show();
-    }
-
-    // 背景執行緒：逐張向 C++ 要求擷取，存成 PNG 到相簿，最後在主執行緒複製數值並說明下一步
-    private void runDiagnosticExport() {
-        StringBuilder summary = new StringBuilder();
-        int saved = 0;
-        String stamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(new java.util.Date());
-        try {
-            Thread.sleep(3000);
-            for (int i = 1; i <= DIAGNOSTIC_FRAMES; i++) {
-                EfdNativeBridge.requestDebugCapture();
-                String info = "";
-                byte[] rgb = null;
-                for (int wait = 0; wait < 30 && info.isEmpty(); wait++) {
-                    Thread.sleep(50);
-                    info = EfdNativeBridge.takeDebugCaptureInfo();
-                }
-                if (!info.isEmpty()) {
-                    rgb = EfdNativeBridge.takeDebugCaptureRgb();
-                }
-                if (info.isEmpty() || rgb == null) {
-                    summary.append('#').append(i).append(" 未取得畫面（相機可能未運作）\n");
-                    continue;
-                }
-                JSONObject obj = new JSONObject(info);
-                int w = obj.optInt("width", 0);
-                int h = obj.optInt("height", 0);
-                summary.append('#').append(i).append(' ').append(info).append('\n');
-                if (w > 0 && h > 0 && rgb.length >= w * h * 3
-                        && saveRgbToGallery(rgb, w, h, "EFD_diag_" + stamp + "_" + i + ".png")) {
-                    saved++;
-                }
-                Thread.sleep(300);
-            }
-        } catch (Throwable t) {
-            summary.append("匯出中斷: ").append(t.getMessage()).append('\n');
-        }
-
-        final int savedCount = saved;
-        // 原「複製錯誤資訊」的內容 (背景偵測狀態、目前偵測數值) 一併附上，只需按一個按鈕回報
-        final String text = "[EFD Android 診斷]\n"
-                + "版本: " + versionLabel() + "\n"
-                + "裝置: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android " + Build.VERSION.RELEASE
-                + " (SDK " + Build.VERSION.SDK_INT + ")\n"
-                + "時間: " + stamp + " / 通知: " + (EfdNotificationHudManager.canPostFatigueAlerts(this) ? "開啟" : "關閉")
-                + " / 背景偵測: " + (EfdForegroundService.getInstance() != null ? "執行中" : "未執行") + "\n"
-                + "目前偵測: " + EfdNativeBridge.getTelemetryJson() + "\n"
-                + summary;
-        mHandler.post(() -> {
-            if (isActivityDestroyed()) return;
-            android.content.ClipboardManager clipboard =
-                    (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            if (clipboard != null) {
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("EFD 診斷", text));
-            }
-            new AlertDialog.Builder(this)
-                    .setTitle(savedCount > 0 ? "已存 " + savedCount + " 張到相簿，數值已複製" : "沒有存到畫面，數值已複製")
-                    .setMessage(savedCount > 0
-                            ? "請到 LINE：\n1. 從相簿的「EFD」資料夾選這幾張照片傳送（可選原始畫質）\n2. 在對話框長按「貼上」，送出數值文字"
-                            : "請確認監控中心有相機畫面後再試一次；數值文字已複製，可以先貼給研究人員。")
-                    .setPositiveButton("好", null)
-                    .show();
-        });
-    }
-
-    /** RGB888 → PNG，存到相簿 Pictures/EFD (Android 10+ 不需要儲存權限；舊版存到 App 專屬相片資料夾)。 */
-    private boolean saveRgbToGallery(byte[] rgb, int w, int h, String fileName) {
-        int[] pixels = new int[w * h];
-        for (int p = 0, i = 0; p < pixels.length; p++, i += 3) {
-            pixels[p] = 0xFF000000 | ((rgb[i] & 0xFF) << 16) | ((rgb[i + 1] & 0xFF) << 8) | (rgb[i + 2] & 0xFF);
-        }
-        android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(pixels, w, h, android.graphics.Bitmap.Config.ARGB_8888);
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                android.content.ContentValues values = new android.content.ContentValues();
-                values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName);
-                values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png");
-                values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/EFD");
-                android.net.Uri uri = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
-                if (uri == null) return false;
-                try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
-                    return out != null && bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
-                }
-            }
-            java.io.File dir = getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES);
-            if (dir == null) return false;
-            try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(dir, fileName))) {
-                return bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "儲存診斷畫面失敗: " + t.getMessage());
-            return false;
-        } finally {
-            bitmap.recycle();
-        }
     }
 
     // -------------------------------------------------------------------------

@@ -126,6 +126,11 @@ public:
     void setCameraPowerSaving(bool enabled);
     bool isCameraSuspended() const;
 
+    // 離座探測 (預設關閉，需同時開啟相機省電)：相機開著卻連續 60 秒沒偵測到臉時，改為關 15 秒、開 4 秒輪流探測；
+    // 關閉時段視為不在座 (照常累計離座時間)，探測到臉即恢復常態。
+    // Android 開啟；Windows 不開啟 (視訊鏡頭指示燈會跟著一亮一滅，容易讓受試者誤會)。秒數參數供測試縮短時間
+    void setAbsenceProbing(bool enabled, float afterNoFaceSec = 60.0f, float offSec = 15.0f, float onSec = 4.0f);
+
     // 提醒出現時的眼睛疲勞自評 (0~10；-1 = 略過或逾時)，alertTimeMs 為提醒出現的 epoch 毫秒
     void recordEyeFatigueResponse(int64_t alertTimeMs, int eyeFatigue, float responseSec);
 
@@ -264,6 +269,13 @@ private:
     StudyDataLog m_studyLog;
     std::atomic<bool> m_cameraSuspended{false};
     std::chrono::steady_clock::time_point m_lastSuspendedTick{};
+    std::atomic<bool> m_absenceProbing{false};
+    bool m_probeOff = false;          // 以下只在訊號執行緒使用：離座探測的關閉時段
+    float m_probeOffSec = 0.0f;
+    float m_probeAfterNoFaceSec = 60.0f;
+    float m_probeOffDurationSec = 15.0f;
+    float m_probeOnDurationSec = 4.0f;
+    float m_noFaceCameraSec = 0.0f;   // 相機開著、連續沒偵測到臉的秒數
 
     void inferenceWorkerLoop();
     void signalProcessingWorkerLoop();
@@ -271,7 +283,7 @@ private:
     void restoreFromStorage();
     void persistStateMachine();
     void updateComplexityUnlocked();
-    void suspendCamera();
+    void suspendCamera(const char* reason);
     void resumeCamera();
     void tickWhileCameraSuspended();
     void accumulateMinute(bool cameraOn, bool hasFace, const EyeMetrics& eye, float ci,

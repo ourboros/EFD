@@ -154,6 +154,8 @@ bool AsyncPipelineEngine::start() {
     m_processedFrameCount.store(0);
     m_resetFrameTiming.store(true);
     m_cameraSuspended.store(false);
+    m_probeOff = false;
+    m_noFaceCameraSec = 0.0f;
 
     // 啟動 Thread 2: 視覺推論執行緒
     m_inferenceThread = std::thread(&AsyncPipelineEngine::inferenceWorkerLoop, this);
@@ -704,9 +706,19 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             checkAndTriggerNightlySync();
         }
 
-        // 5.2 相機省電：提醒後的冷卻、快篩的非採樣時段關閉相機，需要採樣時再開啟
+        // 5.2 相機省電：提醒後的冷卻、快篩的非採樣時段關閉相機，需要採樣時再開啟；
+        //     相機開著卻持續沒看到臉時，改為輪流關開探測 (離座探測)
+        if (hasFace || !realFrame || isCalibrating()) {
+            m_noFaceCameraSec = 0.0f;
+        } else {
+            m_noFaceCameraSec += deltaSec;
+        }
         if (m_cameraPowerSaving.load() && !state.shouldCameraRun && !isCalibrating()) {
-            suspendCamera();
+            suspendCamera("冷卻或快篩非採樣時段");
+        } else if (m_cameraPowerSaving.load() && m_absenceProbing.load() && m_noFaceCameraSec >= m_probeAfterNoFaceSec) {
+            m_probeOff = true;
+            m_probeOffSec = 0.0f;
+            suspendCamera("持續沒偵測到臉，離座探測");
         }
 
         // 6. 分發遙測至 UI Thread
@@ -758,7 +770,19 @@ bool AsyncPipelineEngine::isCameraSuspended() const {
     return m_cameraSuspended.load();
 }
 
-void AsyncPipelineEngine::suspendCamera() {
+// 離座探測：A71 實測沒臉時即使降頻，EFD 仍佔約 34% 核心、相機系統服務約 86% (相機照樣每秒輸出 15 張)，
+// 因此預設連續 60 秒沒臉就改為關 15 秒、開 4 秒輪流探測，偵測到臉立即恢復常態
+void AsyncPipelineEngine::setAbsenceProbing(bool enabled, float afterNoFaceSec, float offSec, float onSec) {
+    // 秒數只在引擎啟動前設定 (訊號執行緒讀取)
+    if (!m_isRunning.load()) {
+        m_probeAfterNoFaceSec = std::max(1.0f, afterNoFaceSec);
+        m_probeOffDurationSec = std::max(0.5f, offSec);
+        m_probeOnDurationSec = std::clamp(onSec, 0.5f, m_probeAfterNoFaceSec);
+    }
+    m_absenceProbing.store(enabled);
+}
+
+void AsyncPipelineEngine::suspendCamera(const char* reason) {
     if (m_cameraSuspended.exchange(true)) return;
     m_lastSuspendedTick = std::chrono::steady_clock::now();
     if (m_camera) {
@@ -769,7 +793,7 @@ void AsyncPipelineEngine::suspendCamera() {
         std::lock_guard<std::mutex> lock(m_frameQueueMutex);
         while (!m_frameQueue.empty()) m_frameQueue.pop();
     }
-    std::cout << "[省電] 冷卻或快篩非採樣時段，關閉相機\n";
+    std::cout << "[省電] " << reason << "，關閉相機\n";
 }
 
 void AsyncPipelineEngine::resumeCamera() {
@@ -886,11 +910,26 @@ void AsyncPipelineEngine::tickWhileCameraSuspended() {
     const float dt = std::clamp(std::chrono::duration<float>(now - m_lastSuspendedTick).count(), 0.0f, 1.0f);
     m_lastSuspendedTick = now;
 
-    SystemState state = m_stateMachine.advanceWithoutObservation(dt);
-    accumulateMinute(false, false, EyeMetrics{}, 0.0f, state, dt, false);
-    // 使用者重新校準時需要畫面，即使仍在冷卻中也開啟相機
-    if (!m_cameraPowerSaving.load() || state.shouldCameraRun || isCalibrating()) {
-        resumeCamera();
+    SystemState state;
+    if (m_probeOff) {
+        // 離座探測的關閉時段：已連續 1 分鐘沒看到臉，視為不在座 (照常累計離座時間，5 分鐘即算休息)
+        state = m_stateMachine.update(false, 0.0f, 0.0f, 0.0f, dt);
+        accumulateMinute(false, false, EyeMetrics{}, 0.0f, state, dt, false);
+        m_probeOffSec += dt;
+        if (m_probeOffSec >= m_probeOffDurationSec || isCalibrating() || !m_absenceProbing.load()) {
+            m_probeOff = false;
+            // 重新開啟後只看 m_probeOnDurationSec 秒，仍沒有臉就再關閉
+            m_noFaceCameraSec = m_probeAfterNoFaceSec - m_probeOnDurationSec;
+            resumeCamera();
+        }
+    } else {
+        state = m_stateMachine.advanceWithoutObservation(dt);
+        accumulateMinute(false, false, EyeMetrics{}, 0.0f, state, dt, false);
+        // 使用者重新校準時需要畫面，即使仍在冷卻中也開啟相機
+        if (!m_cameraPowerSaving.load() || state.shouldCameraRun || isCalibrating()) {
+            m_noFaceCameraSec = 0.0f;
+            resumeCamera();
+        }
     }
 
     m_persistTimer += dt;

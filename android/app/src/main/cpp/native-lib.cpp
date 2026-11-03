@@ -37,12 +37,6 @@ static std::mutex g_alertMutex;
 static efd::EngineTelemetry g_lastTelemetry;
 static std::mutex g_telemetryMutex;
 
-// 診斷擷取：使用者按下「匯出診斷畫面」時，下一幀 C++ 實際分析的 RGB 影像與偵測數值
-static std::atomic<bool> g_debugCaptureRequested{false};
-static std::vector<uint8_t> g_debugRgb;
-static std::string g_debugInfoJson;
-static std::mutex g_debugMutex;
-
 // Java 端 MediaPipe 偵測：送進來的是特徵點而非影像 (只在相機執行緒呼叫)
 static std::atomic<bool> g_externalDetector{false};
 static efd::ExternalPresenceFilter g_presenceFilter;
@@ -216,7 +210,7 @@ static std::string jsonEscape(const std::string& s) {
     return out;
 }
 
-// 偵測診斷的 JSON 欄位 (遙測與診斷擷取共用)
+// 偵測診斷的 JSON 欄位 (遙測使用)
 static void appendDiagnosticJson(std::ostringstream& oss, const efd::PresenceDiagnostic& d) {
     oss << "\"failStage\":\"" << jsonEscape(d.failStage) << "\","
         << "\"reason\":\"" << jsonEscape(d.unconfirmedReason) << "\","
@@ -281,6 +275,8 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
         engine->setAutoNightlySyncEnabled(false);
         // 冷卻與快篩非採樣時段關閉相機 (前景服務依 cameraSuspended 開關 CameraX，引擎不自行開啟模擬相機)
         engine->setCameraPowerSaving(true);
+        // 持續沒看到臉時相機輪流關開探測 (A71 實測沒臉時相機系統服務仍佔約 86% 核心)
+        engine->setAbsenceProbing(true);
         engine->setExternalCameraControl(true);
 
         engine->setAlertCallback([](efd::FatigueLevel level, float score, const std::string& msg) {
@@ -300,24 +296,6 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
                 const auto& pd = telemetry.presenceDiagnostic;
                 updateOrientationSearch(pd.rawPersonInFrame && pd.rawFacingCamera && !pd.presenceByTracking,
                                         telemetry.detection.hasFace);
-            }
-
-            // 診斷擷取：複製 C++ 實際分析的這一幀 (RGB888) 與偵測數值
-            if (g_debugCaptureRequested.exchange(false) && telemetry.latestFrame.isValid()) {
-                std::ostringstream info;
-                info << std::fixed << std::setprecision(3)
-                     << "{\"width\":" << telemetry.latestFrame.width
-                     << ",\"height\":" << telemetry.latestFrame.height
-                     << ",\"synthetic\":" << (telemetry.latestFrame.isSynthetic ? "true" : "false")
-                     << ",\"hasFace\":" << (telemetry.detection.hasFace ? "true" : "false")
-                     << ",\"rawFace\":" << (telemetry.presenceDiagnostic.rawPersonInFrame && telemetry.presenceDiagnostic.rawFacingCamera ? "true" : "false")
-                     << ",\"fps\":" << telemetry.measuredFps << ",";
-                appendDiagnosticJson(info, telemetry.presenceDiagnostic);
-                info << "}";
-                std::lock_guard<std::mutex> debugLock(g_debugMutex);
-                const size_t bytes = static_cast<size_t>(telemetry.latestFrame.width) * telemetry.latestFrame.height * 3;
-                g_debugRgb.assign(telemetry.latestFrame.data.begin(), telemetry.latestFrame.data.begin() + bytes);
-                g_debugInfoJson = info.str();
             }
 
 #ifndef NDEBUG
@@ -494,12 +472,11 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendFrame(JNIEnv* env, jo
 }
 
 // Java 端 MediaPipe 已完成偵測：送入 0~1 正規化特徵點 (沒有臉時為 null)，由 C++ 換算成像素並交給訊號執行緒
-// width / height 為 MediaPipe 實際分析 (已轉正) 的畫面尺寸；rgb 只在診斷擷取時提供 (RGB888，同尺寸)
+// width / height 為 MediaPipe 實際分析的畫面尺寸；影像本身不送進 C++
 JNIEXPORT void JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendLandmarks(JNIEnv* env, jclass /*clazz*/, jfloatArray normalizedXyz,
                                                                     jint width, jint height, jint rotation,
-                                                                    jfloat blinkLeft, jfloat blinkRight, jfloat lookDown,
-                                                                    jbyteArray rgb) {
+                                                                    jfloat blinkLeft, jfloat blinkRight, jfloat lookDown) {
     auto engine = currentEngine();
     if (!engine || width <= 0 || height <= 0) return;
 
@@ -531,13 +508,6 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendLandmarks(JNIEnv* env
     frameInfo.format = efd::PixelFormat::RGB888;
     frameInfo.isSynthetic = false;
     frameInfo.timestampMs = now;
-    if (rgb) {
-        const jsize len = env->GetArrayLength(rgb);
-        if (static_cast<size_t>(len) == static_cast<size_t>(width) * height * 3) {
-            frameInfo.data.resize(static_cast<size_t>(len));
-            env->GetByteArrayRegion(rgb, 0, len, reinterpret_cast<jbyte*>(frameInfo.data.data()));
-        }
-    }
     engine->submitExternalDetection(std::move(frameInfo), std::move(detection), std::move(diagnostic));
 }
 
@@ -545,12 +515,6 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeSendLandmarks(JNIEnv* env
 JNIEXPORT jint JNICALL
 Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeGetExtraRotation(JNIEnv* /*env*/, jclass /*clazz*/) {
     return static_cast<jint>(g_orientationOffset.load());
-}
-
-// 是否有待處理的診斷擷取 (Java 端只在此時把畫面像素一併送入，平常只送特徵點)
-JNIEXPORT jboolean JNICALL
-Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeIsDebugCaptureRequested(JNIEnv* /*env*/, jclass /*clazz*/) {
-    return g_debugCaptureRequested.load() ? JNI_TRUE : JNI_FALSE;
 }
 
 // 螢幕關閉：暫停引擎 (期間視同離座，滿 5 分鐘清除冷卻)；螢幕開啟後恢復
@@ -784,38 +748,6 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeTriggerTestAlert(JNIEnv* 
     g_lastAlertScore = 0.0f;
     // 與真實疲勞提醒文字區隔，避免使用者誤以為未就坐時仍跳出疲勞警報
     g_lastAlertMessage = "【測試通知】背景通知運作正常，這不是疲勞警報";
-}
-
-JNIEXPORT void JNICALL
-Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeRequestDebugCapture(JNIEnv* /*env*/, jclass /*clazz*/) {
-    {
-        std::lock_guard<std::mutex> lock(g_debugMutex);
-        g_debugRgb.clear();
-        g_debugInfoJson.clear();
-    }
-    g_debugCaptureRequested.store(true);
-}
-
-// 取出診斷擷取的偵測數值 (JSON)；尚未擷取到時回傳空字串
-JNIEXPORT jstring JNICALL
-Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeTakeDebugCaptureInfo(JNIEnv* env, jclass /*clazz*/) {
-    std::lock_guard<std::mutex> lock(g_debugMutex);
-    return env->NewStringUTF(g_debugInfoJson.c_str());
-}
-
-// 取出診斷擷取的 RGB888 影像並清除；尚未擷取到時回傳 null
-JNIEXPORT jbyteArray JNICALL
-Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeTakeDebugCaptureRgb(JNIEnv* env, jclass /*clazz*/) {
-    std::lock_guard<std::mutex> lock(g_debugMutex);
-    if (g_debugRgb.empty()) return nullptr;
-    jbyteArray array = env->NewByteArray(static_cast<jsize>(g_debugRgb.size()));
-    if (array) {
-        env->SetByteArrayRegion(array, 0, static_cast<jsize>(g_debugRgb.size()),
-                                reinterpret_cast<const jbyte*>(g_debugRgb.data()));
-    }
-    g_debugRgb.clear();
-    g_debugInfoJson.clear();
-    return array;
 }
 
 JNIEXPORT void JNICALL

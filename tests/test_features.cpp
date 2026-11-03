@@ -1483,6 +1483,73 @@ void testEngineSuspendsCameraDuringCooldown() {
     std::cout << " [PASS] (關閉期間遙測 " << suspendedTelemetry.load() << " 次；平台層控制時引擎不開啟模擬相機)\n";
 }
 
+void testAbsenceProbing() {
+    std::cout << "[TEST] 38. 離座探測：持續沒臉時相機輪流關開，關閉時段照常累計離座，偵測到臉恢復常態...";
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "efd_test_absence_probe";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    // 縮短時間：沒臉 1 秒就關 1 秒、開 0.5 秒 (預設 60 / 15 / 4 秒)
+    efd::AsyncPipelineEngine engine(efd::PlatformType::Android);
+    engine.setAutoNightlySyncEnabled(false);
+    engine.setDataDirectory(dir.string());
+    engine.setCameraPowerSaving(true);
+    engine.setAbsenceProbing(true, 1.0f, 1.0f, 0.5f);
+    engine.setExternalCameraControl(true);
+    assert(engine.start());
+
+    efd::RawFrame info;
+    info.width = 480;
+    info.height = 640;
+    efd::LandmarkDetectionResult noFace;
+    noFace.hasFace = false;
+    noFace.landmarksMeasured = true;
+    efd::LandmarkDetectionResult face;
+    face.hasFace = true;
+    face.landmarksMeasured = true;
+    face.landmarks.assign(468, efd::Point3D{});
+
+    // 相機開著時每 100 ms 送一筆偵測結果 (相機關閉時平台不會送)，回傳等到指定狀態的毫秒數
+    auto feedUntil = [&](const efd::LandmarkDetectionResult& d, bool wantSuspended, int maxMs) {
+        for (int t = 0; t <= maxMs; t += 100) {
+            if (engine.isCameraSuspended() == wantSuspended) return t;
+            if (!engine.isCameraSuspended()) engine.submitExternalDetection(info, d);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        return -1;
+    };
+
+    const int firstOff = feedUntil(noFace, true, 4000);
+    assert(firstOff >= 800);
+    const int awayAtOff = engine.getStateMachine().getState().awaySeconds;
+    const int offLasted = feedUntil(noFace, false, 4000);
+    assert(offLasted >= 500 && offLasted <= 3000);
+    // 關閉時段視為不在座：離座時間照常累計 (滿 5 分鐘即算休息)
+    assert(engine.getStateMachine().getState().awaySeconds >= awayAtOff + 1);
+    // 重新開啟後只看 0.5 秒，仍沒有臉就再關閉
+    const int secondOff = feedUntil(noFace, true, 3000);
+    assert(secondOff >= 0 && secondOff < firstOff);
+
+    // 探測時段看到臉：恢復常態，不再關閉
+    assert(feedUntil(face, false, 4000) >= 0);
+    for (int i = 0; i < 25; ++i) {
+        engine.submitExternalDetection(info, face);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        assert(!engine.isCameraSuspended());
+    }
+
+    // 校準期間不探測
+    engine.beginCalibration();
+    for (int i = 0; i < 25; ++i) {
+        engine.submitExternalDetection(info, noFace);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        assert(!engine.isCameraSuspended());
+    }
+    engine.stop();
+    std::cout << " [PASS] (沒臉 " << firstOff << " ms 後關閉，關 " << offLasted << " ms，再開 "
+              << secondOff << " ms 又關閉)\n";
+}
+
 void testCameraDriversAndHal() {
     std::cout << "[TEST] 8. 測試跨平台相機硬體抽象層 (Camera HAL & Drivers)...";
     efd::CameraService cameraService(640, 480, 30.0f);
@@ -1902,7 +1969,8 @@ int main() {
     testOnnxFaceLandmarkerMatchesMediaPipe();
     testRollingOpenBaselineP80();
     testCrossoverGroupsAndStudyLog();
+    testAbsenceProbing();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 37 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 38 項測試順利通過！\n";
     return 0;
 }

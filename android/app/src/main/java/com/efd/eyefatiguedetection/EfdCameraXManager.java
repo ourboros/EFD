@@ -21,6 +21,9 @@ import androidx.camera.core.CameraInfo;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
+import androidx.camera.core.resolutionselector.AspectRatioStrategy;
+import androidx.camera.core.resolutionselector.ResolutionSelector;
+import androidx.camera.core.resolutionselector.ResolutionStrategy;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
 import androidx.lifecycle.LifecycleOwner;
@@ -156,8 +159,15 @@ public class EfdCameraXManager {
         // MediaPipe：CameraX 直接輸出 RGBA (在原生層轉換)，toBitmap 只是複製像素；
         // 原本 YUV -> Bitmap -> 旋轉在三星 A71 每幀約 35 ms。MediaPipe 載入失敗時改回 YUV 給啟發式偵測
         final boolean useMediaPipe = !mMediaPipeUnavailable;
+        // 640x480 (感光元件方向，4:3)：舊寫法 setTargetResolution 以直式座標解讀，
+        // A71 因此選到 1088x1088，每幀像素多 3.9 倍；臉部只佔畫面一部分，MediaPipe 裁切後縮放到 256x256，640x480 已足夠
+        ResolutionSelector resolutionSelector = new ResolutionSelector.Builder()
+                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                .setResolutionStrategy(new ResolutionStrategy(new Size(640, 480),
+                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
+                .build();
         ImageAnalysis.Builder analysisBuilder = new ImageAnalysis.Builder()
-                .setTargetResolution(new Size(640, 480))
+                .setResolutionSelector(resolutionSelector)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(useMediaPipe
                         ? ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888
@@ -204,6 +214,8 @@ public class EfdCameraXManager {
                 camera = mCameraProvider.bindToLifecycle(mLifecycleOwner, cameraSelector, imageAnalysis);
             }
             meterOnFaceArea(camera);
+            androidx.camera.core.ResolutionInfo resolution = imageAnalysis.getResolutionInfo();
+            Log.i(TAG, "影像分析解析度: " + (resolution != null ? resolution.getResolution() : "未知"));
         } catch (Throwable t) {
             Log.e(TAG, "Bind CameraX to lifecycle failed: " + t.getMessage(), t);
         }
@@ -250,7 +262,7 @@ public class EfdCameraXManager {
     /**
      * MediaPipe 路徑：偵測 478 點 → 只把特徵點送給 C++ (影像不離開這個函式)。
      * 不轉正畫面：MediaPipe 依兩眼連線把臉部裁切轉正，A71 實測 0° / 90° / 270° 都偵測得到，
-     * EAR 只取決於點與點的距離，與畫面方向無關；省下旋轉的時間 (診斷擷取的畫面因此可能是橫的)。
+     * EAR 只取決於點與點的距離，與畫面方向無關；省下旋轉的時間。
      */
     private void analyzeWithMediaPipe(@NonNull ImageProxy image) {
         int reported = image.getImageInfo().getRotationDegrees();
@@ -259,9 +271,8 @@ public class EfdCameraXManager {
         long convertMs = SystemClock.elapsedRealtime() - convertStart;
         try {
             EfdFaceLandmarkerHelper.Result result = mFaceLandmarker.detect(frame);
-            byte[] rgb = EfdNativeBridge.isDebugCaptureRequested() ? bitmapToRgb(frame) : null;
             EfdNativeBridge.sendLandmarks(result.normalizedXyz, frame.getWidth(), frame.getHeight(), reported,
-                    result.blinkLeft, result.blinkRight, result.lookDown, rgb);
+                    result.blinkLeft, result.blinkRight, result.lookDown);
             if (result.normalizedXyz != null) mLastFaceMs = SystemClock.elapsedRealtime();
             logInferenceTime(result.inferenceMs, convertMs, result.normalizedXyz != null);
         } finally {
@@ -289,22 +300,6 @@ public class EfdCameraXManager {
             mFaceFrameCount = 0;
             mLastInferenceLogMs = now;
         }
-    }
-
-    // 診斷擷取用：ARGB 像素轉成 C++ 使用的 RGB888
-    private static byte[] bitmapToRgb(@NonNull Bitmap bitmap) {
-        int w = bitmap.getWidth();
-        int h = bitmap.getHeight();
-        int[] argb = new int[w * h];
-        bitmap.getPixels(argb, 0, w, 0, 0, w, h);
-        byte[] rgb = new byte[w * h * 3];
-        for (int i = 0; i < argb.length; i++) {
-            int c = argb[i];
-            rgb[i * 3] = (byte) ((c >> 16) & 0xFF);
-            rgb[i * 3 + 1] = (byte) ((c >> 8) & 0xFF);
-            rgb[i * 3 + 2] = (byte) (c & 0xFF);
-        }
-        return rgb;
     }
 
     /**

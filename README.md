@@ -55,7 +55,7 @@ graph TD
 | :--- | :--- | :--- |
 | **五執行緒異步管線** | `AsyncPipelineEngine` | 包含相機採集線程、視覺特徵推論線程、訊號與狀態分析線程、本地資料庫落盤線程與雲端同步線程，保證 UI 永遠維持 60 FPS 流暢無卡頓。 |
 | **臉部特徵點偵測** | `ILandmarkDetector` | Android 以 **MediaPipe Face Landmarker** (Tasks Vision 0.10.35)、Windows 以 **ONNX Runtime 1.31.0** 執行同一份模型，量測 478 點特徵點；只有數值進入 C++ 核心，影像不儲存也不上傳。模型無法載入時退回啟發式偵測。 |
-| **相機省電** | `AsyncPipelineEngine` + CameraX | 20 分鐘冷卻期間關閉相機，快篩只在最後 1 分鐘取樣；螢幕關閉時暫停；連續 10 秒沒有臉時降為每 0.5 秒偵測一次。 |
+| **相機省電** | `AsyncPipelineEngine` + CameraX | 20 分鐘冷卻期間關閉相機，快篩只在最後 1 分鐘取樣；螢幕關閉時暫停；連續 10 秒沒有臉時降為每 0.5 秒偵測一次；Android 連續 60 秒沒有臉時相機改為關 15 秒、開 4 秒輪流探測。 |
 | **交叉設計與資料收集** | `StudyWorkflowTracker` + `StudyDataLog` | 研究人員為受試者選 A/B 組 (A 組第 8~14 天提醒、B 組第 1~7 天提醒)；每分鐘一筆數值摘要，每次提醒詢問一題眼睛疲勞程度 (0~10)。 |
 | **多硬體相機抽象層 (HAL)** | `CameraService` | 統一封裝 Windows Media Foundation、Android CameraX 與 Synthetic 虛擬測試相機，支援實體鏡頭斷線無縫自動熱回退。 |
 | **動態基線自我校準** | `AdaptiveBaseline` | 具備「抗微睡眠污染」機制，僅採集清醒睜眼區間；裝置喚醒時啟動 1 秒「熱重啟快速再校準」，消除坐姿與環境光照漂移。 |
@@ -141,7 +141,6 @@ flowchart TD
   * **疲勞警報提示音 (Windows) / 通知與背景執行設定 (Android)**。
   * **重新校準眼動基準**。
   * **自動科研同步**：恆定開啟，不提供開關：每晚 21:00 後上傳；錯過時於下次開啟自動補傳，上傳成功才標記完成。
-  * **開發用項目 (正式版移除)**：「匯出診斷畫面」(Android，含臉部影像，只在按下時產生並存在手機相簿) 與「立即上傳數據」(兩平台)。
   * **關於與第三方授權** (Android)：列出 MediaPipe、ONNX Runtime 等授權。
   * **獨立底部返回按鈕**：「返回監控中心」白底綠字按鈕，貼齊底部安全區域。
 
@@ -424,6 +423,6 @@ gradle assembleDebug
 
 ## 8. 隱私與第三方授權
 
-* **影像不離開裝置**：臉部影像只在記憶體中分析，不儲存、不上傳；上傳到 Google 試算表的只有數值 (每分鐘摘要、每日統計、自評分數)。開發用「匯出診斷畫面」會把畫面存到手機相簿，正式版移除。
+* **影像不離開裝置**：臉部影像只在記憶體中分析，不儲存、不上傳；上傳到 Google 試算表的只有數值 (每分鐘摘要、每日統計、自評分數)。App 沒有任何把畫面存檔或匯出的功能。
 * **Google 使用統計**：MediaPipe 依賴的 Google datatransport 元件保留 (移除後 MediaPipe 無法啟動)，但已在 `AndroidManifest.xml` 移除其回傳後端 (`CctBackendFactory`)，不會送出使用統計。
 * **第三方元件**：MediaPipe 與 Face Landmarker 模型 (Apache License 2.0)、ONNX Runtime (MIT License)、AndroidX / CameraX (Apache License 2.0)。完整清單見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；Android 版在「設定 > 關於與第三方授權」顯示，Windows 版打包時附上授權文件。
