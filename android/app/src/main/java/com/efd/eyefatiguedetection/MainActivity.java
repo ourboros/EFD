@@ -1594,7 +1594,9 @@ public class MainActivity extends AppCompatActivity {
         if (maker.contains("xiaomi") || maker.contains("redmi") || maker.contains("poco")) {
             brandTip = "小米：設定 > 應用程式 > EFD > 自動啟動 開啟；省電策略 選「無限制」。\n最近使用清單中長按 EFD 選「鎖定」。";
         } else if (maker.contains("oppo") || maker.contains("realme") || maker.contains("oneplus")) {
-            brandTip = "OPPO / realme / 一加：設定 > 電池 > EFD > 允許背景活動、允許自動啟動。\n最近使用清單中將 EFD 往下拉「鎖定」。";
+            // ColorOS 15 以後 (OPPO Reno13 Pro / Android 16 實測)：自動啟動併入「完全允許背景行為」
+            brandTip = "OPPO / realme / 一加：按下方「App 設定」> 耗電管理 > 選「完全允許背景行為」"
+                    + "（較舊的系統則開啟「允許背景活動」與「允許自動啟動」）。\n最近使用清單中將 EFD 往下拉「鎖定」。";
         } else if (maker.contains("vivo") || maker.contains("iqoo")) {
             brandTip = "vivo：設定 > 電池 > 背景耗電管理 > EFD 允許背景高耗電；i管家 > 應用程式管理 > 自動啟動 開啟。";
         } else if (maker.contains("huawei") || maker.contains("honor")) {
