@@ -51,8 +51,9 @@ float FatigueStateMachine::getSevereThreshold() const {
     return m_severeThreshold;
 }
 
-float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, float complexityIndex) {
-    // 融合公式: PERCLOS (55%) + 眨眼率異常權重 (25%) + 非線性複雜度 CI (20%)
+float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, float complexityIndex,
+                                               float blinkDurationMs, float longClosuresPerMin) {
+    // 融合公式: PERCLOS (55%) + 眨眼異常 (25%) + 非線性複雜度 CI (20%)
     // 1. PERCLOS: 0.0 ~ 0.20 -> 0 ~ 100 分 (多段動態靈敏度)
     float perclosScore = 0.0f;
     if (perclos <= 0.04f) {
@@ -79,11 +80,20 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
             blinkScore = std::clamp(((blinkRate - 22.0f) / 14.0f) * 85.0f, 0.0f, 100.0f);
         }
     }
+    // 眨眼變慢：窗口平均眨眼時長 250 ms 以內不計分，450 ms 約 85 分 (A71 實測清醒約 110~130 ms)
+    if (blinkDurationMs > 250.0f) {
+        blinkScore = std::max(blinkScore, std::clamp(((blinkDurationMs - 250.0f) / 200.0f) * 85.0f, 0.0f, 100.0f));
+    }
+    // 長閉眼 (> 800 ms)：每分鐘 3 次約 85 分
+    if (longClosuresPerMin > 0.0f) {
+        blinkScore = std::max(blinkScore, std::clamp((longClosuresPerMin / 3.0f) * 85.0f, 0.0f, 100.0f));
+    }
 
-    // 3. 複雜度指標 CI: 正常清醒活躍 CI >= 2.5 (得分 0); 疲勞/呆滯時 CI < 2.5
+    // 3. 複雜度指標 CI (MSE 容許誤差固定為個人睜眼 EAR 範圍的 15%)：
+    //    A71 實測清醒看螢幕約 1.3~2.2，長時間閉眼降到 0.35~0.65；CI >= 1.0 不計分，0.3 約 80 分
     float complexityScore = 0.0f;
-    if (complexityIndex > 0.0f && complexityIndex < 2.5f) {
-        complexityScore = std::clamp(((2.5f - complexityIndex) / 1.8f) * 80.0f, 0.0f, 100.0f);
+    if (complexityIndex > 0.0f && complexityIndex < 1.0f) {
+        complexityScore = std::clamp(((1.0f - complexityIndex) / 0.7f) * 80.0f, 0.0f, 100.0f);
     }
 
     // PERCLOS 權重 55% 時單靠閉眼最多 55 分，到不了提醒門檻 65 (A71 實測 PERCLOS 69% 只有 62 分)；
@@ -110,7 +120,8 @@ void FatigueStateMachine::clearCooldownUnlocked() {
     m_severeHoldTimer = 0.0f;
 }
 
-SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds) {
+SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds,
+                                        float blinkDurationMs, float longClosuresPerMin) {
     bool fireAlert = false;
     float alertScore = 0.0f;
     SystemState snapshot;
@@ -152,7 +163,7 @@ SystemState FatigueStateMachine::update(bool faceDetected, float perclos, float 
             m_awayTimer = 0.0f;
             m_awayResetApplied = false;
 
-            m_lastScore = computeFatigueScore(perclos, blinkRate, complexityIndex);
+            m_lastScore = computeFatigueScore(perclos, blinkRate, complexityIndex, blinkDurationMs, longClosuresPerMin);
             // 60 秒時間常數 EWMA (與取樣頻率無關)
             float alpha = 1.0f - std::exp(-dt / kSmoothingTauSeconds);
             m_smoothedScore += alpha * (m_lastScore - m_smoothedScore);

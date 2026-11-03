@@ -86,8 +86,15 @@ ComplexityMetrics MseCalculator::calculateComplexity(const std::vector<float>& s
 
     float mean = std::accumulate(signal.begin(), signal.end(), 0.0f) / static_cast<float>(n);
     float stdDev = calculateStdDev(signal, mean);
-    float r = m_toleranceRatio * stdDev;
+    return calculateComplexity(signal, m_toleranceRatio * stdDev);
+}
 
+ComplexityMetrics MseCalculator::calculateComplexity(const std::vector<float>& signal, float absoluteTolerance) const {
+    ComplexityMetrics metrics;
+    if (signal.size() < 20) {
+        return metrics;
+    }
+    float r = absoluteTolerance;
     if (r < 1e-5f) {
         r = 1e-3f; // 防止標準差為 0
     }

@@ -10,6 +10,7 @@ namespace efd {
 // - PERCLOS = 窗口內閉眼時間 / 窗口總時間 (預設 60 秒)
 // - 眨眼 = 連續閉眼 60~800 ms 的片段 (與幀率無關)
 // - 眨眼率需窗口累積 >= 30 秒才輸出，之前回傳 0 (代表不計分)
+// - 超過 800 ms 的閉眼不算眨眼，另計為長閉眼次數；窗口眨眼平均時長同樣需 >= 30 秒
 class FeatureExtractor {
 public:
     static constexpr float kMinBlinkMs = 60.0f;

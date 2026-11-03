@@ -88,8 +88,10 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
     float perclos = (m_windowTotalMs > 0.0f)
         ? std::clamp(m_windowClosedMs / m_windowTotalMs, 0.0f, 1.0f) : 0.0f;
 
-    // 窗口內完整眨眼段落計數
+    // 窗口內完整眨眼段落計數與時長；超過眨眼上限的閉眼另計為長閉眼 (疲勞時眨眼變慢、閉眼變久)
     int windowBlinkCount = 0;
+    float windowBlinkMs = 0.0f;
+    int windowLongClosures = 0;
     float segMs = 0.0f;
     for (const Sample& s : m_samples) {
         if (s.blinkClosed) {
@@ -97,12 +99,17 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
         } else {
             if (isBlinkDuration(segMs)) {
                 windowBlinkCount++;
+                windowBlinkMs += segMs;
+            } else if (segMs > kMaxBlinkMs) {
+                windowLongClosures++;
             }
             segMs = 0.0f;
         }
     }
+    if (segMs > kMaxBlinkMs) windowLongClosures++; // 目前仍閉著眼
     float windowSec = m_windowTotalMs / 1000.0f;
-    float rawRate = (windowSec >= kMinBlinkRateWindowSec)
+    const bool windowReady = windowSec >= kMinBlinkRateWindowSec;
+    float rawRate = windowReady
         ? (static_cast<float>(windowBlinkCount) / windowSec) * 60.0f
         : 0.0f;
 
@@ -115,6 +122,11 @@ EyeMetrics FeatureExtractor::processEar(float earLeft, float earRight, float fps
     metrics.blinkRatePerMin = std::clamp(rawRate, 0.0f, 60.0f);
     metrics.avgBlinkDurationMs = (m_totalBlinks > 0)
         ? (m_totalBlinkDurationMs / static_cast<float>(m_totalBlinks)) : 0.0f;
+    if (windowReady) {
+        metrics.windowBlinkDurationMs = (windowBlinkCount > 0)
+            ? windowBlinkMs / static_cast<float>(windowBlinkCount) : 0.0f;
+        metrics.longClosuresPerMin = (static_cast<float>(windowLongClosures) / windowSec) * 60.0f;
+    }
     metrics.isEyeClosed = isClosed;
     return metrics;
 }

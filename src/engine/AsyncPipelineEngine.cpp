@@ -15,7 +15,9 @@ namespace {
 
 constexpr float kComplexityResampleHz = 10.0f;
 constexpr float kComplexityMinWindowSec = 30.0f;
-constexpr float kComplexityPriorCi = 4.5f;      // 資料不足時的清醒先驗值 (不計複雜度分)
+constexpr float kComplexityPriorCi = 2.0f;      // 資料不足時的清醒先驗值 (不計複雜度分)
+// MSE 容許誤差 r = 0.15 x 個人睜眼 EAR 動態範圍 (睜眼基準 - 閉眼下限)，各窗口用同一把尺
+constexpr float kComplexityToleranceOfRange = 0.15f;
 constexpr float kAbsentHistoryResetSec = 3.0f;  // 離開超過 3 秒清空特徵歷史
 constexpr int64_t kSyncRetryDelayMs = 10 * 60 * 1000;
 
@@ -524,7 +526,8 @@ void AsyncPipelineEngine::updateComplexityUnlocked() {
             denoised[i] -= noiseImf[i];
         }
     }
-    ComplexityMetrics metrics = m_mseCalculator.calculateComplexity(denoised);
+    const float openRange = std::max(0.05f, m_rollingBaseline.openEar() - RollingOpenBaseline::kClosedEarFloor);
+    ComplexityMetrics metrics = m_mseCalculator.calculateComplexity(denoised, kComplexityToleranceOfRange * openRange);
     metrics.emdEnergyRatio = emd.highToLowEnergyRatio;
     metrics.imfCount = static_cast<int>(emd.imfs.size());
     m_cachedComplexity = metrics;
@@ -643,7 +646,9 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             eyeMetrics.perclos,
             eyeMetrics.blinkRatePerMin,
             complexity.complexityIndex,
-            deltaSec
+            deltaSec,
+            eyeMetrics.windowBlinkDurationMs,
+            eyeMetrics.longClosuresPerMin
         );
         accumulateMinute(true, hasFace, eyeMetrics, complexity.complexityIndex, state, deltaSec,
                          package.detection.landmarksMeasured);

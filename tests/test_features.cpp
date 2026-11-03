@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <random>
 #include <cassert>
 #include <chrono>
 #include <thread>
@@ -1137,6 +1138,34 @@ void testRollingOpenBaselineP80() {
     assert(Fsm::computeFatigueScore(0.16f, 15.0f, 3.0f) >= Fsm::kSevereThreshold);
     assert(Fsm::computeFatigueScore(0.14f, 15.0f, 3.0f) < Fsm::kSevereThreshold);
     assert(Fsm::computeFatigueScore(0.03f, 15.0f, 3.0f) < Fsm::kAttentionThreshold);
+
+    // 閉眼變久時眨眼分數跟著上升：長閉眼 (> 800 ms) 與眨眼時長都計入
+    efd::FeatureExtractor slow(60.0f, 0.092f);
+    slow.setBlinkThreshold(0.155f);
+    efd::EyeMetrics sm;
+    for (int sec = 0; sec < 40; ++sec) {
+        for (int f = 0; f < 10; ++f) {
+            const bool shut = (sec % 10 == 0) || (sec % 5 == 0 && f < 4);   // 每 10 秒閉 1 秒、其餘每 5 秒眨 400 ms
+            sm = slow.processEar(shut ? 0.04f : 0.25f, shut ? 0.04f : 0.25f, 10.0f);
+        }
+    }
+    assert(sm.longClosuresPerMin > 5.0f && sm.windowBlinkDurationMs > 350.0f);
+    assert(Fsm::computeFatigueScore(0.0f, 15.0f, 2.0f, sm.windowBlinkDurationMs, sm.longClosuresPerMin) > 20.0f);
+    assert(Fsm::computeFatigueScore(0.0f, 15.0f, 2.0f, 120.0f, 0.0f) == 0.0f);
+
+    // 複雜度用固定容許誤差：持續閉眼 (平線＋雜訊) 的 CI 低於正常睜眼 (有眨眼起伏)
+    efd::MseCalculator mse(5, 2, 0.15f);
+    std::vector<float> openSig, shutSig;
+    std::mt19937 rng(7);
+    std::normal_distribution<float> noise(0.0f, 0.004f);
+    for (int i = 0; i < 600; ++i) {
+        openSig.push_back(0.25f + 0.02f * std::sin(i * 0.37f) + noise(rng) - ((i % 47) < 2 ? 0.18f : 0.0f));
+        shutSig.push_back(0.04f + noise(rng));
+    }
+    const float r = 0.15f * (0.26f - 0.05f);
+    assert(mse.calculateComplexity(shutSig, r).complexityIndex < mse.calculateComplexity(openSig, r).complexityIndex);
+    // 舊做法 (r 隨窗口標準差縮放) 會把閉眼的雜訊算成高複雜度
+    assert(mse.calculateComplexity(shutSig).complexityIndex > mse.calculateComplexity(shutSig, r).complexityIndex);
     std::cout << std::setprecision(3) << " [PASS] (一般看螢幕 P80 門檻 " << normalPerclosThr << "，低頭 2.5 分鐘後 " << baseline.perclosThreshold() << ")\n";
 }
 

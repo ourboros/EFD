@@ -36,6 +36,8 @@ struct EyeMetrics {
     int   blinkCount = 0;          // Total blinks in current measurement session
     float blinkRatePerMin = 0.0f;  // Estimated blinks per minute
     float avgBlinkDurationMs = 0.0f; // Average blink duration in milliseconds
+    float windowBlinkDurationMs = 0.0f; // 窗口內眨眼平均時長 (窗口未滿 30 秒為 0)
+    float longClosuresPerMin = 0.0f;    // 窗口內超過 800 ms 的閉眼次數/分 (含尚未睜開的這一次)
     bool  isEyeClosed = false;
 };
 

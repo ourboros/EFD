@@ -42,8 +42,10 @@ public:
                                 int screeningInterval = 300,  // 5 分鐘
                                 int awayResetSeconds = 300);   // 5 分鐘離座清零
 
-    // 每次特徵更新時呼叫 (deltaSeconds 為距上次呼叫的真實經過時間)
-    SystemState update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds = 1.0f);
+    // 每次特徵更新時呼叫 (deltaSeconds 為距上次呼叫的真實經過時間)；
+    // blinkDurationMs / longClosuresPerMin 為窗口眨眼平均時長與長閉眼次數，0 代表不計分
+    SystemState update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds = 1.0f,
+                       float blinkDurationMs = 0.0f, float longClosuresPerMin = 0.0f);
 
     // 冷卻期間相機關閉、無法觀察使用者時呼叫：只推進冷卻倒數，不累計離座時間
     // (看不到使用者，不能當成已休息而清除冷卻)；冷卻期滿照常進入快篩
@@ -74,7 +76,8 @@ public:
     std::string serialize(int64_t nowEpochSec) const;
     bool restore(const std::string& data, int64_t nowEpochSec);
 
-    static float computeFatigueScore(float perclos, float blinkRate, float complexityIndex);
+    static float computeFatigueScore(float perclos, float blinkRate, float complexityIndex,
+                                     float blinkDurationMs = 0.0f, float longClosuresPerMin = 0.0f);
 
 private:
     SystemState getStateUnlocked() const;
