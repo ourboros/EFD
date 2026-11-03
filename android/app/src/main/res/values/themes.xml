@@ -1,5 +1,7 @@
 <resources>
-    <style name="Theme.AppCompat.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- 不可沿用 AppCompat 內建名稱 Theme.AppCompat.NoActionBar：深色模式下 DayNight.NoActionBar 的父主題正是它，
+         同名會變成繼承自己，開深色模式的手機 (OPPO Reno13 Pro 實測) 一啟動就閃退。介面配色固定，深淺模式都用淺色主題 -->
+    <style name="Theme.Efd" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorAccent">@color/accent</item>

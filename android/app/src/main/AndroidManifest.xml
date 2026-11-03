@@ -22,7 +22,7 @@
         android:label="EFD 疲勞檢測"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.NoActionBar">
+        android:theme="@style/Theme.Efd">
 
         <receiver
             android:name=".EfdBootReceiver"
