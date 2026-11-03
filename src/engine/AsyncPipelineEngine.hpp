@@ -218,6 +218,8 @@ private:
     float m_lastCalibrationValidRatio = 0.0f;
     std::atomic<bool> m_requestEyeBaselineReset{false};
     ExternalPresenceFilter m_modelPresenceFilter;   // 只在推論執行緒 (Thread 2) 使用
+    int64_t m_lastFaceSeenMs = 0;                   // 只在推論執行緒使用：無臉降頻
+    int64_t m_lastDetectMs = 0;
 
     TelemetryCallback m_telemetryCallback;
     std::atomic<int64_t> m_processedFrameCount{0};

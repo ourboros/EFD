@@ -18,6 +18,9 @@ constexpr float kComplexityMinWindowSec = 30.0f;
 constexpr float kComplexityPriorCi = 2.0f;      // 資料不足時的清醒先驗值 (不計複雜度分)
 // MSE 容許誤差 r = 0.15 x 個人睜眼 EAR 動態範圍 (睜眼基準 - 閉眼下限)，各窗口用同一把尺
 constexpr float kComplexityToleranceOfRange = 0.15f;
+// 連續 10 秒沒偵測到臉時每 500 ms 才偵測一次 (與 Android 相同)：A71 實測無臉時全速偵測佔一顆核心約 98%
+constexpr int64_t kNoFaceSlowdownAfterMs = 10000;
+constexpr int64_t kNoFaceDetectIntervalMs = 500;
 constexpr float kAbsentHistoryResetSec = 3.0f;  // 離開超過 3 秒清空特徵歷史
 constexpr int64_t kSyncRetryDelayMs = 10 * 60 * 1000;
 
@@ -487,8 +490,17 @@ void AsyncPipelineEngine::inferenceWorkerLoop() {
             m_landmarker->resetEyeBaseline();
         }
 
+        const int64_t nowMs = steadyNowMs();
+        if (m_lastFaceSeenMs == 0) m_lastFaceSeenMs = nowMs;
+        if (!isCalibrating() && nowMs - m_lastFaceSeenMs > kNoFaceSlowdownAfterMs &&
+            nowMs - m_lastDetectMs < kNoFaceDetectIntervalMs) {
+            continue;
+        }
+        m_lastDetectMs = nowMs;
+
         // 臉部定位與眼部開合推論
         LandmarkDetectionResult detection = m_landmarker->detect(frame);
+        if (detection.hasFace) m_lastFaceSeenMs = nowMs;
 
         // 模型偵測器 (ONNX) 沒有內建遺失緩衝：臉部短暫遺失未滿 1 秒的幀不送出，滿 1 秒才判定離座
         // (啟發式偵測器自行處理，Android MediaPipe 在 JNI 處理)
