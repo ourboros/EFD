@@ -7,6 +7,7 @@
 #include "vision/CameraService.hpp"
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <string>
 #include <memory>
 #include <vector>
@@ -163,6 +164,9 @@ private:
     bool m_isHoveringSensitivityBtn = false;
     bool m_isHoveringAutoStartBtn = false;
     bool m_isHoveringManualSyncBtn = false;
+    // 開發用「立即上傳」的最近結果 (上傳在背景執行緒完成後更新)，正式版移除
+    std::mutex m_manualSyncMutex;
+    std::wstring m_manualSyncStatus;
     bool m_isHoveringCameraPrevBtn = false;
     bool m_isHoveringCameraNextBtn = false;
     bool m_isHoveringCameraRefreshBtn = false;

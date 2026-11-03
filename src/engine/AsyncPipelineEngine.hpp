@@ -137,8 +137,8 @@ public:
     // (Android 的 CameraService 找不到原生相機會改用模擬相機，模擬畫面會混進快篩採樣)
     void setExternalCameraControl(bool external);
 
-    // 執行手動觸發當日眼動數據落盤與雲端同步
-    bool triggerManualDataSync();
+    // 執行手動觸發當日眼動數據落盤與雲端同步 (不標記為每晚同步完成)
+    bool triggerManualDataSync(NetworkSyncWorker::SyncCallback callback = nullptr);
 
     // 檢查並執行夜間 21:00 定時自動同步與錯過日期的補傳
     // 上傳成功後才標記已同步；失敗 10 分鐘後重試。可從任何執行緒呼叫，不會阻塞
@@ -249,6 +249,7 @@ private:
         int blinks = 0;
         float blinkDurMs = 0.0f;
         float ci = 0.0f;
+        float longClosures = 0.0f;
         float score = 0.0f;
         int cooldownState = 0;
         std::string alert = "none";

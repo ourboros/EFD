@@ -584,6 +584,26 @@ void NativeWelcomeWindow::handleMouseClick(int x, int y) {
                 );
             }
             if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
+        } else if (PtInRect(&m_manualSyncBtnRect, pt)) {
+            {
+                std::lock_guard<std::mutex> lock(m_manualSyncMutex);
+                m_manualSyncStatus = L"上傳中...";
+            }
+            HWND hwnd = m_hwnd;
+            const bool queued = m_engine.triggerManualDataSync([this, hwnd](const SyncResult& result) {
+                {
+                    std::lock_guard<std::mutex> lock(m_manualSyncMutex);
+                    m_manualSyncStatus = result.success
+                        ? L"上傳成功：試算表已收到資料"
+                        : L"上傳失敗：" + utf8ToWide(result.message).substr(0, 60);
+                }
+                if (hwnd) InvalidateRect(hwnd, NULL, FALSE);
+            });
+            if (!queued) {
+                std::lock_guard<std::mutex> lock(m_manualSyncMutex);
+                m_manualSyncStatus = L"上傳正在進行中，請稍候";
+            }
+            if (m_hwnd) InvalidateRect(m_hwnd, NULL, FALSE);
         } else if (PtInRect(&m_saveSettingsBtnRect, pt)) {
             setStage(UIStage::MainDashboard);
         }
@@ -2249,13 +2269,30 @@ void NativeWelcomeWindow::drawSettingsPanel(Gdiplus::Graphics& g, int w, int h) 
         : L"已停用開機自動啟動 (僅在手動點擊執行檔時開啟)";
     drawSettingToggleItem(item3Y, m_autoStartBtnRect, m_isHoveringAutoStartBtn, L"開機自動背景啟動", s3Desc, autoStartOn);
 
-    // 自動科研同步設為系統預設恆定開啟 (不可關閉)，按鈕已從介面移除，重設 Hitbox
-    m_manualSyncBtnRect = { 0, 0, 0, 0 };
+    // 設定項目 4 (開發用)：立即上傳，不必等到 21:00 就能確認試算表收到資料；不影響每晚自動上傳，正式版移除
+    int item4Y = item3Y + itemH + gap;
+    {
+        m_manualSyncBtnRect = { cardX, item4Y, cardX + cardW, item4Y + itemH };
+        Gdiplus::SolidBrush itemBg(m_isHoveringManualSyncBtn ? Gdiplus::Color(255, 245, 252, 248) : Gdiplus::Color(255, 255, 255, 255));
+        drawRoundedButton(g, cardX, item4Y, cardW, itemH, 18, &itemBg, nullptr);
+        std::wstring status;
+        {
+            std::lock_guard<std::mutex> lock(m_manualSyncMutex);
+            status = m_manualSyncStatus;
+        }
+        Gdiplus::RectF tRect(static_cast<float>(cardX + 22), static_cast<float>(item4Y + 11), static_cast<float>(cardW - 60), 22.0f);
+        g.DrawString(L"立即上傳數據（開發用）", -1, &itemTitleFont, tRect, &leftFormat, &greenTextBrush);
+        Gdiplus::RectF dRect(static_cast<float>(cardX + 22), static_cast<float>(item4Y + 34), static_cast<float>(cardW - 60), 20.0f);
+        g.DrawString(status.empty() ? L"點一下把目前的數值資料傳到 Google 試算表" : status.c_str(), -1,
+                     &itemValFont, dRect, &leftFormat, &descBrush);
+        Gdiplus::RectF aRect(static_cast<float>(cardX), static_cast<float>(item4Y), static_cast<float>(cardW - 25), static_cast<float>(itemH));
+        g.DrawString(L"›", -1, &itemTitleFont, aRect, &rightFormat, &greenTextBrush);
+    }
 
-    // 3. 底部動作按鈕：返回監控中心 (緊接著項目 3 下方，白底綠字，無外框)
+    // 3. 底部動作按鈕：返回監控中心 (緊接著項目 4 下方，白底綠字，無外框)
     int btnH = isNarrow ? 44 : 48;
     int btnW = isNarrow ? std::min(w - 40, 280) : 280;
-    int returnBtnY = item3Y + itemH + (isNarrow ? 22 : 28);
+    int returnBtnY = item4Y + itemH + (isNarrow ? 22 : 28);
     int returnBtnX = (w - btnW) / 2;
 
     m_saveSettingsBtnRect = { returnBtnX, returnBtnY, returnBtnX + btnW, returnBtnY + btnH };

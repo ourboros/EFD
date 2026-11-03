@@ -27,6 +27,7 @@ struct MinuteSummary {
     std::string detector;          // mediapipe / onnx / heuristic
     std::string platform;          // Android / Windows
     std::string appVersion;
+    float longClosures = 0.0f;     // 分鐘結束時窗口內超過 800 ms 的閉眼次數/分 (CSV 最後一欄，舊資料為 0)
 };
 
 // 提醒時的眼睛疲勞自評 (0 完全不累 ~ 10 非常疲勞)；kss 保留欄位，目前不詢問 (-1)

@@ -60,11 +60,12 @@ void StudyDataLog::appendMinute(const MinuteSummary& m) {
          << m.blinkCount << "," << std::setprecision(0) << m.blinkDurMs << ","
          << std::setprecision(3) << m.ci << "," << std::setprecision(1) << m.score << ","
          << m.cooldownState << "," << safeToken(m.alert) << "," << safeToken(m.detector) << ","
-         << safeToken(m.platform) << "," << safeToken(m.appVersion);
+         << safeToken(m.platform) << "," << safeToken(m.appVersion) << ","
+         << std::setprecision(1) << m.longClosures;
     std::lock_guard<std::mutex> lock(m_mutex);
     appendLine(m_minutePath,
                "minute,study_day,group,alerts_enabled,present_sec,camera_on_sec,ear_mean,ear_p10,perclos,"
-               "blink_count,blink_dur_ms,ci,score,cooldown_state,alert,detector,platform,app_version",
+               "blink_count,blink_dur_ms,ci,score,cooldown_state,alert,detector,platform,app_version,long_closures",
                line.str());
 }
 
@@ -107,6 +108,7 @@ std::vector<MinuteSummary> StudyDataLog::readMinutesSince(int64_t sinceMs) const
             m.detector = c[15];
             m.platform = c[16];
             m.appVersion = c[17];
+            if (c.size() > 18 && !c[18].empty()) m.longClosures = std::stof(c[18]);
             out.push_back(m);
         } catch (const std::exception&) {
             // 損毀的列略過
@@ -159,7 +161,8 @@ std::string StudyDataLog::buildUploadJsonFields(const std::string& subjectId, in
              << std::setprecision(3) << ", \"ci\": " << m.ci << std::setprecision(1) << ", \"score\": " << m.score
              << ", \"cooldown_state\": " << m.cooldownState << ", \"alert\": \"" << safeToken(m.alert)
              << "\", \"detector\": \"" << safeToken(m.detector) << "\", \"platform\": \"" << safeToken(m.platform)
-             << "\", \"app_version\": \"" << safeToken(m.appVersion) << "\"}";
+             << "\", \"app_version\": \"" << safeToken(m.appVersion) << "\""
+             << std::setprecision(1) << ", \"long_closures\": " << m.longClosures << "}";
         first = false;
     }
     json << (first ? "]" : "\n  ]") << ",\n  \"kss_responses\": [";

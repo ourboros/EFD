@@ -363,12 +363,12 @@ void AsyncPipelineEngine::submitExternalDetection(RawFrame frameInfo, LandmarkDe
     m_inferenceQueueCv.notify_one();
 }
 
-bool AsyncPipelineEngine::triggerManualDataSync() {
+bool AsyncPipelineEngine::triggerManualDataSync(NetworkSyncWorker::SyncCallback callback) {
     m_database.flush();
     return m_syncWorker.triggerDailySync(
         m_studyTracker.getSubjectUuid(),
         m_studyTracker.getCurrentDay(),
-        nullptr,
+        std::move(callback),
         StudyWorkflowTracker::statusLabel(m_studyTracker.getStatus()),
         m_studyTracker.getUnlockToken()
     );
@@ -787,6 +787,7 @@ void AsyncPipelineEngine::accumulateMinute(bool cameraOn, bool hasFace, const Ey
         m_minute.ears.push_back(eye.earAvg);
         m_minute.perclos = eye.perclos;
         m_minute.ci = ci;
+        m_minute.longClosures = eye.longClosuresPerMin;
         // 眨眼次數與總時長為累計值 (離座時會被重置)：取本分鐘的增量
         const float durTotal = eye.avgBlinkDurationMs * static_cast<float>(eye.blinkCount);
         if (eye.blinkCount >= m_lastBlinkCount) {
@@ -827,6 +828,7 @@ void AsyncPipelineEngine::flushMinute() {
         m.blinkCount = m_minute.blinks;
         m.blinkDurMs = (m_minute.blinks > 0) ? m_minute.blinkDurMs / static_cast<float>(m_minute.blinks) : 0.0f;
         m.ci = m_minute.ci;
+        m.longClosures = m_minute.longClosures;
         m.score = m_minute.score;
         m.cooldownState = m_minute.cooldownState;
         m.alert = m_minute.alert;

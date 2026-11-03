@@ -1229,9 +1229,11 @@ void testCrossoverGroupsAndStudyLog() {
     m.alert = "suppressed";
     m.detector = "onnx";
     m.platform = "Windows";
+    m.longClosures = 2.5f;
     log.appendMinute(m);
     const auto minutes = log.readMinutesSince(0);
     assert(minutes.size() == 1 && minutes[0].blinkCount == 14 && minutes[0].alert == "suppressed");
+    assert(std::fabs(minutes[0].longClosures - 2.5f) < 0.01f);
     const auto surveys = log.readSurveysSince(0);
     assert(surveys.size() == 2 && surveys[0].eyeFatigue == 7 && !surveys[0].skipped && surveys[1].skipped);
     assert(surveys[0].group == "A" && !surveys[0].alertsEnabled);
@@ -1242,6 +1244,7 @@ void testCrossoverGroupsAndStudyLog() {
     const std::string json = efd::NetworkSyncWorker::buildPayloadJson(header, {}, false);
     assert(json.find("\"minute_summaries\": [") != std::string::npos);
     assert(json.find("\"alert\": \"suppressed\"") != std::string::npos);
+    assert(json.find("\"long_closures\": 2.5") != std::string::npos);
     assert(json.find("\"eye_fatigue\": 7") != std::string::npos);
     assert(json.find("\"eye_fatigue\": null") != std::string::npos);
     assert(json.find("\"subject_id\": \"SUBJ-TEST\"") != std::string::npos);

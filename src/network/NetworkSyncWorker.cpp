@@ -293,7 +293,10 @@ bool NetworkSyncWorker::uploadWithPlatformDefault(const std::string& url, const 
 
     if (rawOutput.find("GAS_RESP:") != std::string::npos) {
         response = rawOutput.substr(rawOutput.find("GAS_RESP:") + 9);
-        // Apps Script 回傳 JSON；含 success/OK 視為寫入成功
+        // Apps Script 回傳 JSON；含 success/OK 視為寫入成功。
+        // 回傳 HTML 代表要求登入或程式出錯 (例如試算表未綁定時的 TypeError 頁)，不可當成成功
+        const size_t firstChar = response.find_first_not_of(" \t\r\n");
+        if (firstChar != std::string::npos && response[firstChar] == '<') return false;
         return response.find("success") != std::string::npos ||
                response.find("OK") != std::string::npos;
     }
