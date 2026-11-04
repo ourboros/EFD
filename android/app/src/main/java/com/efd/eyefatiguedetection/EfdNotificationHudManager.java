@@ -100,6 +100,17 @@ public class EfdNotificationHudManager {
     }
 
     /**
+     * 疲勞提醒能否彈出在畫面上 (橫幅)：使用者或廠商系統把「EFD 眼睛疲勞警告提醒」類別調到「高」以下時，
+     * 提醒只會靜靜出現在通知欄。廠牌自己的懸浮通知開關 (例如小米) 無法從 App 讀取，須由說明引導。
+     */
+    public static boolean canShowFatigueAlertBanner(@NonNull Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true;
+        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationChannel channel = (nm != null) ? nm.getNotificationChannel(ALERT_CHANNEL_ID) : null;
+        return channel == null || channel.getImportance() >= NotificationManager.IMPORTANCE_HIGH;
+    }
+
+    /**
      * 背景偵測沒有在執行時提醒使用者 (例如廠商系統在 App 被劃掉時一併關閉服務，
      * 而 Android 14+ 不允許從背景重新啟動相機類型的前景服務)。
      */

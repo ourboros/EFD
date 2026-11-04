@@ -328,6 +328,9 @@ sequenceDiagram
 EFD/
 ├── CMakeLists.txt                # CMake 構建檔 (Windows 桌面程式、單元測試；Android 原生庫由 android/ 的 NDK 建置)
 ├── README.md                     # 系統核心架構、介面功能與演算法設計白皮書
+├── docs/
+│   ├── EFD_Android_使用說明書.md  # 受試者用說明書 (兩份章節標題相同)
+│   └── EFD_Windows_使用說明書.md
 ├── include/efd/
 │   ├── types.hpp                 # 全域結構體定義 (Point3D, EyeMetrics, FatigueRecord)
 │   └── version.hpp               # 版本資訊 (v2.2.0)

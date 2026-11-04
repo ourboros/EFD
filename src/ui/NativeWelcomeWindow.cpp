@@ -1126,7 +1126,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::RectF subRect(0.0f, titleY + 44.0f, static_cast<float>(w), 24.0f);
     g.DrawString(L"AI 驅動眼睛特徵提取與即時疲勞監控研究系統", -1, &subFont, subRect, &format, &subBrush);
 
-    // 3. 進入測試說明按鈕 (粗體字體、20px 圓角邊框)
+    // 3. 進入測驗說明按鈕 (粗體字體、20px 圓角邊框)
     int btnWidth = isNarrow ? std::clamp(w - 80, 180, 240) : 240;
     int btnHeight = isNarrow ? 48 : 52;
     int btnX = (w - btnWidth) / 2;
@@ -1144,7 +1144,7 @@ void NativeWelcomeWindow::drawWelcomeScreen(Gdiplus::Graphics& g, int w, int h) 
     Gdiplus::Font btnFont(&fontFamily, static_cast<Gdiplus::REAL>(btnFontSize), Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush btnTextBrush(Gdiplus::Color(255, 30, 177, 138));
     Gdiplus::RectF btnTextRect(static_cast<float>(btnX), static_cast<float>(btnY), static_cast<float>(btnWidth), static_cast<float>(btnHeight));
-    g.DrawString(L"進入測試說明", -1, &btnFont, btnTextRect, &format, &btnTextBrush);
+    g.DrawString(L"進入測驗說明", -1, &btnFont, btnTextRect, &format, &btnTextBrush);
 }
 
 // -----------------------------------------------------------------------------

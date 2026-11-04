@@ -1591,13 +1591,22 @@ public class MainActivity extends AppCompatActivity {
         if (brandTip == null) {
             brandTip = "設定 > 應用程式 > EFD > 電池：選「不受限制」或「不最佳化」。";
         }
-        String status = EfdNotificationHudManager.canPostFatigueAlerts(this) ? "目前：通知已開啟" : "目前：通知已關閉（請先開啟）";
+        String status;
+        if (!EfdNotificationHudManager.canPostFatigueAlerts(this)) {
+            status = "目前：通知已關閉（請先開啟）";
+        } else if (!EfdNotificationHudManager.canShowFatigueAlertBanner(this)) {
+            status = "目前：提醒不會彈出在畫面上（請依第 2 點開啟）";
+        } else {
+            status = "目前：通知已開啟";
+        }
         new AlertDialog.Builder(this)
                 .setTitle("通知與背景執行設定")
                 .setMessage(status + "\n\n"
                         + "1. 通知：開啟 EFD 通知，以及「EFD 眼睛疲勞警告提醒」類別。\n"
-                        + "2. 背景執行：" + brandTip + "\n\n"
-                        + "疲勞提醒只在偵測到疲勞時發送（平滑分數達門檻並持續數秒），平常沒有通知是正常的；可用設定頁的「測試提醒通知」確認設定是否正確。")
+                        + "2. 提醒彈出：" + brandNotificationTip() + "\n"
+                        + "3. 背景執行：" + brandTip + "\n\n"
+                        + "疲勞提醒只在偵測到疲勞時發送（平滑分數達門檻並持續數秒），平常沒有通知是正常的；"
+                        + "可用設定頁的「測試提醒通知」確認提醒會彈出、上面有 0～10 按鈕。")
                 .setPositiveButton("通知設定", (d, w) -> openAppNotificationSettings())
                 .setNeutralButton("App 設定", (d, w) -> openAppDetailsSettings())
                 .setNegativeButton("關閉", null)
@@ -1612,6 +1621,26 @@ public class MainActivity extends AppCompatActivity {
         }
         service.scheduleTestAlert(10_000);
         Toast.makeText(this, "10 秒後送出測試提醒，現在可以回到主畫面", Toast.LENGTH_LONG).show();
+    }
+
+    /**
+     * 讓疲勞提醒彈出在畫面上 (橫幅) 的設定位置：通知上的 0~10 按鈕只有彈出或下拉通知欄時看得到，
+     * 部分廠牌對自行安裝的 App 預設不彈出，或只顯示不含按鈕的簡短樣式。
+     */
+    private static String brandNotificationTip() {
+        String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT);
+        if (maker.contains("samsung")) {
+            return "三星：設定 > 通知 > 通知彈出式樣式 選「詳細」，提醒上才會直接顯示 0～10 按鈕（選「簡短」時要下拉通知欄作答）。";
+        } else if (maker.contains("xiaomi") || maker.contains("redmi") || maker.contains("poco")) {
+            return "小米：按「通知設定」>「EFD 眼睛疲勞警告提醒」> 開啟「懸浮通知」（自行安裝的 App 預設關閉）。";
+        } else if (maker.contains("oppo") || maker.contains("realme") || maker.contains("oneplus")) {
+            return "OPPO / realme / 一加：按「通知設定」>「EFD 眼睛疲勞警告提醒」> 開啟「橫幅通知」（或「懸浮通知」）。";
+        } else if (maker.contains("vivo") || maker.contains("iqoo")) {
+            return "vivo：按「通知設定」> 開啟「橫幅通知」（或「懸浮通知」）。";
+        } else if (maker.contains("huawei") || maker.contains("honor")) {
+            return "華為 / 榮耀：按「通知設定」> 開啟「橫幅通知」。";
+        }
+        return "按「通知設定」>「EFD 眼睛疲勞警告提醒」> 開啟「在螢幕上彈出」。";
     }
 
     /** 各廠牌關閉背景服務的設定位置；只靠電池最佳化即可的廠牌回傳 null。 */
