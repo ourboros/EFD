@@ -25,8 +25,11 @@ public:
     static constexpr float kAttentionThreshold = 45.0f;
     static constexpr float kSevereHoldSeconds = 5.0f;
     static constexpr float kSmoothingTauSeconds = 20.0f;
-    // PERCLOS 單項換算綜合分數的比例：PERCLOS 約 15% 以上即可單獨達到 65
+    // 各項訊號累加進綜合分數的權重 (見 computeFatigueScore)：PERCLOS 約 12.5% 以上即可單獨達到 65
     static constexpr float kPerclosOnlyWeight = 0.9f;
+    static constexpr float kSlowBlinkWeight = 0.4f;
+    static constexpr float kBlinkRateWeight = 0.25f;
+    static constexpr float kComplexityWeight = 0.35f;
     // 快篩窗口後端採樣時間 (最後 60 秒)：5 分鐘快篩期間，前 4 分鐘相機關閉休眠，最後 1 分鐘啟動相機採樣
     static constexpr float kScreeningSampleSeconds = 60.0f;
 

@@ -53,11 +53,19 @@ public class EfdForegroundService extends LifecycleService {
     }
 
     /** 取出並清除待詢問的提醒時間。 */
-    public static long takePendingEyeFatigueAlert(android.content.Context context) {
+    public static synchronized long takePendingEyeFatigueAlert(android.content.Context context) {
         android.content.SharedPreferences prefs = context.getSharedPreferences("efd_prefs", MODE_PRIVATE);
         long t = prefs.getLong(PREF_PENDING_EYE_FATIGUE_ALERT, 0L);
         if (t != 0L) prefs.edit().remove(PREF_PENDING_EYE_FATIGUE_ALERT).apply();
         return t;
+    }
+
+    /** 通知按鈕作答：待詢問的正是這次提醒才取出並清除 (已在 App 內作答或已有較新的提醒時回傳 false)。 */
+    public static synchronized boolean takePendingEyeFatigueAlert(android.content.Context context, long alertTimeMs) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("efd_prefs", MODE_PRIVATE);
+        if (alertTimeMs == 0L || prefs.getLong(PREF_PENDING_EYE_FATIGUE_ALERT, 0L) != alertTimeMs) return false;
+        prefs.edit().remove(PREF_PENDING_EYE_FATIGUE_ALERT).apply();
+        return true;
     }
 
     private static volatile AlertListener sAlertListener;
@@ -270,9 +278,9 @@ public class EfdForegroundService extends LifecycleService {
                             listener.onFatigueAlert(message, alertTimeMs);
                         } else {
                             Log.w(TAG, "C++ 狀態機發射重度疲勞警報，發送通知提醒");
-                            mHudManager.triggerSevereFatigueAlert("EFD 疲勞提醒", message);
-                            // 背景時無法立即詢問：記下來，使用者下次開啟 App 時補問 (30 分鐘內)
+                            // 背景時改由通知上的 0~10 按鈕作答；沒按就在使用者下次開啟 App 時補問 (30 分鐘內)
                             if (alertTimeMs > 0) setPendingEyeFatigueAlert(EfdForegroundService.this, alertTimeMs);
+                            mHudManager.triggerSevereFatigueAlert("EFD 疲勞提醒", message, alertTimeMs);
                         }
                     }
 

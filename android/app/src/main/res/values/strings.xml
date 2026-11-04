@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">EFD 疲勞檢測</string>
+    <string name="eye_fatigue_notification_question">眼睛疲勞程度？0 完全不累 → 10 非常疲勞</string>
+    <string name="eye_fatigue_notification_hint">現在眼睛疲勞的程度？0 = 完全不累，10 = 非常疲勞</string>
 </resources>
-

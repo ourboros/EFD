@@ -45,6 +45,12 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- 疲勞提醒通知上的 0~10 自評按鈕 -->
+        <receiver
+            android:name=".EfdEyeFatigueReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <service
             android:name=".EfdForegroundService"
             android:enabled="true"

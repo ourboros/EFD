@@ -1,7 +1,7 @@
 #pragma once
 
 #define EFD_VERSION_MAJOR 2
-#define EFD_VERSION_MINOR 1
+#define EFD_VERSION_MINOR 2
 #define EFD_VERSION_PATCH 0
-#define EFD_VERSION_STRING "2.1.0"
+#define EFD_VERSION_STRING "2.2.0"
 

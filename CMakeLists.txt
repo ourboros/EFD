@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(EFD 
-    VERSION 2.1.0 
+    VERSION 2.2.0 
     DESCRIPTION "Eye Fatigue Detection Native System"
     LANGUAGES CXX C
 )

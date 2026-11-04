@@ -7,8 +7,10 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.widget.RemoteViews;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 
@@ -143,7 +145,40 @@ public class EfdNotificationHudManager {
         }
     }
 
-    public void triggerSevereFatigueAlert(String title, String message) {
+    // 通知上的自評按鈕 id (依 0~10 排列)
+    private static final int[] EYE_FATIGUE_BUTTON_IDS = {
+            R.id.eye_fatigue_0, R.id.eye_fatigue_1, R.id.eye_fatigue_2, R.id.eye_fatigue_3,
+            R.id.eye_fatigue_4, R.id.eye_fatigue_5, R.id.eye_fatigue_6, R.id.eye_fatigue_7,
+            R.id.eye_fatigue_8, R.id.eye_fatigue_9, R.id.eye_fatigue_10};
+    // 待詢問提醒的有效時間，與 App 開啟時補問的期限相同
+    private static final long EYE_FATIGUE_ANSWER_TIMEOUT_MS = 30 * 60_000L;
+
+    private PendingIntent eyeFatigueAnswerIntent(long alertTimeMs, int value) {
+        Intent intent = new Intent(mContext, EfdEyeFatigueReceiver.class);
+        intent.setAction(EfdEyeFatigueReceiver.ACTION_ANSWER);
+        intent.putExtra(EfdEyeFatigueReceiver.EXTRA_ALERT_TIME_MS, alertTimeMs);
+        intent.putExtra(EfdEyeFatigueReceiver.EXTRA_VALUE, value);
+        // 每個分數各自一個 requestCode，否則 PendingIntent 會互相覆蓋
+        return PendingIntent.getBroadcast(
+                mContext, 2000 + value, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
+        );
+    }
+
+    private RemoteViews buildEyeFatigueView(int layoutId, long alertTimeMs, @Nullable String message) {
+        RemoteViews views = new RemoteViews(mContext.getPackageName(), layoutId);
+        if (message != null) views.setTextViewText(R.id.eye_fatigue_message, message);
+        for (int v = 0; v < EYE_FATIGUE_BUTTON_IDS.length; v++) {
+            views.setOnClickPendingIntent(EYE_FATIGUE_BUTTON_IDS[v], eyeFatigueAnswerIntent(alertTimeMs, v));
+        }
+        return views;
+    }
+
+    /**
+     * 重度疲勞提醒：通知上直接顯示 0~10 自評按鈕，點一下即記錄 (EfdEyeFatigueReceiver)；
+     * 點通知本身開啟 App 時照舊補問，劃掉通知記為略過。alertTimeMs = 0 為測試通知 (按鈕不記錄)。
+     */
+    public void triggerSevereFatigueAlert(String title, String message, long alertTimeMs) {
         if (mNotificationManager == null) return;
 
         Intent launchIntent = new Intent(mContext, MainActivity.class);
@@ -153,14 +188,21 @@ public class EfdNotificationHudManager {
                 PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
         );
 
+        RemoteViews bigView = buildEyeFatigueView(R.layout.notification_eye_fatigue_big, alertTimeMs, message);
         Notification alertNotification = new NotificationCompat.Builder(mContext, ALERT_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_alert)
                 .setContentTitle(title)
                 .setContentText(message)
+                .setStyle(new NotificationCompat.DecoratedCustomViewStyle())
+                .setCustomContentView(buildEyeFatigueView(R.layout.notification_eye_fatigue, alertTimeMs, null))
+                .setCustomBigContentView(bigView)
+                .setCustomHeadsUpContentView(bigView)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setAutoCancel(true)
+                .setTimeoutAfter(EYE_FATIGUE_ANSWER_TIMEOUT_MS)
                 .setContentIntent(pendingIntent)
+                .setDeleteIntent(eyeFatigueAnswerIntent(alertTimeMs, -1))
                 .build();
 
         try {

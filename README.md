@@ -230,9 +230,9 @@ $$\text{EAR} = \frac{\|p_2 - p_6\| + \|p_3 - p_5\|}{2 \cdot \|p_1 - p_4\|}$$
 
 ### 4.5 疲勞綜合評分與 20/5/5 狀態機決策
 * **多維特徵融合**：
-  $$\text{Score} = \max\big(0.55\,S_{\text{PERCLOS}} + 0.25\,S_{\text{blink}} + 0.20\,S_{\text{CI}},\; 0.9\,S_{\text{PERCLOS}}\big)$$
-  * $S_{\text{blink}}$ 取「眨眼率異常、眨眼平均時長 > 250 ms、長閉眼次數」三者最高分。
-  * PERCLOS 是文獻中最可靠的單一指標，因此 PERCLOS 單項 × 0.9 也能觸發提醒（約 PERCLOS 15% 以上）；否則單靠閉眼最多 55 分，到不了提醒門檻。
+  $$\text{Score} = 100\big[1 - (1 - 0.9\,S_{\text{PERCLOS}})(1 - 0.4\,S_{\text{slow}})(1 - 0.25\,S_{\text{rate}})(1 - 0.35\,S_{\text{CI}})\big]$$
+  * 各分項為 0~1；$S_{\text{slow}}$ 取「眨眼平均時長 > 250 ms、長閉眼次數」較高者，$S_{\text{rate}}$ 為眨眼率異常。
+  * 各項累加而非加權平均：任一項單獨很強仍可觸發（PERCLOS 約 12.5% 以上即可單獨達到 65），數項中等異常同時出現也會疊加到門檻。
   * 各分項的計分方式見 `System design.md` 第 5.4 節。
 * **平滑分數**：即時分數以 20 秒時間常數的 EWMA 平滑，疲勞等級與警報皆依平滑分數判定（$<45$ 清醒、$\ge 45$ 注意、$\ge 65$ 嚴重）。
 * **20/5/5 防打擾推進邏輯**（完整規格見 `System design.md` 第 5.2 節）：
@@ -330,7 +330,7 @@ EFD/
 ├── README.md                     # 系統核心架構、介面功能與演算法設計白皮書
 ├── include/efd/
 │   ├── types.hpp                 # 全域結構體定義 (Point3D, EyeMetrics, FatigueRecord)
-│   └── version.hpp               # 版本資訊 (v2.1.0)
+│   └── version.hpp               # 版本資訊 (v2.2.0)
 ├── src/
 │   ├── analysis/                 # 生理特徵與非線性訊號分析
 │   │   ├── FeatureExtractor.cpp  # 雙眼 EAR、PERCLOS、眨眼率、眨眼時長、長閉眼次數

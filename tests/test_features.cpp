@@ -1132,12 +1132,18 @@ void testRollingOpenBaselineP80() {
     for (int i = 0; i < 1200; ++i) closing.add(0.04f, 0.1f);
     assert(std::abs(closing.perclosThreshold() - 0.092f) < 2e-3f);
 
-    // PERCLOS 單項即可達到提醒門檻：實測 PERCLOS 69% 時舊公式只有 62 分
+    // PERCLOS 單項即可達到提醒門檻 (約 12.5% 以上)：實測 PERCLOS 69% 時最早的公式只有 62 分
     using Fsm = efd::FatigueStateMachine;
     assert(Fsm::computeFatigueScore(0.69f, 15.0f, 3.0f) >= Fsm::kSevereThreshold);
-    assert(Fsm::computeFatigueScore(0.16f, 15.0f, 3.0f) >= Fsm::kSevereThreshold);
-    assert(Fsm::computeFatigueScore(0.14f, 15.0f, 3.0f) < Fsm::kSevereThreshold);
+    assert(Fsm::computeFatigueScore(0.13f, 15.0f, 3.0f) >= Fsm::kSevereThreshold);
+    assert(Fsm::computeFatigueScore(0.11f, 15.0f, 3.0f) < Fsm::kSevereThreshold);
     assert(Fsm::computeFatigueScore(0.03f, 15.0f, 3.0f) < Fsm::kAttentionThreshold);
+    // 各項累加：PERCLOS 中等 (10%) 單獨只到注意區間，加上眨眼變慢與長閉眼即達提醒門檻
+    // (舊的加權平均要各項都很嚴重才到 65，A71 實測除了持續閉眼幾乎不會提醒)
+    assert(Fsm::computeFatigueScore(0.10f, 15.0f, 2.0f) < Fsm::kSevereThreshold);
+    assert(Fsm::computeFatigueScore(0.10f, 15.0f, 2.0f, 350.0f, 3.0f) >= Fsm::kSevereThreshold);
+    // A71 正常使用：眨眼率偏低 (約 5 次/分，每秒只分析 10 張) 與偶發長閉眼不可達到注意區間
+    assert(Fsm::computeFatigueScore(0.01f, 5.0f, 2.0f, 160.0f, 2.0f) < Fsm::kAttentionThreshold);
 
     // 閉眼變久時眨眼分數跟著上升：長閉眼 (> 800 ms) 與眨眼時長都計入
     efd::FeatureExtractor slow(60.0f, 0.092f);

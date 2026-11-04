@@ -53,40 +53,47 @@ float FatigueStateMachine::getSevereThreshold() const {
 
 float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, float complexityIndex,
                                                float blinkDurationMs, float longClosuresPerMin) {
-    // 融合公式: PERCLOS (55%) + 眨眼異常 (25%) + 非線性複雜度 CI (20%)
-    // 1. PERCLOS: 0.0 ~ 0.20 -> 0 ~ 100 分 (多段動態靈敏度)
+    // 融合公式 (2026-11-04 起)：各項訊號換算成 0~100 分後「累加」而非加權平均
+    //   Score = 100 x [1 - (1 - 0.9 P)(1 - 0.4 S)(1 - 0.25 R)(1 - 0.35 C)]
+    //   P = PERCLOS、S = 眨眼變慢或長閉眼、R = 眨眼率異常、C = 複雜度下降 (各為 0~1)
+    // 原本的加權平均 (55/25/20) 要每一項都很嚴重才到得了 65 分，A71 實測除了持續閉眼 30 秒以上幾乎不會提醒；
+    // 累加時任一項單獨很強仍可觸發，數項中等異常同時出現也會疊加到門檻。
+    // S、R 權重較低：手機每秒只分析 10 張，A71 正常使用時眨眼率中位數只有約 5 次/分、
+    // 長閉眼也常出現 (低頭時眼瞼位置較低)，權重太高會在正常使用時誤報
+    // 1. PERCLOS: 0.0 ~ 0.25 -> 0 ~ 100 分 (多段動態靈敏度)
     float perclosScore = 0.0f;
-    if (perclos <= 0.04f) {
-        // 0% ~ 4%: 正常清醒睜眼區間
-        perclosScore = (perclos / 0.04f) * 15.0f; // 0 ~ 15 分
-    } else if (perclos <= 0.10f) {
-        // 4% ~ 10%: 開始出現眼睛沉重與疲勞
-        perclosScore = 15.0f + ((perclos - 0.04f) / 0.06f) * 35.0f; // 15 ~ 50 分
-    } else if (perclos <= 0.18f) {
-        // 10% ~ 18%: 顯著眼皮下垂、閉眼遲滯
-        perclosScore = 50.0f + ((perclos - 0.10f) / 0.08f) * 35.0f; // 50 ~ 85 分
+    if (perclos <= 0.03f) {
+        // 0% ~ 3%: 正常清醒睜眼區間
+        perclosScore = (perclos / 0.03f) * 15.0f; // 0 ~ 15 分
+    } else if (perclos <= 0.08f) {
+        // 3% ~ 8%: 開始出現眼睛沉重與疲勞
+        perclosScore = 15.0f + ((perclos - 0.03f) / 0.05f) * 35.0f; // 15 ~ 50 分
+    } else if (perclos <= 0.15f) {
+        // 8% ~ 15%: 顯著眼皮下垂、閉眼遲滯
+        perclosScore = 50.0f + ((perclos - 0.08f) / 0.07f) * 35.0f; // 50 ~ 85 分
     } else {
-        // > 18%: 頻繁閉眼/微睡眠
-        perclosScore = std::clamp(85.0f + ((perclos - 0.18f) / 0.10f) * 15.0f, 85.0f, 100.0f); // 85 ~ 100 分
+        // > 15%: 頻繁閉眼/微睡眠
+        perclosScore = std::clamp(85.0f + ((perclos - 0.15f) / 0.10f) * 15.0f, 85.0f, 100.0f); // 85 ~ 100 分
     }
 
     // 2. 眨眼率: 正常約 10~22 次/分 (得分 0); 過低 (<10, 凝視乾眼) 或過高 (>22, 頻繁眨眼疲勞) 記分
     //    blinkRate == 0 代表窗口尚未累積足夠 (< 30 秒)，不計分
-    float blinkScore = 0.0f;
+    float rateScore = 0.0f;
     if (blinkRate > 0.0f) {
         if (blinkRate < 10.0f) {
-            blinkScore = std::clamp(((10.0f - blinkRate) / 8.0f) * 85.0f, 0.0f, 100.0f);
+            rateScore = std::clamp(((10.0f - blinkRate) / 8.0f) * 85.0f, 0.0f, 100.0f);
         } else if (blinkRate > 22.0f) {
-            blinkScore = std::clamp(((blinkRate - 22.0f) / 14.0f) * 85.0f, 0.0f, 100.0f);
+            rateScore = std::clamp(((blinkRate - 22.0f) / 14.0f) * 85.0f, 0.0f, 100.0f);
         }
     }
     // 眨眼變慢：窗口平均眨眼時長 250 ms 以內不計分，450 ms 約 85 分 (A71 實測清醒約 110~130 ms)
+    float slowScore = 0.0f;
     if (blinkDurationMs > 250.0f) {
-        blinkScore = std::max(blinkScore, std::clamp(((blinkDurationMs - 250.0f) / 200.0f) * 85.0f, 0.0f, 100.0f));
+        slowScore = std::clamp(((blinkDurationMs - 250.0f) / 200.0f) * 85.0f, 0.0f, 100.0f);
     }
     // 長閉眼 (> 800 ms)：每分鐘 3 次約 85 分
     if (longClosuresPerMin > 0.0f) {
-        blinkScore = std::max(blinkScore, std::clamp((longClosuresPerMin / 3.0f) * 85.0f, 0.0f, 100.0f));
+        slowScore = std::max(slowScore, std::clamp((longClosuresPerMin / 3.0f) * 85.0f, 0.0f, 100.0f));
     }
 
     // 3. 複雜度指標 CI (MSE 容許誤差固定為個人睜眼 EAR 範圍的 15%)：
@@ -96,10 +103,12 @@ float FatigueStateMachine::computeFatigueScore(float perclos, float blinkRate, f
         complexityScore = std::clamp(((1.0f - complexityIndex) / 0.7f) * 80.0f, 0.0f, 100.0f);
     }
 
-    // PERCLOS 權重 55% 時單靠閉眼最多 55 分，到不了提醒門檻 65 (A71 實測 PERCLOS 69% 只有 62 分)；
-    // PERCLOS 是文獻中最可靠的單一指標，因此單項分數乘 0.9 也可觸發提醒 (約 PERCLOS 15% 以上)
-    const float fused = (0.55f * perclosScore) + (0.25f * blinkScore) + (0.20f * complexityScore);
-    return std::clamp(std::max(fused, kPerclosOnlyWeight * perclosScore), 0.0f, 100.0f);
+    // PERCLOS 是文獻中最可靠的單一指標：單項權重 0.9，PERCLOS 約 12.5% 以上即可單獨達到 65
+    const float notFatigued = (1.0f - kPerclosOnlyWeight * perclosScore / 100.0f)
+                            * (1.0f - kSlowBlinkWeight * slowScore / 100.0f)
+                            * (1.0f - kBlinkRateWeight * rateScore / 100.0f)
+                            * (1.0f - kComplexityWeight * complexityScore / 100.0f);
+    return std::clamp(100.0f * (1.0f - notFatigued), 0.0f, 100.0f);
 }
 
 void FatigueStateMachine::enterCooldownUnlocked() {
