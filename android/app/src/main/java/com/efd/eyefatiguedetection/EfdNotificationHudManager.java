@@ -145,6 +145,9 @@ public class EfdNotificationHudManager {
                 .setContentText(text)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setOnlyAlertOnce(true)
+                // 開機後 (Android 11+) 只能由使用者點通知開始偵測：常駐到點開為止，避免誤劃掉後整天沒有資料；
+                // 服務啟動時 cancelStartReminder() 會移除
+                .setOngoing(true)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
                 .build();

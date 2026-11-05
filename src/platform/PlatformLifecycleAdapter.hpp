@@ -64,6 +64,9 @@ public:
     // 開機自動啟動 (Windows 登錄檔；Android 不支援)
     bool isAutoStartEnabled() const;
     bool setAutoStartEnabled(bool enable);
+    // 已啟用開機自動啟動時，把登錄的路徑更新為目前執行檔 (資料夾搬移、換新版或舊版 .bat 少了 --background 時，
+    // 開機會找不到程式或彈出主視窗)；回傳是否有改寫
+    bool refreshAutoStartPath();
 
     // 格式化當前平台狀態摘要
     std::string getStatusSummary() const;

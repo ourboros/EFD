@@ -52,8 +52,9 @@ public class EfdWatchdogReceiver extends BroadcastReceiver {
             return; // 使用者從通知主動停止偵測，不再提醒
         }
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            // Android 11 以下允許從背景啟動前景服務：直接恢復偵測
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            // Android 10 以下從背景啟動的前景服務仍可使用相機：直接恢復偵測
+            // (Android 11 起服務雖能啟動但鏡頭打不開，必須由使用者點通知開啟)
             try {
                 Intent serviceIntent = new Intent(context, EfdForegroundService.class);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

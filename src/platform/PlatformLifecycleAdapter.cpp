@@ -156,6 +156,37 @@ bool PlatformLifecycleAdapter::setAutoStartEnabled(bool enable) {
 #endif
 }
 
+bool PlatformLifecycleAdapter::refreshAutoStartPath() {
+#ifdef _WIN32
+    HKEY hKey;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
+        return false;
+    }
+    wchar_t current[1024] = {};
+    DWORD size = sizeof(current) - sizeof(wchar_t);
+    DWORD type = 0;
+    LONG result = RegQueryValueExW(hKey, kRunValueName, nullptr, &type,
+                                   reinterpret_cast<BYTE*>(current), &size);
+    RegCloseKey(hKey);
+    if (result != ERROR_SUCCESS) {
+        return false; // 未啟用開機自動啟動
+    }
+
+    wchar_t exePath[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH) {
+        return false;
+    }
+    const std::wstring expected = L"\"" + std::wstring(exePath) + L"\" --background";
+    if (_wcsicmp(current, expected.c_str()) == 0) {
+        return false;
+    }
+    return setAutoStartEnabled(true);
+#else
+    return false;
+#endif
+}
+
 std::string PlatformLifecycleAdapter::getStatusSummary() const {
     std::ostringstream oss;
     oss << "[" << getPlatformName() << "] State: ";

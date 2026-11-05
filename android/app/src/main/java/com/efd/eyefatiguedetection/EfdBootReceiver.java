@@ -34,8 +34,10 @@ public class EfdBootReceiver extends BroadcastReceiver {
             boolean hasCamera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
                     == PackageManager.PERMISSION_GRANTED;
 
-            // Android 14 起禁止從開機廣播啟動「相機類型」前景服務，改發通知請使用者點一下開始偵測
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE || !hasCamera) {
+            // Android 11 起從背景 (開機廣播) 啟動的前景服務不能使用相機 (A71 / Android 13 實測：服務啟動但
+            // "can not have location/camera/microphone access"，鏡頭不會開)；Android 14 起連服務都不能啟動。
+            // 改發通知請使用者點一下開始偵測
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || !hasCamera) {
                 new EfdNotificationHudManager(context).showStartMonitoringReminder();
             } else {
                 try {

@@ -382,8 +382,13 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
         }
     });
 
+    // 開機自動啟動的路徑跟著目前執行檔：資料夾搬移或換新版後，登錄檔若仍指向舊位置，開機時不會有任何提示就不啟動
+    if (m_engine.getLifecycleAdapter().refreshAutoStartPath()) {
+        std::cout << "[開機自動啟動] 已將開機啟動路徑更新為目前的 EFD.exe (背景模式)\n";
+    }
+
     // 判斷受試者是否已完成初次測試 (包含校準紀錄或已有時序特徵資料)
-    bool hasTested = m_engine.getStudyTracker().isInitialSetupCompleted() || 
+    bool hasTested = m_engine.getStudyTracker().isInitialSetupCompleted() ||
                      (m_engine.getDatabaseService().getRecordCount() > 0);
 
     if (m_engine.getStudyTracker().getStatus() == StudyStatus::LockedForPostTest) {

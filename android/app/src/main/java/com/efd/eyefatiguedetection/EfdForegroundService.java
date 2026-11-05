@@ -247,6 +247,16 @@ public class EfdForegroundService extends LifecycleService {
             stopSelf();
             return START_NOT_STICKY;
         }
+        // intent 為 null = 服務被系統關閉後自動重啟 (START_STICKY)：屬於背景啟動，Android 11 起鏡頭打不開，
+        // 留著只會「看起來在偵測」；改為提醒使用者點一下重新開始
+        if (intent == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Log.w(TAG, "服務由系統自動重啟 (背景啟動無法使用相機)，改發通知請使用者重新開始");
+            if (mHudManager != null && !isStoppedByUser(this)) {
+                mHudManager.showMonitoringStoppedReminder();
+            }
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (sInstance == this) {
             ensureEngineRunning();
         }
