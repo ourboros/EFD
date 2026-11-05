@@ -305,6 +305,12 @@ bool AsyncPipelineEngine::finishCalibration() {
         // 模型偵測器的滾動睜眼基準：校準時 (環境、姿勢可能改變) 重新累積，累積不足前以校準值為準
         m_rollingBaseline.reset();
         m_rollingBaseline.setInitialOpenEar(data.baselineEar);
+        // 重新校準代表環境或拿手機的姿勢改變，眼皮與眼球移動的個人基準也重新累積
+        m_openEarTrend.reset();
+        m_gazeSpeedTrend.reset();
+        m_gazeShiftTrend.reset();
+        m_gaze.reset();
+        m_trendTimer = 0.0f;
     }
     m_studyTracker.markInitialSetupCompleted(data);
     std::cout << "[校準] 完成：基準 EAR=" << data.baselineEar << "，閉眼閾值=" << data.thresholdEar
@@ -600,6 +606,9 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         EyeMetrics eyeMetrics;
         float currentThreshold = 0.0f;
         ComplexityMetrics complexity;
+        FatigueSignals signals;
+        float openEarNow = 0.0f;
+        GazeTracker::Metrics gazeNow;
         {
             std::lock_guard<std::mutex> lock(m_analysisMutex);
 
@@ -613,6 +622,7 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
                 m_absentSeconds += deltaSec;
                 if (m_absentSeconds >= kAbsentHistoryResetSec) {
                     m_extractor.reset();
+                    m_gaze.reset();
                 }
             }
 
@@ -632,18 +642,57 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
             }
             m_extractor.setEyeClosedThreshold(currentThreshold);
 
-            // 3. 非線性複雜度分析 (EMD / MSE / CI)，每秒更新一次
+            // 2.5 眼球移動：睜眼的幀才採用虹膜位置 (閉眼、眨眼時虹膜點不可靠)
+            if (hasFace) {
+                const bool eyeOpen = eyeMetrics.earAvg >= m_extractor.getBlinkThreshold();
+                m_gaze.addFrame(package.detection.landmarks, eyeOpen, deltaSec);
+            }
+
+            // 3. 非線性複雜度分析 (EMD / MSE / CI) 與眼球移動統計，每秒更新一次
             if (hasFace) {
                 m_complexityTimer += deltaSec;
                 if (m_complexityTimer >= 1.0f) {
                     m_complexityTimer = 0.0f;
                     updateComplexityUnlocked();
+                    m_cachedGaze = m_gaze.compute();
                 }
             } else {
                 m_complexityTimer = 0.0f;
                 m_cachedComplexity.complexityIndex = 0.0f;
+                m_cachedGaze = GazeTracker::Metrics{};
             }
             complexity = m_cachedComplexity;
+
+            // 3.1 個人基準：每累積 1 分鐘在座時間記一次睜眼 EAR 與眼球移動
+            if (hasFace && !package.frame.isSynthetic) {
+                m_trendTimer += deltaSec;
+                if (m_trendTimer >= 60.0f) {
+                    m_trendTimer = 0.0f;
+                    if (package.detection.landmarksMeasured) m_openEarTrend.addMinute(m_rollingBaseline.openEar());
+                    if (m_cachedGaze.ready) {
+                        m_gazeSpeedTrend.addMinute(m_cachedGaze.speed);
+                        m_gazeShiftTrend.addMinute(m_cachedGaze.shiftsPerMin);
+                    }
+                }
+            }
+
+            signals.perclos = eyeMetrics.perclos;
+            signals.blinkRate = eyeMetrics.blinkRatePerMin;
+            signals.complexityIndex = complexity.complexityIndex;
+            signals.blinkDurationMs = eyeMetrics.windowBlinkDurationMs;
+            signals.longClosuresPerMin = eyeMetrics.longClosuresPerMin;
+            if (hasFace && package.detection.landmarksMeasured && m_openEarTrend.ready()) {
+                signals.eyelidDroop = std::max(0.0f, 1.0f - m_rollingBaseline.openEar() / m_openEarTrend.value());
+            }
+            if (hasFace && m_cachedGaze.ready) {
+                if (m_gazeSpeedTrend.ready()) signals.gazeSpeedRatio = m_cachedGaze.speed / m_gazeSpeedTrend.value();
+                if (m_gazeShiftTrend.ready()) signals.gazeShiftRatio = m_cachedGaze.shiftsPerMin / m_gazeShiftTrend.value();
+            }
+            openEarNow = m_rollingBaseline.openEar();
+            gazeNow = m_cachedGaze;
+            signals.openEar = openEarNow;
+            signals.gazeSpeed = gazeNow.ready ? gazeNow.speed : 0.0f;
+            signals.gazeShiftsPerMin = gazeNow.ready ? gazeNow.shiftsPerMin : 0.0f;
         }
 
         // 3.5 校準期間收集清醒睜眼樣本
@@ -659,19 +708,19 @@ void AsyncPipelineEngine::signalProcessingWorkerLoop() {
         }
 
         // 4. 20/5/5 防打擾狀態機推進
-        SystemState state = m_stateMachine.update(
-            hasFace,
-            eyeMetrics.perclos,
-            eyeMetrics.blinkRatePerMin,
-            complexity.complexityIndex,
-            deltaSec,
-            eyeMetrics.windowBlinkDurationMs,
-            eyeMetrics.longClosuresPerMin
-        );
+        SystemState state = m_stateMachine.update(hasFace, signals, deltaSec);
         // 模擬相機的影格不是真實受試者資料，不計入每分鐘摘要 (與資料庫規則相同)
         const bool realFrame = !package.frame.isSynthetic;
         accumulateMinute(realFrame, hasFace && realFrame, eyeMetrics, complexity.complexityIndex, state, deltaSec,
                          package.detection.landmarksMeasured);
+        if (hasFace && realFrame) {
+            // 分鐘結束時的眼皮與眼球移動數值 (供日後依實際資料校正門檻)
+            if (package.detection.landmarksMeasured) m_minute.openEar = openEarNow;
+            if (gazeNow.ready) {
+                m_minute.gazeSpeed = gazeNow.speed;
+                m_minute.gazeShifts = gazeNow.shiftsPerMin;
+            }
+        }
         int64_t count = ++m_processedFrameCount;
 
         // 5. 每秒落盤一筆 (僅在人臉在座時記錄有效特徵)
@@ -802,6 +851,7 @@ void AsyncPipelineEngine::resumeCamera() {
         // 關閉前的眼動歷史已過時 (至少相隔數分鐘)，重新累積窗口
         std::lock_guard<std::mutex> lock(m_analysisMutex);
         m_extractor.reset();
+        m_gaze.reset();
         m_absentSeconds = 0.0f;
         m_complexityTimer = 0.0f;
     }
@@ -871,6 +921,9 @@ void AsyncPipelineEngine::flushMinute() {
         m.blinkDurMs = (m_minute.blinks > 0) ? m_minute.blinkDurMs / static_cast<float>(m_minute.blinks) : 0.0f;
         m.ci = m_minute.ci;
         m.longClosures = m_minute.longClosures;
+        m.openEar = m_minute.openEar;
+        m.gazeSpeed = m_minute.gazeSpeed;
+        m.gazeShifts = m_minute.gazeShifts;
         m.score = m_minute.score;
         m.cooldownState = m_minute.cooldownState;
         m.alert = m_minute.alert;

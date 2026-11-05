@@ -25,11 +25,14 @@ public:
     static constexpr float kAttentionThreshold = 45.0f;
     static constexpr float kSevereHoldSeconds = 5.0f;
     static constexpr float kSmoothingTauSeconds = 20.0f;
-    // 各項訊號累加進綜合分數的權重 (見 computeFatigueScore)：PERCLOS 約 12.5% 以上即可單獨達到 65
-    static constexpr float kPerclosOnlyWeight = 0.9f;
+    // 各項訊號累加進綜合分數的權重 (見 computeFatigueBreakdown)：每一項單獨最多只到 60 分，
+    // 至少兩項同時異常才會達到 65 (2026-11-05 起不再主要依靠閉眼率)
+    static constexpr float kPerclosWeight = 0.6f;
     static constexpr float kSlowBlinkWeight = 0.4f;
     static constexpr float kBlinkRateWeight = 0.25f;
-    static constexpr float kComplexityWeight = 0.35f;
+    static constexpr float kComplexityWeight = 0.55f;
+    static constexpr float kEyelidWeight = 0.5f;
+    static constexpr float kGazeWeight = 0.5f;
     // 快篩窗口後端採樣時間 (最後 60 秒)：5 分鐘快篩期間，前 4 分鐘相機關閉休眠，最後 1 分鐘啟動相機採樣
     static constexpr float kScreeningSampleSeconds = 60.0f;
 
@@ -51,6 +54,8 @@ public:
     // blinkDurationMs / longClosuresPerMin 為窗口眨眼平均時長與長閉眼次數，0 代表不計分
     SystemState update(bool faceDetected, float perclos, float blinkRate, float complexityIndex, float deltaSeconds = 1.0f,
                        float blinkDurationMs = 0.0f, float longClosuresPerMin = 0.0f);
+    // 完整版：含眼皮下垂與眼球移動訊號
+    SystemState update(bool faceDetected, const FatigueSignals& signals, float deltaSeconds);
 
     // 冷卻期間相機關閉、無法觀察使用者時呼叫：只推進冷卻倒數，不累計離座時間
     // (看不到使用者，不能當成已休息而清除冷卻)；冷卻期滿照常進入快篩
@@ -83,6 +88,7 @@ public:
 
     static float computeFatigueScore(float perclos, float blinkRate, float complexityIndex,
                                      float blinkDurationMs = 0.0f, float longClosuresPerMin = 0.0f);
+    static FatigueBreakdown computeFatigueBreakdown(const FatigueSignals& signals);
 
 private:
     SystemState getStateUnlocked() const;
@@ -109,6 +115,8 @@ private:
     float m_severeHoldTimer = 0.0f;
     float m_lastScore = 0.0f;
     float m_smoothedScore = 0.0f;
+    FatigueSignals m_lastSignals;
+    FatigueBreakdown m_lastBreakdown;
 
     int   m_studyDay = 1;
     bool  m_isStudyLocked = false;

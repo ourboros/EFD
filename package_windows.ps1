@@ -5,9 +5,9 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
 $BuildDir = Join-Path $ProjectRoot "build\vs-x64\Release"
-$DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v2.2.0-Windows"
-$ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.2.0-Windows.zip"
-$ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.2.0-Windows.zip"
+$DistDir = Join-Path $ProjectRoot "build\package_windows\EFD-v2.3.0-Windows"
+$ZipRootOutput = Join-Path $ProjectRoot "EFD-v2.3.0-Windows.zip"
+$ZipBuildOutput = Join-Path $ProjectRoot "build\EFD-v2.3.0-Windows.zip"
 
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "  [EFD] 開始打包 Windows 桌面端分發套件..." -ForegroundColor Cyan
@@ -150,9 +150,9 @@ Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "READ
 Copy-Item (Join-Path $ProjectRoot "README_Windows.md") (Join-Path $DistDir "使用說明.txt") -Force
 
 # 8. 壓縮打包為 ZIP
-Write-Host " -> 正在壓縮封裝為 EFD-v2.2.0-Windows.zip..." -ForegroundColor Green
+Write-Host " -> 正在壓縮封裝為 EFD-v2.3.0-Windows.zip..." -ForegroundColor Green
 if (Test-Path $ZipRootOutput) { Remove-Item -Force $ZipRootOutput }
-# 壓縮整個資料夾 (不是資料夾內的檔案)：解壓後得到 EFD-v2.2.0-Windows\，檔案不會散落在使用者選的位置
+# 壓縮整個資料夾 (不是資料夾內的檔案)：解壓後得到 EFD-v2.3.0-Windows\，檔案不會散落在使用者選的位置
 Compress-Archive -Path $DistDir -DestinationPath $ZipRootOutput -Force
 Copy-Item $ZipRootOutput $ZipBuildOutput -Force
 

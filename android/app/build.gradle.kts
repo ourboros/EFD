@@ -18,7 +18,7 @@ val keystoreProperties = Properties().apply {
 val buildTime = Date()
 val buildVersionCode = SimpleDateFormat("yyMMddHH").format(buildTime).toInt()
 // 顯示用版本名稱：系統版本 2.2 加上建置時間 (精確到分鐘) (versionCode 為 int，只能到小時)，同一小時內的多次建置也分得出來
-val buildVersionName = "2.2." + SimpleDateFormat("yyMMdd.HHmm").format(buildTime)
+val buildVersionName = "2.3." + SimpleDateFormat("yyMMdd.HHmm").format(buildTime)
 val gitCommit: String = try {
     val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
         .directory(rootProject.projectDir)

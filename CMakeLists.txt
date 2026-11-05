@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(EFD 
-    VERSION 2.2.0 
+    VERSION 2.3.0 
     DESCRIPTION "Eye Fatigue Detection Native System"
     LANGUAGES CXX C
 )
@@ -67,6 +67,8 @@ set(EFD_CORE_HEADERS
     src/analysis/MseCalculator.hpp
     src/analysis/AdaptiveBaseline.hpp
     src/analysis/RollingOpenBaseline.hpp
+    src/analysis/GazeTracker.hpp
+    src/analysis/PersonalTrendBaseline.hpp
     src/state/FatigueStateMachine.hpp
     src/vision/RawFrame.hpp
     src/vision/ILandmarkDetector.hpp
@@ -96,6 +98,8 @@ set(EFD_CORE_SOURCES
     src/analysis/MseCalculator.cpp
     src/analysis/AdaptiveBaseline.cpp
     src/analysis/RollingOpenBaseline.cpp
+    src/analysis/GazeTracker.cpp
+    src/analysis/PersonalTrendBaseline.cpp
     src/state/FatigueStateMachine.cpp
     src/vision/FaceLandmarker.cpp
     src/vision/ExternalLandmarks.cpp

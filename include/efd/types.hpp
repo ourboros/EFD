@@ -49,6 +49,33 @@ struct ComplexityMetrics {
     int   imfCount = 0;                    // Number of extracted Intrinsic Mode Functions
 };
 
+// 疲勞分數的輸入訊號 (見 FatigueStateMachine::computeFatigueBreakdown)
+struct FatigueSignals {
+    float perclos = 0.0f;            // 0.0 ~ 1.0
+    float blinkRate = 0.0f;          // 次/分，0 = 窗口未滿不計分
+    float complexityIndex = 0.0f;    // EAR 訊號多尺度熵 CI，0 = 資料不足不計分
+    float blinkDurationMs = 0.0f;    // 窗口眨眼平均時長，0 = 不計分
+    float longClosuresPerMin = 0.0f; // 超過 800 ms 的閉眼次數/分
+    float eyelidDroop = 0.0f;        // 睜眼 EAR 低於個人基準的比例 (0 = 沒有下垂；基準不足時 0)
+    float gazeSpeedRatio = 1.0f;     // 眼球移動速度 / 個人基準 (1 = 與平常相同；資料不足時 1)
+    float gazeShiftRatio = 1.0f;     // 視線轉移次數 / 個人基準 (1 = 與平常相同；資料不足時 1)
+    // 以下只供紀錄與校正，不直接計分
+    float openEar = 0.0f;            // 最近 2 分鐘的睜眼 EAR
+    float gazeSpeed = 0.0f;          // 眼球移動速度 (眼寬/秒)，0 = 資料不足
+    float gazeShiftsPerMin = 0.0f;   // 視線轉移次數/分
+};
+
+// 疲勞分數的各項分數 (各 0~100) 與綜合分數
+struct FatigueBreakdown {
+    float perclos = 0.0f;
+    float slowBlink = 0.0f;
+    float blinkRate = 0.0f;
+    float complexity = 0.0f;
+    float eyelid = 0.0f;
+    float gaze = 0.0f;
+    float total = 0.0f;
+};
+
 // 疲勞分級
 enum class FatigueLevel : uint8_t {
     Relaxed = 0,       // 正常 / 清醒
@@ -77,6 +104,8 @@ struct SystemState {
     bool          isStudyLocked            = false;// 14 天實驗期滿鎖定
     bool          userPresent              = true; // 使用者是否在螢幕前（人臉偵測）
     bool          shouldCameraRun          = true; // 20/5/5 節能狀態：當前是否需要開啟相機 (冷卻與快篩間隔為 false)
+    FatigueSignals   lastSignals;                   // 最近一次在座時的輸入訊號
+    FatigueBreakdown lastBreakdown;                 // 最近一次在座時的各項分數
     std::chrono::system_clock::time_point timestamp;
 };
 

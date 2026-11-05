@@ -61,11 +61,13 @@ void StudyDataLog::appendMinute(const MinuteSummary& m) {
          << std::setprecision(3) << m.ci << "," << std::setprecision(1) << m.score << ","
          << m.cooldownState << "," << safeToken(m.alert) << "," << safeToken(m.detector) << ","
          << safeToken(m.platform) << "," << safeToken(m.appVersion) << ","
-         << std::setprecision(1) << m.longClosures;
+         << std::setprecision(1) << m.longClosures << ","
+         << std::setprecision(4) << m.openEar << "," << m.gazeSpeed << "," << std::setprecision(1) << m.gazeShifts;
     std::lock_guard<std::mutex> lock(m_mutex);
     appendLine(m_minutePath,
                "minute,study_day,group,alerts_enabled,present_sec,camera_on_sec,ear_mean,ear_p10,perclos,"
-               "blink_count,blink_dur_ms,ci,score,cooldown_state,alert,detector,platform,app_version,long_closures",
+               "blink_count,blink_dur_ms,ci,score,cooldown_state,alert,detector,platform,app_version,long_closures,"
+               "open_ear,gaze_speed,gaze_shifts",
                line.str());
 }
 
@@ -109,6 +111,11 @@ std::vector<MinuteSummary> StudyDataLog::readMinutesSince(int64_t sinceMs) const
             m.platform = c[16];
             m.appVersion = c[17];
             if (c.size() > 18 && !c[18].empty()) m.longClosures = std::stof(c[18]);
+            if (c.size() > 21) {
+                if (!c[19].empty()) m.openEar = std::stof(c[19]);
+                if (!c[20].empty()) m.gazeSpeed = std::stof(c[20]);
+                if (!c[21].empty()) m.gazeShifts = std::stof(c[21]);
+            }
             out.push_back(m);
         } catch (const std::exception&) {
             // 損毀的列略過
@@ -162,7 +169,9 @@ std::string StudyDataLog::buildUploadJsonFields(const std::string& subjectId, in
              << ", \"cooldown_state\": " << m.cooldownState << ", \"alert\": \"" << safeToken(m.alert)
              << "\", \"detector\": \"" << safeToken(m.detector) << "\", \"platform\": \"" << safeToken(m.platform)
              << "\", \"app_version\": \"" << safeToken(m.appVersion) << "\""
-             << std::setprecision(1) << ", \"long_closures\": " << m.longClosures << "}";
+             << std::setprecision(1) << ", \"long_closures\": " << m.longClosures
+             << std::setprecision(4) << ", \"open_ear\": " << m.openEar << ", \"gaze_speed\": " << m.gazeSpeed
+             << std::setprecision(1) << ", \"gaze_shifts\": " << m.gazeShifts << "}";
         first = false;
     }
     json << (first ? "]" : "\n  ]") << ",\n  \"kss_responses\": [";

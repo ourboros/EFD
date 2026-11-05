@@ -8,6 +8,8 @@
 #include "analysis/FeatureExtractor.hpp"
 #include "analysis/AdaptiveBaseline.hpp"
 #include "analysis/RollingOpenBaseline.hpp"
+#include "analysis/GazeTracker.hpp"
+#include "analysis/PersonalTrendBaseline.hpp"
 #include "analysis/EmdCalculator.hpp"
 #include "analysis/MseCalculator.hpp"
 #include "state/FatigueStateMachine.hpp"
@@ -180,6 +182,13 @@ private:
     AdaptiveBaseline m_baseline;               // 啟發式偵測器的閉眼門檻
     RollingOpenBaseline m_rollingBaseline;     // 模型偵測器的閉眼門檻 (PERCLOS P80)
     float m_lastBlinkThreshold = 0.21f;        // 只在訊號執行緒使用
+    GazeTracker m_gaze;                        // 眼球移動 (虹膜相對眼角)
+    GazeTracker::Metrics m_cachedGaze;         // 每秒更新一次
+    // 個人基準 (最近 2 小時在座分鐘的第 75 百分位)：眼皮下垂與眼球移動都和自己平常比
+    PersonalTrendBaseline m_openEarTrend;
+    PersonalTrendBaseline m_gazeSpeedTrend;
+    PersonalTrendBaseline m_gazeShiftTrend;
+    float m_trendTimer = 0.0f;
     EmdCalculator    m_emdCalculator;
     MseCalculator    m_mseCalculator;
     FatigueStateMachine m_stateMachine;
@@ -257,6 +266,9 @@ private:
         float blinkDurMs = 0.0f;
         float ci = 0.0f;
         float longClosures = 0.0f;
+        float openEar = 0.0f;
+        float gazeSpeed = 0.0f;
+        float gazeShifts = 0.0f;
         float score = 0.0f;
         int cooldownState = 0;
         std::string alert = "none";

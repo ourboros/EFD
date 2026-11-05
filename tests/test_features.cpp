@@ -28,6 +28,8 @@
 #include "vision/ExternalLandmarks.hpp"
 #include "vision/OnnxFaceLandmarker.hpp"
 #include "analysis/RollingOpenBaseline.hpp"
+#include "analysis/GazeTracker.hpp"
+#include "analysis/PersonalTrendBaseline.hpp"
 #include "storage/StudyDataLog.hpp"
 #include "vision/CameraService.hpp"
 #include "vision/VisionPipeline.hpp"
@@ -126,8 +128,8 @@ void testEmdDecomposition() {
 // 以 1 秒步進模擬 seconds 秒的輸入，回傳期間觸發的警報次數
 struct FsmInput { bool present; float perclos; float blink; float ci; };
 static const FsmInput kRelaxedInput { true, 0.02f, 16.0f, 4.5f };  // 約 4 分
-static const FsmInput kMidInput     { true, 0.10f, 6.0f, 1.5f };   // 約 47 分 (注意區間)
-static const FsmInput kSevereInput  { true, 0.30f, 4.0f, 1.0f };   // 約 84 分
+static const FsmInput kMidInput     { true, 0.10f, 6.0f, 1.0f };   // 約 50 分 (注意區間)
+static const FsmInput kSevereInput  { true, 0.30f, 4.0f, 0.6f };   // 約 78 分 (持續閉眼：閉眼率高 + 複雜度下降)
 static const FsmInput kAwayInput    { false, 0.0f, 0.0f, 0.0f };
 
 static int feedFsm(efd::FatigueStateMachine& fsm, const FsmInput& in, int seconds, int& alertCount, efd::SystemState* last = nullptr) {
@@ -1132,16 +1134,15 @@ void testRollingOpenBaselineP80() {
     for (int i = 0; i < 1200; ++i) closing.add(0.04f, 0.1f);
     assert(std::abs(closing.perclosThreshold() - 0.092f) < 2e-3f);
 
-    // PERCLOS 單項即可達到提醒門檻 (約 12.5% 以上)：實測 PERCLOS 69% 時最早的公式只有 62 分
+    // 2.3 版：閉眼率單項最多 60 分 (只到注意區間)，不再單獨觸發；持續閉眼時複雜度也會下降，兩項合計仍達門檻
     using Fsm = efd::FatigueStateMachine;
-    assert(Fsm::computeFatigueScore(0.69f, 15.0f, 3.0f) >= Fsm::kSevereThreshold);
-    assert(Fsm::computeFatigueScore(0.13f, 15.0f, 3.0f) >= Fsm::kSevereThreshold);
-    assert(Fsm::computeFatigueScore(0.11f, 15.0f, 3.0f) < Fsm::kSevereThreshold);
+    assert(Fsm::computeFatigueScore(0.69f, 15.0f, 3.0f) >= Fsm::kAttentionThreshold);
+    assert(Fsm::computeFatigueScore(0.69f, 15.0f, 3.0f) < Fsm::kSevereThreshold);
+    assert(Fsm::computeFatigueScore(0.50f, 15.0f, 0.6f) >= Fsm::kSevereThreshold);
     assert(Fsm::computeFatigueScore(0.03f, 15.0f, 3.0f) < Fsm::kAttentionThreshold);
-    // 各項累加：PERCLOS 中等 (10%) 單獨只到注意區間，加上眨眼變慢與長閉眼即達提醒門檻
-    // (舊的加權平均要各項都很嚴重才到 65，A71 實測除了持續閉眼幾乎不會提醒)
-    assert(Fsm::computeFatigueScore(0.10f, 15.0f, 2.0f) < Fsm::kSevereThreshold);
-    assert(Fsm::computeFatigueScore(0.10f, 15.0f, 2.0f, 350.0f, 3.0f) >= Fsm::kSevereThreshold);
+    // PERCLOS 中等 (10%) 單獨在注意區間以下，加上眨眼變慢與長閉眼到注意區間
+    assert(Fsm::computeFatigueScore(0.10f, 15.0f, 2.0f) < Fsm::kAttentionThreshold);
+    assert(Fsm::computeFatigueScore(0.10f, 15.0f, 2.0f, 350.0f, 3.0f) >= Fsm::kAttentionThreshold);
     // A71 正常使用：眨眼率偏低 (約 5 次/分，每秒只分析 10 張) 與偶發長閉眼不可達到注意區間
     assert(Fsm::computeFatigueScore(0.01f, 5.0f, 2.0f, 160.0f, 2.0f) < Fsm::kAttentionThreshold);
 
@@ -1236,10 +1237,14 @@ void testCrossoverGroupsAndStudyLog() {
     m.detector = "onnx";
     m.platform = "Windows";
     m.longClosures = 2.5f;
+    m.openEar = 0.2412f;
+    m.gazeSpeed = 0.3125f;
+    m.gazeShifts = 42.0f;
     log.appendMinute(m);
     const auto minutes = log.readMinutesSince(0);
     assert(minutes.size() == 1 && minutes[0].blinkCount == 14 && minutes[0].alert == "suppressed");
     assert(std::fabs(minutes[0].longClosures - 2.5f) < 0.01f);
+    assert(std::fabs(minutes[0].openEar - 0.2412f) < 1e-4f && std::fabs(minutes[0].gazeShifts - 42.0f) < 0.01f);
     const auto surveys = log.readSurveysSince(0);
     assert(surveys.size() == 2 && surveys[0].eyeFatigue == 7 && !surveys[0].skipped && surveys[1].skipped);
     assert(surveys[0].group == "A" && !surveys[0].alertsEnabled);
@@ -1251,6 +1256,9 @@ void testCrossoverGroupsAndStudyLog() {
     assert(json.find("\"minute_summaries\": [") != std::string::npos);
     assert(json.find("\"alert\": \"suppressed\"") != std::string::npos);
     assert(json.find("\"long_closures\": 2.5") != std::string::npos);
+    assert(json.find("\"open_ear\": 0.2412") != std::string::npos);
+    assert(json.find("\"gaze_speed\": 0.3125") != std::string::npos);
+    assert(json.find("\"gaze_shifts\": 42.0") != std::string::npos);
     assert(json.find("\"eye_fatigue\": 7") != std::string::npos);
     assert(json.find("\"eye_fatigue\": null") != std::string::npos);
     assert(json.find("\"subject_id\": \"SUBJ-TEST\"") != std::string::npos);
@@ -1937,6 +1945,106 @@ void testFloatingIndicatorAndSystemTray() {
 #endif
 }
 
+// 以兩眼眼角與虹膜中心建立 478 點 (其餘點不使用)；gx 為虹膜相對眼睛中心的水平位置 (眼寬單位)
+static std::vector<efd::Point3D> makeGazeLandmarks(float gx, float gy) {
+    std::vector<efd::Point3D> lm(478);
+    lm[33] = {100.0f, 200.0f, 0.0f};
+    lm[133] = {140.0f, 200.0f, 0.0f};
+    lm[362] = {180.0f, 200.0f, 0.0f};
+    lm[263] = {220.0f, 200.0f, 0.0f};
+    lm[468] = {120.0f + gx * 40.0f, 200.0f + gy * 40.0f, 0.0f};
+    lm[473] = {200.0f + gx * 40.0f, 200.0f + gy * 40.0f, 0.0f};
+    return lm;
+}
+
+void testGazeAndNonClosureFatigue() {
+    std::cout << "[TEST] 39. 測試眼球移動、個人基準與不閉眼的疲勞判定...";
+    // 1. 視線位置：以眼寬為單位，與臉在畫面中的大小無關
+    float gx = 0.0f, gy = 0.0f;
+    assert(efd::GazeTracker::computeGaze(makeGazeLandmarks(0.1f, -0.05f), gx, gy));
+    assert(std::fabs(gx - 0.1f) < 1e-4f && std::fabs(gy + 0.05f) < 1e-4f);
+    assert(!efd::GazeTracker::computeGaze(std::vector<efd::Point3D>(468), gx, gy));   // 沒有虹膜點
+
+    // 2. 清醒滑手機/閱讀：每 0.5 秒掃視一次；疲勞：每 3 秒才移動一次、幅度小。10 FPS、含特徵點抖動
+    std::mt19937 rng(11);
+    std::normal_distribution<float> jitter(0.0f, 0.0015f);
+    auto run = [&](float period, float amplitude) {
+        efd::GazeTracker g;
+        for (int f = 0; f < 600; ++f) {
+            const float t = f * 0.1f;
+            const int k = static_cast<int>(t / period);
+            const float x = (k % 2 == 0 ? -amplitude : amplitude) + jitter(rng);
+            g.addFrame(makeGazeLandmarks(x, jitter(rng)), true, 0.1f);
+        }
+        return g.compute();
+    };
+    const auto alert = run(0.5f, 0.08f);
+    const auto tired = run(3.0f, 0.04f);
+    const auto still = run(1000.0f, 0.0f);
+    assert(alert.ready && tired.ready && still.ready);
+    assert(alert.speed > 3.0f * tired.speed);
+    assert(alert.shiftsPerMin > 100.0f && tired.shiftsPerMin < 25.0f);
+    assert(still.speed < 0.02f && still.shiftsPerMin == 0.0f);   // 盯著同一點：抖動不算移動
+    // 閉眼的幀不採用：有效 (睜眼) 時間不足 30 秒不輸出
+    efd::GazeTracker closed;
+    for (int f = 0; f < 600; ++f) closed.addFrame(makeGazeLandmarks(0.0f, 0.0f), f % 3 == 0, 0.1f);
+    assert(!closed.compute().ready);
+
+    // 3. 個人基準：累積 10 分鐘後才可用，取第 75 百分位
+    efd::PersonalTrendBaseline base;
+    for (int i = 1; i <= 9; ++i) base.addMinute(static_cast<float>(i));
+    assert(!base.ready());
+    base.addMinute(10.0f);
+    assert(base.ready() && base.value() == 8.0f);
+    base.addMinute(0.0f);                      // 無效值不納入
+    assert(base.count() == 10);
+
+    // 4. 不閉眼的疲勞：單一跡象不會提醒，兩項明顯或三項中等同時出現即達提醒門檻
+    using Fsm = efd::FatigueStateMachine;
+    efd::FatigueSignals s;
+    s.blinkRate = 15.0f;
+    s.complexityIndex = 2.0f;
+    s.eyelidDroop = 0.05f;
+    s.gazeSpeedRatio = 0.9f;
+    s.gazeShiftRatio = 0.9f;
+    assert(Fsm::computeFatigueBreakdown(s).total == 0.0f);          // 平常狀態
+    s.eyelidDroop = 0.25f;
+    assert(Fsm::computeFatigueBreakdown(s).total < Fsm::kAttentionThreshold);
+    s.gazeSpeedRatio = 0.4f;
+    s.gazeShiftRatio = 0.4f;
+    assert(Fsm::computeFatigueBreakdown(s).total >= Fsm::kSevereThreshold);   // 眼皮下垂 + 眼球移動變慢
+    s.gazeSpeedRatio = s.gazeShiftRatio = 1.0f;
+    s.complexityIndex = 0.4f;
+    assert(Fsm::computeFatigueBreakdown(s).total >= Fsm::kSevereThreshold);   // 眼皮下垂 + 複雜度下降
+    s.eyelidDroop = 0.0f;
+    assert(Fsm::computeFatigueBreakdown(s).total < Fsm::kSevereThreshold);    // 只有複雜度下降
+    s.complexityIndex = 0.64f;
+    s.eyelidDroop = 0.20f;
+    s.gazeSpeedRatio = s.gazeShiftRatio = 0.52f;
+    const efd::FatigueBreakdown mid = Fsm::computeFatigueBreakdown(s);
+    assert(mid.total >= Fsm::kSevereThreshold && mid.perclos == 0.0f);      // 三項中等，完全沒閉眼
+
+    // 5. 狀態機：持續「眼皮下垂 + 眼球變慢」(沒有閉眼) 約半分鐘多就提醒
+    Fsm fsm;
+    int alerts = 0;
+    fsm.setAlertCallback([&](efd::FatigueLevel, float, const std::string&) { alerts++; });
+    efd::FatigueSignals tiredEyes;
+    tiredEyes.blinkRate = 14.0f;
+    tiredEyes.complexityIndex = 1.6f;
+    tiredEyes.eyelidDroop = 0.25f;
+    tiredEyes.gazeSpeedRatio = 0.35f;
+    tiredEyes.gazeShiftRatio = 0.4f;
+    int firstAlertSec = -1;
+    for (int i = 0; i < 120 && alerts == 0; ++i) {
+        efd::SystemState st = fsm.update(true, tiredEyes, 1.0f);
+        if (alerts > 0) firstAlertSec = i + 1;
+        assert(st.lastBreakdown.perclos == 0.0f);
+    }
+    assert(alerts == 1 && firstAlertSec > 20 && firstAlertSec < 90);
+    std::cout << " [PASS] (閱讀 " << std::setprecision(2) << alert.speed << " 眼寬/秒、" << alert.shiftsPerMin
+              << " 次/分；疲勞 " << tired.speed << " 眼寬/秒；不閉眼 " << firstAlertSec << " 秒提醒)\n";
+}
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -1992,7 +2100,8 @@ int main() {
     testRollingOpenBaselineP80();
     testCrossoverGroupsAndStudyLog();
     testAbsenceProbing();
+    testGazeAndNonClosureFatigue();
 
-    std::cout << "\n[ALL TESTS PASSED] 全部 38 項測試順利通過！\n";
+    std::cout << "\n[ALL TESTS PASSED] 全部 39 項測試順利通過！\n";
     return 0;
 }

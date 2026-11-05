@@ -317,6 +317,27 @@ Java_com_efd_eyefatiguedetection_EfdNativeBridge_nativeInitEngineWithPath(JNIEnv
             }
 #endif
 
+            // 每 30 秒記錄一次疲勞分數的各項分數與原始數值 (adb logcat -s EFD_Score)，只有數字，
+            // 供依實際使用校正眼皮下垂與眼球移動的門檻
+            {
+                static int64_t s_lastScoreLogMs = 0;
+                const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                const auto& st = telemetry.systemState;
+                if (st.userPresent && !telemetry.cameraSuspended && nowMs - s_lastScoreLogMs >= 30000) {
+                    s_lastScoreLogMs = nowMs;
+                    const auto& b = st.lastBreakdown;
+                    const auto& sg = st.lastSignals;
+                    __android_log_print(ANDROID_LOG_INFO, "EFD_Score",
+                                        "score=%.1f smooth=%.1f | P=%.0f S=%.0f R=%.0f C=%.0f E=%.0f G=%.0f | "
+                                        "perclos=%.3f rate=%.1f ci=%.2f openEar=%.3f droop=%.3f gaze=%.3f/s,%.1f/min ratio=%.2f,%.2f",
+                                        b.total, st.smoothedFatigueScore, b.perclos, b.slowBlink, b.blinkRate,
+                                        b.complexity, b.eyelid, b.gaze, sg.perclos, sg.blinkRate, sg.complexityIndex,
+                                        sg.openEar, sg.eyelidDroop, sg.gazeSpeed, sg.gazeShiftsPerMin,
+                                        sg.gazeSpeedRatio, sg.gazeShiftRatio);
+                }
+            }
+
             efd::EngineTelemetry slim;
             slim.latestFrame.timestampMs = telemetry.latestFrame.timestampMs;
             slim.latestFrame.width = telemetry.latestFrame.width;
