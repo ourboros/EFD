@@ -157,11 +157,9 @@ NativeWelcomeWindow::NativeWelcomeWindow(int width, int height, bool startInBack
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
-    // 載入設計資產 (歡迎介面 Logo: 保持套用 E:\Project\EFD\design\1x\資產 9.png)
-    m_logoImage = std::make_unique<Gdiplus::Image>(L"E:\\Project\\EFD\\design\\1x\\資產 9.png");
-    if (!m_logoImage || m_logoImage->GetLastStatus() != Gdiplus::Ok || m_logoImage->GetWidth() == 0) {
-        m_logoImage = loadAssetImage(L"資產 9.png");
-    }
+    // 載入設計資產 (歡迎介面 Logo: 白色 logo10.png 畫在薄荷綠底上；
+    // 原本的綠色「資產 9」與背景同色看不見。開發機讀 design\1x，發行版讀 exe 旁的 assets)
+    m_logoImage = loadAssetImage(L"logo10.png");
     if (!m_logoImage || m_logoImage->GetLastStatus() != Gdiplus::Ok || m_logoImage->GetWidth() == 0) {
         m_logoImage = loadAssetImage(L"logo.png");
     }

@@ -488,25 +488,16 @@ public class MainActivity extends AppCompatActivity {
     private void renderWelcomeScreen() {
         LinearLayout layout = createMintPage(true);
 
-        // 白色圓形徽章內嵌官方「資產 10」Logo
-        FrameLayout badge = new FrameLayout(this);
-        android.graphics.drawable.GradientDrawable badgeBg = new android.graphics.drawable.GradientDrawable();
-        badgeBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        badgeBg.setColor(Color.WHITE);
-        badgeBg.setStroke(dp(3), Color.parseColor(C_AMBER));
-        badge.setBackground(badgeBg);
+        // 白色 logo10 直接放在薄荷綠底上 (原本放在白色圓形徽章內，白對白看不見)
         android.widget.ImageView logoImage = new android.widget.ImageView(this);
-        int logoResId = getResources().getIdentifier("logo10", "drawable", getPackageName());
-        if (logoResId != 0) {
-            logoImage.setImageResource(logoResId);
-        }
+        logoImage.setImageResource(R.drawable.logo10);
         logoImage.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-        FrameLayout.LayoutParams logoLp = new FrameLayout.LayoutParams(dp(74), dp(74), Gravity.CENTER);
-        badge.addView(logoImage, logoLp);
-        LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(dp(112), dp(112));
-        badgeLp.gravity = Gravity.CENTER_HORIZONTAL;
-        badgeLp.setMargins(0, 0, 0, dp(20));
-        layout.addView(badge, badgeLp);
+        logoImage.setContentDescription("EFD");
+        // 原圖 568x341，保持長寬比
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(140), dp(84));
+        logoLp.gravity = Gravity.CENTER_HORIZONTAL;
+        logoLp.setMargins(0, 0, 0, dp(20));
+        layout.addView(logoImage, logoLp);
 
         addPageTitle(layout, "感謝協助測試 EFD", 26);
         addPageSubtitle(layout, "AI 驅動眼睛特徵提取與即時疲勞監控研究系統");
